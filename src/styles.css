@@ -46,30 +46,8 @@ button {
   background: #fbfbfa;
 }
 
-.documentMeta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+.windowSlot {
   min-width: 72px;
-}
-
-.trafficLight {
-  width: 12px;
-  height: 12px;
-  flex: 0 0 auto;
-  border-radius: 50%;
-}
-
-.trafficLightRed {
-  background: #ff5f57;
-}
-
-.trafficLightYellow {
-  background: #febc2e;
-}
-
-.trafficLightGreen {
-  background: #28c840;
 }
 
 .titleCluster {

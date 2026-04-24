@@ -44,7 +44,7 @@ The current editor-core spike should only implement the local Zen and Normal edi
 Zen Mode should include:
 
 - Main editor surface.
-- Minimal Mac-style titlebar with traffic lights and a centered filename.
+- Minimal titlebar with a centered filename.
 - No persistent toolbar.
 - Minimal visual noise.
 - Strong writing focus.
@@ -120,7 +120,7 @@ The Pencil comments frames place comment markers in the document margin and thre
 First implementation target:
 
 - Light local editor UI.
-- Native Mac chrome cues.
+- Native-feeling chrome without simulating Mac window controls in the shared web UI.
 - Serif document typography paired with Inter/system UI chrome.
 - Muted separators: `#E5E5EA`.
 - Text palette around `#1A1A1E`, `#2A2A2E`, `#5E5E66`, and `#9A9AA2`.

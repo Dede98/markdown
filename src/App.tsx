@@ -61,11 +61,7 @@ export function App() {
   return (
     <main className={zen ? "app appZen" : "app"}>
       <header className="topbar">
-        <div className="documentMeta">
-          <span className="trafficLight trafficLightRed" />
-          <span className="trafficLight trafficLightYellow" />
-          <span className="trafficLight trafficLightGreen" />
-        </div>
+        <div className="windowSlot" aria-hidden="true" />
 
         <div className="titleCluster">
           <div className="documentTitle">on-the-quiet-hour.md</div>
