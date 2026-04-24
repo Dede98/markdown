@@ -1,9 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 import {
   Bold,
-  ChevronDown,
   Code2,
-  Ellipsis,
   FileText,
   Heading1,
   Heading2,
@@ -13,12 +11,9 @@ import {
   ListChecks,
   ListOrdered,
   Minus,
-  PanelLeft,
-  PanelRight,
   PanelTopClose,
   PanelTopOpen,
   Quote,
-  Search,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { insertBlock, insertLink, setHeading, toggleLinePrefix, wrapSelection } from "./markdownCommands";
@@ -76,20 +71,29 @@ export function App() {
 
       {!zen && (
         <nav className="toolbar" aria-label="Markdown formatting">
-          <div className="toolbarSide toolbarSideLeft">
-            <button title="Outline" type="button">
-              <PanelLeft size={14} />
-            </button>
-            <button title="Search" type="button">
-              <Search size={14} />
-            </button>
-          </div>
+          <div className="toolbarSide toolbarSideLeft" aria-hidden="true" />
 
           <div className="toolbarCenter">
-            <button className="headingMenu" title="Heading 2" type="button" onClick={() => withEditor((view) => setHeading(view, 2))}>
-              <span>Heading 2</span>
-              <ChevronDown size={12} />
-            </button>
+            <label className="headingMenu">
+              <span className="srOnly">Heading level</span>
+              <select
+                defaultValue=""
+                onChange={(event) => {
+                  const level = Number(event.currentTarget.value);
+                  if (level === 1 || level === 2 || level === 3) {
+                    withEditor((view) => setHeading(view, level));
+                  }
+                  event.currentTarget.value = "";
+                }}
+              >
+                <option value="" disabled>
+                  Heading
+                </option>
+                <option value="1">Heading 1</option>
+                <option value="2">Heading 2</option>
+                <option value="3">Heading 3</option>
+              </select>
+            </label>
             <span className="toolbarDivider" />
             <button title="Heading 1" type="button" onClick={() => withEditor((view) => setHeading(view, 1))}>
               <Heading1 size={14} />
@@ -129,12 +133,6 @@ export function App() {
 
           <div className="toolbarSide toolbarSideRight">
             <span>{wordCount(markdown).toLocaleString()} words</span>
-            <button title="Inspector" type="button">
-              <PanelRight size={14} />
-            </button>
-            <button title="More" type="button">
-              <Ellipsis size={14} />
-            </button>
           </div>
         </nav>
       )}
