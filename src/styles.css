@@ -126,6 +126,11 @@ button {
   color: #1a1a1e;
 }
 
+.toolbar button.isActive {
+  background: #e8eef5;
+  color: #1f4f82;
+}
+
 .toolbar {
   position: relative;
   display: grid;
@@ -174,6 +179,10 @@ button {
   border: 1px solid #e5e5ea;
   border-radius: 6px;
   background: #ffffff;
+}
+
+.toolbar .headingMenu.isActive {
+  background: #e8eef5;
 }
 
 .toolbar .headingMenu::after {

@@ -99,6 +99,38 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).not.toContainText("---");
   });
 
+  test("inline markdown syntax appears only when the cursor is inside that range", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "**bold** plain");
+
+    await setCursorInsideText(page, "plain");
+    await expect(page.locator(".cm-content")).not.toContainText("**bold**");
+
+    await setCursorInsideText(page, "bold");
+    await expect(page.locator(".cm-content")).toContainText("**bold**");
+  });
+
+  test("toolbar reflects the active cursor formatting", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "# Title\n\n**bold** plain\n\n[site](https://example.com)\n\n- item");
+
+    await setCursorInsideText(page, "Title");
+    await expect(page.getByLabel("Heading level")).toHaveValue("1");
+    await expect(page.getByTitle("Heading 1")).toHaveAttribute("aria-pressed", "true");
+
+    await setCursorInsideText(page, "bold");
+    await expect(page.getByTitle("Bold")).toHaveAttribute("aria-pressed", "true");
+
+    await setCursorInsideText(page, "plain");
+    await expect(page.getByTitle("Bold")).toHaveAttribute("aria-pressed", "false");
+
+    await setCursorInsideText(page, "site");
+    await expect(page.getByTitle("Link")).toHaveAttribute("aria-pressed", "true");
+
+    await setCursorInsideText(page, "item");
+    await expect(page.getByTitle("Bulleted list")).toHaveAttribute("aria-pressed", "true");
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
@@ -169,6 +201,33 @@ async function selectAllEditorText(page: Page) {
     view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
     view.focus();
   });
+}
+
+async function setCursorInsideText(page: Page, text: string) {
+  const source = await getEditorSource(page);
+  const index = source.indexOf(text);
+
+  if (index === -1) {
+    throw new Error(`Text not found in editor source: ${text}`);
+  }
+
+  await setEditorSelection(page, index + Math.max(1, Math.floor(text.length / 2)));
+}
+
+async function setEditorSelection(page: Page, anchor: number, head = anchor) {
+  await page.evaluate(
+    ({ nextAnchor, nextHead }) => {
+      const view = (window as unknown as { __markdownEditorView?: { focus: () => void; dispatch: (spec: unknown) => void } }).__markdownEditorView;
+
+      if (!view) {
+        throw new Error("CodeMirror editor view is not available");
+      }
+
+      view.dispatch({ selection: { anchor: nextAnchor, head: nextHead } });
+      view.focus();
+    },
+    { nextAnchor: anchor, nextHead: head },
+  );
 }
 
 async function expectEditorSource(page: Page, expectedText: string) {

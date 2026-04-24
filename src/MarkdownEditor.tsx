@@ -4,22 +4,26 @@ import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighti
 import { EditorState, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
+import { getActiveFormat, type ActiveFormat } from "./editorFormat";
 import { markdownPreview } from "./markdownPreview";
 
 type MarkdownEditorProps = {
   value: string;
   zen: boolean;
   onChange: (value: string) => void;
+  onFormatChange: (format: ActiveFormat) => void;
   onReady: (view: EditorView) => void;
 };
 
-export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const onFormatChangeRef = useRef(onFormatChange);
   const initialValueRef = useRef(value);
 
   onChangeRef.current = onChange;
+  onFormatChangeRef.current = onFormatChange;
 
   useEffect(() => {
     if (!containerRef.current) {
@@ -40,6 +44,9 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           onChangeRef.current(update.state.doc.toString());
+        }
+        if (update.docChanged || update.selectionSet) {
+          onFormatChangeRef.current(getActiveFormat(update.state));
         }
       }),
       EditorView.theme({
@@ -93,6 +100,7 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
 
     viewRef.current = view;
     onReady(view);
+    onFormatChangeRef.current(getActiveFormat(view.state));
     if (shouldExposeTestEditor()) {
       getWindowWithEditor().__markdownEditorView = view;
     }

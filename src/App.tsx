@@ -16,6 +16,7 @@ import {
   Quote,
 } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
+import { emptyFormat, type ActiveFormat } from "./editorFormat";
 import { insertBlock, insertLink, setHeading, toggleLinePrefix, wrapSelection } from "./markdownCommands";
 import { MarkdownEditor } from "./MarkdownEditor";
 
@@ -40,6 +41,7 @@ Three things I try to keep near when I work:
 
 export function App() {
   const [markdown, setMarkdown] = useState(initialMarkdown);
+  const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
   const [zen, setZen] = useState(false);
   const editorRef = useRef<EditorView | null>(null);
 
@@ -74,16 +76,15 @@ export function App() {
           <div className="toolbarSide toolbarSideLeft" aria-hidden="true" />
 
           <div className="toolbarCenter">
-            <label className="headingMenu">
+            <label className={activeFormat.heading ? "headingMenu isActive" : "headingMenu"}>
               <span className="srOnly">Heading level</span>
               <select
-                defaultValue=""
+                value={activeFormat.heading ? String(activeFormat.heading) : ""}
                 onChange={(event) => {
                   const level = Number(event.currentTarget.value);
                   if (level === 1 || level === 2 || level === 3) {
                     withEditor((view) => setHeading(view, level));
                   }
-                  event.currentTarget.value = "";
                 }}
               >
                 <option value="" disabled>
@@ -95,38 +96,38 @@ export function App() {
               </select>
             </label>
             <span className="toolbarDivider" />
-            <button title="Heading 1" type="button" onClick={() => withEditor((view) => setHeading(view, 1))}>
+            <button className={activeFormat.heading === 1 ? "isActive" : undefined} aria-pressed={activeFormat.heading === 1} title="Heading 1" type="button" onClick={() => withEditor((view) => setHeading(view, 1))}>
               <Heading1 size={14} />
             </button>
-            <button title="Heading 2" type="button" onClick={() => withEditor((view) => setHeading(view, 2))}>
+            <button className={activeFormat.heading === 2 ? "isActive" : undefined} aria-pressed={activeFormat.heading === 2} title="Heading 2" type="button" onClick={() => withEditor((view) => setHeading(view, 2))}>
               <Heading2 size={14} />
             </button>
-            <button title="Bold" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "**", after: "**", placeholder: "bold" }))}>
+            <button className={activeFormat.bold ? "isActive" : undefined} aria-pressed={activeFormat.bold} title="Bold" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "**", after: "**", placeholder: "bold" }))}>
               <Bold size={14} />
             </button>
-            <button title="Italic" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "*", after: "*", placeholder: "italic" }))}>
+            <button className={activeFormat.italic ? "isActive" : undefined} aria-pressed={activeFormat.italic} title="Italic" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "*", after: "*", placeholder: "italic" }))}>
               <Italic size={14} />
             </button>
-            <button title="Code block" type="button" onClick={() => withEditor((view) => insertBlock(view, "```\\ncode\\n```\\n"))}>
+            <button className={activeFormat.codeBlock || activeFormat.inlineCode ? "isActive" : undefined} aria-pressed={activeFormat.codeBlock || activeFormat.inlineCode} title="Code block" type="button" onClick={() => withEditor((view) => insertBlock(view, "```\\ncode\\n```\\n"))}>
               <Code2 size={14} />
             </button>
-            <button title="Link" type="button" onClick={() => withEditor(insertLink)}>
+            <button className={activeFormat.link ? "isActive" : undefined} aria-pressed={activeFormat.link} title="Link" type="button" onClick={() => withEditor(insertLink)}>
               <Link size={14} />
             </button>
             <span className="toolbarDivider" />
-            <button title="Bulleted list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "- "))}>
+            <button className={activeFormat.unorderedList ? "isActive" : undefined} aria-pressed={activeFormat.unorderedList} title="Bulleted list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "- "))}>
               <List size={14} />
             </button>
-            <button title="Numbered list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "1. "))}>
+            <button className={activeFormat.orderedList ? "isActive" : undefined} aria-pressed={activeFormat.orderedList} title="Numbered list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "1. "))}>
               <ListOrdered size={14} />
             </button>
-            <button title="Task list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "- [ ] "))}>
+            <button className={activeFormat.taskList ? "isActive" : undefined} aria-pressed={activeFormat.taskList} title="Task list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "- [ ] "))}>
               <ListChecks size={14} />
             </button>
-            <button title="Blockquote" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "> "))}>
+            <button className={activeFormat.quote ? "isActive" : undefined} aria-pressed={activeFormat.quote} title="Blockquote" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "> "))}>
               <Quote size={14} />
             </button>
-            <button title="Horizontal rule" type="button" onClick={() => withEditor((view) => insertBlock(view, "---\\n"))}>
+            <button className={activeFormat.rule ? "isActive" : undefined} aria-pressed={activeFormat.rule} title="Horizontal rule" type="button" onClick={() => withEditor((view) => insertBlock(view, "---\\n"))}>
               <Minus size={14} />
             </button>
           </div>
@@ -138,7 +139,7 @@ export function App() {
       )}
 
       <section className="editorShell" aria-label="Markdown editor">
-        <MarkdownEditor value={markdown} zen={zen} onChange={setMarkdown} onReady={handleReady} />
+        <MarkdownEditor value={markdown} zen={zen} onChange={setMarkdown} onFormatChange={setActiveFormat} onReady={handleReady} />
       </section>
 
       {zen ? (
