@@ -24,11 +24,11 @@ test.describe("editor core", () => {
     await replaceEditorText(page, "focus");
 
     await page.getByTitle("Bold").click();
-    await expect(page.locator(".cm-content")).toContainText("**focus**");
+    await expectEditorSource(page, "**focus**");
 
     await page.getByTitle("Bold").click();
-    await expect(page.locator(".cm-content")).toContainText("focus");
-    await expect(page.locator(".cm-content")).not.toContainText("****focus****");
+    await expectEditorSource(page, "focus");
+    await expectEditorSourceNot(page, "****focus****");
   });
 
   test("link command preserves selected text and selects the inserted url", async ({ page }) => {
@@ -38,7 +38,7 @@ test.describe("editor core", () => {
     await page.getByTitle("Link").click();
     await page.keyboard.insertText("https://local-first.test");
 
-    await expect(page.locator(".cm-content")).toContainText("[example](https://local-first.test)");
+    await expectEditorSource(page, "[example](https://local-first.test)");
   });
 
   test("line commands normalize multi-line selections", async ({ page }) => {
@@ -46,18 +46,18 @@ test.describe("editor core", () => {
     await replaceEditorText(page, "first\nsecond");
 
     await page.getByTitle("Bulleted list").click();
-    await expect(page.locator(".cm-content")).toContainText("- first");
-    await expect(page.locator(".cm-content")).toContainText("- second");
+    await expectEditorSource(page, "- first");
+    await expectEditorSource(page, "- second");
 
     await selectAllEditorText(page);
     await page.getByTitle("Numbered list").click();
-    await expect(page.locator(".cm-content")).toContainText("1. first");
-    await expect(page.locator(".cm-content")).toContainText("1. second");
+    await expectEditorSource(page, "1. first");
+    await expectEditorSource(page, "1. second");
 
     await replaceEditorText(page, "first\nsecond");
     await page.getByTitle("Blockquote").click();
-    await expect(page.locator(".cm-content")).toContainText("> first");
-    await expect(page.locator(".cm-content")).toContainText("> second");
+    await expectEditorSource(page, "> first");
+    await expectEditorSource(page, "> second");
   });
 
   test("heading select applies markdown heading levels", async ({ page }) => {
@@ -66,7 +66,7 @@ test.describe("editor core", () => {
     await page.locator(".cm-content").click();
     await page.getByLabel("Heading level").selectOption("3");
 
-    await expect(page.locator(".cm-content")).toContainText("###");
+    await expectEditorSource(page, "###");
   });
 
   test("heading commands toggle the same heading level back to paragraph", async ({ page }) => {
@@ -74,11 +74,29 @@ test.describe("editor core", () => {
     await replaceEditorText(page, "Morning light");
 
     await page.getByTitle("Heading 2").click();
-    await expect(page.locator(".cm-content")).toContainText("## Morning light");
+    await expectEditorSource(page, "## Morning light");
 
     await page.getByTitle("Heading 2").click();
-    await expect(page.locator(".cm-content")).toContainText("Morning light");
-    await expect(page.locator(".cm-content")).not.toContainText("## Morning light");
+    await expectEditorSource(page, "Morning light");
+    await expectEditorSourceNot(page, "## Morning light");
+  });
+
+  test("markdown syntax is hidden outside the active editing line", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "# Quiet\n\n**bold** and *soft*\n\n- item\n\n[site](https://example.com)\n\n```js\ncallFunction();\n```\n\n---\n\ntail");
+
+    await expect(page.locator(".cm-content")).toContainText("Quiet");
+    await expect(page.locator(".cm-content")).toContainText("bold and soft");
+    await expect(page.locator(".cm-content")).toContainText("item");
+    await expect(page.locator(".cm-content")).toContainText("site");
+    await expect(page.locator(".cm-content")).toContainText("callFunction();");
+    await expect(page.locator(".cm-content")).not.toContainText("# Quiet");
+    await expect(page.locator(".cm-content")).not.toContainText("**bold**");
+    await expect(page.locator(".cm-content")).not.toContainText("*soft*");
+    await expect(page.locator(".cm-content")).not.toContainText("- item");
+    await expect(page.locator(".cm-content")).not.toContainText("[site](");
+    await expect(page.locator(".cm-content")).not.toContainText("```");
+    await expect(page.locator(".cm-content")).not.toContainText("---");
   });
 
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
@@ -113,10 +131,14 @@ async function expectToolbarCommand(page: Page, title: string, expectedText: str
   await page.goto("/");
   await page.locator(".cm-content").click();
   await page.getByTitle(title).click();
-  await expect(page.locator(".cm-content")).toContainText(expectedText);
+  await expectEditorSource(page, expectedText);
 }
 
 async function replaceEditorText(page: Page, text: string) {
+  await setEditorText(page, text, true);
+}
+
+async function setEditorText(page: Page, text: string, selectText = false) {
   await page.evaluate((nextText) => {
     const view = (window as unknown as { __markdownEditorView?: { focus: () => void; state: { doc: { length: number } }; dispatch: (spec: unknown) => void } }).__markdownEditorView;
 
@@ -126,10 +148,14 @@ async function replaceEditorText(page: Page, text: string) {
 
     view.dispatch({
       changes: { from: 0, to: view.state.doc.length, insert: nextText },
-      selection: { anchor: 0, head: nextText.length },
+      selection: { anchor: nextText.length, head: nextText.length },
     });
     view.focus();
   }, text);
+
+  if (selectText) {
+    await selectAllEditorText(page);
+  }
 }
 
 async function selectAllEditorText(page: Page) {
@@ -142,5 +168,25 @@ async function selectAllEditorText(page: Page) {
 
     view.dispatch({ selection: { anchor: 0, head: view.state.doc.length } });
     view.focus();
+  });
+}
+
+async function expectEditorSource(page: Page, expectedText: string) {
+  await expect.poll(() => getEditorSource(page)).toContain(expectedText);
+}
+
+async function expectEditorSourceNot(page: Page, expectedText: string) {
+  await expect.poll(() => getEditorSource(page)).not.toContain(expectedText);
+}
+
+async function getEditorSource(page: Page) {
+  return page.evaluate(() => {
+    const view = (window as unknown as { __markdownEditorView?: { state: { doc: { toString: () => string } } } }).__markdownEditorView;
+
+    if (!view) {
+      throw new Error("CodeMirror editor view is not available");
+    }
+
+    return view.state.doc.toString();
   });
 }

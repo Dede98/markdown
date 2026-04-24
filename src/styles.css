@@ -284,6 +284,11 @@ button {
   color: #1a1a1e;
   font-weight: 700;
   line-height: 1.18;
+  text-decoration: none;
+}
+
+.cm-md-heading span {
+  text-decoration: none !important;
 }
 
 .cm-md-heading-1 {
@@ -337,6 +342,34 @@ button {
   padding-left: 3px;
 }
 
+.cm-md-bullet-widget {
+  display: inline-block;
+  width: 0.38em;
+  height: 0.38em;
+  border-radius: 999px;
+  margin: 0 0.64em 0 0.24em;
+  background: #8a8a92;
+  vertical-align: 0.12em;
+}
+
+.cm-md-task-widget {
+  display: inline-block;
+  width: 0.82em;
+  height: 0.82em;
+  border: 1.5px solid #9a9aa2;
+  border-radius: 3px;
+  margin: 0 0.52em 0 0.08em;
+  vertical-align: -0.08em;
+}
+
+.cm-md-task-widget-checked {
+  border-color: #2d5b8c;
+  background:
+    linear-gradient(135deg, transparent 46%, #ffffff 48%, #ffffff 58%, transparent 60%),
+    linear-gradient(45deg, transparent 52%, #ffffff 54%, #ffffff 64%, transparent 66%),
+    #2d5b8c;
+}
+
 .cm-md-list-marker,
 .cm-md-task-marker {
   color: #9a9aa2;
@@ -357,9 +390,26 @@ button {
   color: #cdd0d4;
 }
 
+.cm-md-rule-widget {
+  display: block;
+  width: 48px;
+  height: 1px;
+  margin: 0.72em 0;
+  background: #cdd0d4;
+}
+
 .cm-md-code-fence {
   color: #5e5e66;
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.cm-md-code-line {
+  background: #f3f3f4;
+  color: #2a2a2e;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.9em;
+  line-height: 1.55;
+  padding-left: 14px;
 }
 
 @media (max-width: 860px) {

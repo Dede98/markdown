@@ -1,8 +1,11 @@
 import { RangeSetBuilder } from "@codemirror/state";
-import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate } from "@codemirror/view";
+import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
 
 function buildDecorations(view: EditorView): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const selectionLineStart = view.state.doc.lineAt(view.state.selection.main.from).number;
+  const selectionLineEnd = view.state.doc.lineAt(view.state.selection.main.to).number;
+  let inCodeFence = false;
 
   for (const { from, to } of view.visibleRanges) {
     let position = from;
@@ -14,43 +17,50 @@ function buildDecorations(view: EditorView): DecorationSet {
       const taskList = text.match(/^(\s*)[-*]\s+\[([ xX])\]\s+/);
       const unorderedList = text.match(/^(\s*)[-*]\s+/);
       const orderedList = text.match(/^(\s*)\d+[.)]\s+/);
+      const fence = text.match(/^```\s*([A-Za-z0-9_-]+)?\s*$/);
+      const activeSyntax = line.number >= selectionLineStart && line.number <= selectionLineEnd;
+      const codeLine = inCodeFence && !fence;
 
       if (heading) {
         builder.add(line.from, line.from, Decoration.line({ class: `cm-md-heading cm-md-heading-${heading[1].length}` }));
-        builder.add(line.from, line.from + heading[0].length, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, line.from, line.from + heading[0].length, activeSyntax);
       }
 
       if (taskList) {
         builder.add(line.from, line.from, Decoration.line({ class: "cm-md-list cm-md-task-list" }));
-        builder.add(line.from, line.from + taskList[0].length, Decoration.mark({ class: "cm-md-syntax cm-md-task-marker" }));
+        decorateSyntax(builder, line.from, line.from + taskList[0].length, activeSyntax, "cm-md-syntax cm-md-task-marker", new TaskMarkerWidget(taskList[2].toLowerCase() === "x"));
       } else if (unorderedList) {
         builder.add(line.from, line.from, Decoration.line({ class: "cm-md-list" }));
-        builder.add(line.from, line.from + unorderedList[0].length, Decoration.mark({ class: "cm-md-syntax cm-md-list-marker" }));
+        decorateSyntax(builder, line.from, line.from + unorderedList[0].length, activeSyntax, "cm-md-syntax cm-md-list-marker", new BulletMarkerWidget());
       } else if (orderedList) {
         builder.add(line.from, line.from, Decoration.line({ class: "cm-md-list" }));
         builder.add(line.from, line.from + orderedList[0].length, Decoration.mark({ class: "cm-md-syntax cm-md-list-marker" }));
       }
 
+      if (codeLine) {
+        builder.add(line.from, line.from, Decoration.line({ class: "cm-md-code-line" }));
+      }
+
       for (const match of text.matchAll(/\*\*([^*\n]+)\*\*/g)) {
         const start = line.from + match.index!;
-        builder.add(start, start + 2, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, start, start + 2, activeSyntax);
         builder.add(start + 2, start + match[0].length - 2, Decoration.mark({ class: "cm-md-bold" }));
-        builder.add(start + match[0].length - 2, start + match[0].length, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, start + match[0].length - 2, start + match[0].length, activeSyntax);
       }
 
       for (const match of text.matchAll(/(^|[^*])\*([^*\n]+)\*/g)) {
         const markerOffset = match[1].length;
         const start = line.from + match.index! + markerOffset;
-        builder.add(start, start + 1, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, start, start + 1, activeSyntax);
         builder.add(start + 1, start + match[0].length - markerOffset - 1, Decoration.mark({ class: "cm-md-italic" }));
-        builder.add(start + match[0].length - markerOffset - 1, start + match[0].length - markerOffset, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, start + match[0].length - markerOffset - 1, start + match[0].length - markerOffset, activeSyntax);
       }
 
       for (const match of text.matchAll(/`([^`\n]+)`/g)) {
         const start = line.from + match.index!;
-        builder.add(start, start + 1, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, start, start + 1, activeSyntax);
         builder.add(start + 1, start + match[0].length - 1, Decoration.mark({ class: "cm-md-inline-code" }));
-        builder.add(start + match[0].length - 1, start + match[0].length, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, start + match[0].length - 1, start + match[0].length, activeSyntax);
       }
 
       for (const match of text.matchAll(/\[([^\]\n]+)\]\(([^)\n]+)\)/g)) {
@@ -59,25 +69,37 @@ function buildDecorations(view: EditorView): DecorationSet {
         const labelEnd = labelStart + match[1].length;
         const urlStart = labelEnd + 2;
         const urlEnd = urlStart + match[2].length;
-        builder.add(start, labelStart, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, start, labelStart, activeSyntax);
         builder.add(labelStart, labelEnd, Decoration.mark({ class: "cm-md-link" }));
-        builder.add(labelEnd, urlStart, Decoration.mark({ class: "cm-md-syntax" }));
-        builder.add(urlStart, urlEnd, Decoration.mark({ class: "cm-md-link-url" }));
-        builder.add(urlEnd, urlEnd + 1, Decoration.mark({ class: "cm-md-syntax" }));
+        if (activeSyntax) {
+          builder.add(labelEnd, urlStart, Decoration.mark({ class: "cm-md-syntax" }));
+          builder.add(urlStart, urlEnd, Decoration.mark({ class: "cm-md-link-url" }));
+          builder.add(urlEnd, urlEnd + 1, Decoration.mark({ class: "cm-md-syntax" }));
+        } else {
+          builder.add(labelEnd, urlEnd + 1, Decoration.replace({}));
+        }
       }
 
       if (/^>\s/.test(text)) {
         builder.add(line.from, line.from, Decoration.line({ class: "cm-md-quote" }));
-        builder.add(line.from, line.from + 2, Decoration.mark({ class: "cm-md-syntax" }));
+        decorateSyntax(builder, line.from, line.from + 2, activeSyntax);
       }
 
       if (/^---+$/.test(text.trim())) {
         builder.add(line.from, line.from, Decoration.line({ class: "cm-md-rule" }));
-        builder.add(line.from, line.to, Decoration.mark({ class: "cm-md-syntax" }));
+        if (activeSyntax) {
+          builder.add(line.from, line.to, Decoration.mark({ class: "cm-md-syntax" }));
+        } else {
+          builder.add(line.from, line.to, Decoration.replace({ widget: new RuleWidget() }));
+        }
       }
 
-      if (/^```/.test(text)) {
+      if (fence) {
         builder.add(line.from, line.from, Decoration.line({ class: "cm-md-code-fence" }));
+        if (!activeSyntax) {
+          builder.add(line.from, line.to, Decoration.replace({}));
+        }
+        inCodeFence = !inCodeFence;
       }
 
       if (line.to + 1 > to) {
@@ -90,6 +112,51 @@ function buildDecorations(view: EditorView): DecorationSet {
   return builder.finish();
 }
 
+function decorateSyntax(builder: RangeSetBuilder<Decoration>, from: number, to: number, activeSyntax: boolean, className = "cm-md-syntax", widget?: WidgetType) {
+  if (from >= to) {
+    return;
+  }
+
+  if (activeSyntax) {
+    builder.add(from, to, Decoration.mark({ class: className }));
+    return;
+  }
+
+  builder.add(from, to, Decoration.replace(widget ? { widget } : {}));
+}
+
+class BulletMarkerWidget extends WidgetType {
+  toDOM() {
+    const marker = document.createElement("span");
+    marker.className = "cm-md-bullet-widget";
+    return marker;
+  }
+}
+
+class TaskMarkerWidget extends WidgetType {
+  constructor(private readonly checked: boolean) {
+    super();
+  }
+
+  eq(other: TaskMarkerWidget) {
+    return this.checked === other.checked;
+  }
+
+  toDOM() {
+    const marker = document.createElement("span");
+    marker.className = this.checked ? "cm-md-task-widget cm-md-task-widget-checked" : "cm-md-task-widget";
+    return marker;
+  }
+}
+
+class RuleWidget extends WidgetType {
+  toDOM() {
+    const rule = document.createElement("span");
+    rule.className = "cm-md-rule-widget";
+    return rule;
+  }
+}
+
 export const markdownPreview = ViewPlugin.fromClass(
   class {
     decorations: DecorationSet;
@@ -99,7 +166,7 @@ export const markdownPreview = ViewPlugin.fromClass(
     }
 
     update(update: ViewUpdate) {
-      if (update.docChanged || update.viewportChanged) {
+      if (update.docChanged || update.selectionSet || update.viewportChanged) {
         this.decorations = buildDecorations(update.view);
       }
     }

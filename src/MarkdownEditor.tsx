@@ -86,6 +86,7 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
       parent: containerRef.current,
       state: EditorState.create({
         doc: initialValueRef.current,
+        selection: { anchor: initialValueRef.current.length },
         extensions,
       }),
     });
