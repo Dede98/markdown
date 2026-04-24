@@ -19,6 +19,19 @@ test.describe("editor core", () => {
     await expectToolbarCommand(page, "Task list", "- [ ]");
   });
 
+  test("block toolbar commands insert real markdown lines", async ({ page }) => {
+    await page.goto("/");
+    await replaceEditorText(page, "before");
+
+    await page.getByTitle("Code block").click();
+    await expectEditorSource(page, "```\ncode\n```\n");
+    await expectEditorSourceNot(page, "\\n");
+
+    await page.getByTitle("Horizontal rule").click();
+    await expectEditorSource(page, "---\n");
+    await expectEditorSourceNot(page, "---\\n");
+  });
+
   test("inline toolbar commands toggle selected text without nesting", async ({ page }) => {
     await page.goto("/");
     await replaceEditorText(page, "focus");
@@ -101,13 +114,17 @@ test.describe("editor core", () => {
 
   test("inline markdown syntax appears only when the cursor is inside that range", async ({ page }) => {
     await page.goto("/");
-    await setEditorText(page, "**bold** plain");
+    await setEditorText(page, "**bold** plain `code`");
 
     await setCursorInsideText(page, "plain");
     await expect(page.locator(".cm-content")).not.toContainText("**bold**");
+    await expect(page.locator(".cm-content")).not.toContainText("`code`");
 
     await setCursorInsideText(page, "bold");
     await expect(page.locator(".cm-content")).toContainText("**bold**");
+
+    await setCursorInsideText(page, "code");
+    await expect(page.locator(".cm-content")).toContainText("`code`");
   });
 
   test("toolbar reflects the active cursor formatting", async ({ page }) => {

@@ -108,7 +108,7 @@ export function App() {
             <button className={activeFormat.italic ? "isActive" : undefined} aria-pressed={activeFormat.italic} title="Italic" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "*", after: "*", placeholder: "italic" }))}>
               <Italic size={14} />
             </button>
-            <button className={activeFormat.codeBlock || activeFormat.inlineCode ? "isActive" : undefined} aria-pressed={activeFormat.codeBlock || activeFormat.inlineCode} title="Code block" type="button" onClick={() => withEditor((view) => insertBlock(view, "```\\ncode\\n```\\n"))}>
+            <button className={activeFormat.codeBlock || activeFormat.inlineCode ? "isActive" : undefined} aria-pressed={activeFormat.codeBlock || activeFormat.inlineCode} title="Code block" type="button" onClick={() => withEditor((view) => insertBlock(view, "```\ncode\n```\n"))}>
               <Code2 size={14} />
             </button>
             <button className={activeFormat.link ? "isActive" : undefined} aria-pressed={activeFormat.link} title="Link" type="button" onClick={() => withEditor(insertLink)}>
@@ -127,7 +127,7 @@ export function App() {
             <button className={activeFormat.quote ? "isActive" : undefined} aria-pressed={activeFormat.quote} title="Blockquote" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "> "))}>
               <Quote size={14} />
             </button>
-            <button className={activeFormat.rule ? "isActive" : undefined} aria-pressed={activeFormat.rule} title="Horizontal rule" type="button" onClick={() => withEditor((view) => insertBlock(view, "---\\n"))}>
+            <button className={activeFormat.rule ? "isActive" : undefined} aria-pressed={activeFormat.rule} title="Horizontal rule" type="button" onClick={() => withEditor((view) => insertBlock(view, "---\n"))}>
               <Minus size={14} />
             </button>
           </div>
