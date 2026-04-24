@@ -15,6 +15,7 @@ test.describe("editor core", () => {
   test("toolbar commands write markdown into the editor buffer", async ({ page }) => {
     await expectToolbarCommand(page, "Bold", "**bold**");
     await expectToolbarCommand(page, "Italic", "*italic*");
+    await expectToolbarCommand(page, "Inline code", "`code`");
     await expectToolbarCommand(page, "Link", "[link](https://example.com)");
     await expectToolbarCommand(page, "Task list", "- [ ]");
   });
@@ -24,7 +25,7 @@ test.describe("editor core", () => {
     await replaceEditorText(page, "before");
 
     await page.getByTitle("Code block").click();
-    await expectEditorSource(page, "```\ncode\n```\n");
+    await expectEditorSource(page, "```js\ncode\n```\n");
     await expectEditorSourceNot(page, "\\n");
 
     await page.getByTitle("Horizontal rule").click();
@@ -155,6 +156,21 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).toContainText("- not a list");
     await expect(page.locator(".cm-content")).toContainText("**not bold**");
     await expect(page.locator(".cm-content")).toContainText("after");
+  });
+
+  test("code blocks highlight js syntax and horizontal rules span content width", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "```js\nconst value = callThing(\"ok\", 42); // note\n```\n\n---\n\nafter");
+
+    await expect(page.locator(".cm-md-code-keyword")).toContainText("const");
+    await expect(page.locator(".cm-md-code-function")).toContainText("callThing");
+    await expect(page.locator(".cm-md-code-string")).toContainText('"ok"');
+    await expect(page.locator(".cm-md-code-number")).toContainText("42");
+    await expect(page.locator(".cm-md-code-comment")).toContainText("// note");
+
+    const ruleWidth = await page.locator(".cm-md-rule-widget").evaluate((node) => node.getBoundingClientRect().width);
+    const ruleLineWidth = await page.locator(".cm-md-rule-widget").evaluate((node) => node.parentElement?.getBoundingClientRect().width ?? 0);
+    expect(ruleWidth).toBeGreaterThan(ruleLineWidth * 0.95);
   });
 
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {

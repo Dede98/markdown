@@ -4,6 +4,7 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 function buildDecorations(view: EditorView): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   let inCodeFence = false;
+  let codeFenceLanguage: string | null = null;
 
   for (const { from, to } of view.visibleRanges) {
     let position = from;
@@ -21,6 +22,7 @@ function buildDecorations(view: EditorView): DecorationSet {
 
       if (codeLine) {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-code-line" }));
+        decorateCodeLine(decorations, line, codeFenceLanguage);
         if (line.to + 1 > to) {
           break;
         }
@@ -106,7 +108,13 @@ function buildDecorations(view: EditorView): DecorationSet {
         if (!lineActive) {
           addDecoration(decorations, line.from, line.to, Decoration.replace({}));
         }
-        inCodeFence = !inCodeFence;
+        if (inCodeFence) {
+          inCodeFence = false;
+          codeFenceLanguage = null;
+        } else {
+          inCodeFence = true;
+          codeFenceLanguage = fence[1]?.toLowerCase() ?? null;
+        }
       }
 
       if (line.to + 1 > to) {
@@ -154,6 +162,43 @@ function decorateSyntax(decorations: Range<Decoration>[], from: number, to: numb
 
 function addDecoration(decorations: Range<Decoration>[], from: number, to: number, decoration: Decoration) {
   decorations.push(decoration.range(from, to));
+}
+
+function decorateCodeLine(decorations: Range<Decoration>[], line: { from: number; text: string }, language: string | null) {
+  if (!language || !["js", "jsx", "javascript", "ts", "tsx", "typescript"].includes(language)) {
+    return;
+  }
+
+  const tokenPattern =
+    /\/\/.*|\/\*.*?\*\/|(["'`])(?:\\.|(?!\1).)*\1|\b(?:as|async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|return|switch|throw|true|try|type|undefined|var|while)\b|\b\d+(?:\.\d+)?\b|[A-Za-z_$][\w$]*(?=\s*\()/g;
+
+  for (const match of line.text.matchAll(tokenPattern)) {
+    const text = match[0];
+    const from = line.from + match.index!;
+    const to = from + text.length;
+
+    addDecoration(decorations, from, to, Decoration.mark({ class: `cm-md-code-${getCodeTokenClass(text)}` }));
+  }
+}
+
+function getCodeTokenClass(token: string) {
+  if (token.startsWith("//") || token.startsWith("/*")) {
+    return "comment";
+  }
+
+  if (/^["'`]/.test(token)) {
+    return "string";
+  }
+
+  if (/^\d/.test(token)) {
+    return "number";
+  }
+
+  if (/^(?:as|async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|return|switch|throw|true|try|type|undefined|var|while)$/.test(token)) {
+    return "keyword";
+  }
+
+  return "function";
 }
 
 class BulletMarkerWidget extends WidgetType {

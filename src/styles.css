@@ -401,7 +401,7 @@ button {
 
 .cm-md-rule-widget {
   display: block;
-  width: 48px;
+  width: 100%;
   height: 1px;
   margin: 0.72em 0;
   background: #cdd0d4;
@@ -419,6 +419,28 @@ button {
   font-size: 0.9em;
   line-height: 1.55;
   padding-left: 14px;
+}
+
+.cm-md-code-keyword {
+  color: #8f3f71;
+  font-weight: 650;
+}
+
+.cm-md-code-string {
+  color: #5d742f;
+}
+
+.cm-md-code-number {
+  color: #2d5b8c;
+}
+
+.cm-md-code-comment {
+  color: #8a8a92;
+  font-style: italic;
+}
+
+.cm-md-code-function {
+  color: #8a5a1f;
 }
 
 @media (max-width: 860px) {

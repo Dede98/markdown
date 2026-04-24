@@ -1,6 +1,7 @@
 import type { EditorView } from "@codemirror/view";
 import {
   Bold,
+  Code,
   Code2,
   FileText,
   Heading1,
@@ -108,7 +109,10 @@ export function App() {
             <button className={activeFormat.italic ? "isActive" : undefined} aria-pressed={activeFormat.italic} title="Italic" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "*", after: "*", placeholder: "italic" }))}>
               <Italic size={14} />
             </button>
-            <button className={activeFormat.codeBlock || activeFormat.inlineCode ? "isActive" : undefined} aria-pressed={activeFormat.codeBlock || activeFormat.inlineCode} title="Code block" type="button" onClick={() => withEditor((view) => insertBlock(view, "```\ncode\n```\n"))}>
+            <button className={activeFormat.inlineCode ? "isActive" : undefined} aria-pressed={activeFormat.inlineCode} title="Inline code" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "`", after: "`", placeholder: "code" }))}>
+              <Code size={14} />
+            </button>
+            <button className={activeFormat.codeBlock ? "isActive" : undefined} aria-pressed={activeFormat.codeBlock} title="Code block" type="button" onClick={() => withEditor((view) => insertBlock(view, "```js\ncode\n```\n"))}>
               <Code2 size={14} />
             </button>
             <button className={activeFormat.link ? "isActive" : undefined} aria-pressed={activeFormat.link} title="Link" type="button" onClick={() => withEditor(insertLink)}>
