@@ -92,12 +92,26 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
 
     viewRef.current = view;
     onReady(view);
+    if (shouldExposeTestEditor()) {
+      getWindowWithEditor().__markdownEditorView = view;
+    }
 
     return () => {
+      if (shouldExposeTestEditor() && getWindowWithEditor().__markdownEditorView === view) {
+        delete getWindowWithEditor().__markdownEditorView;
+      }
       view.destroy();
       viewRef.current = null;
     };
   }, [onReady]);
 
   return <div className={zen ? "editorMount editorMountZen" : "editorMount"} ref={containerRef} />;
+}
+
+function getWindowWithEditor() {
+  return window as Window & { __markdownEditorView?: EditorView };
+}
+
+function shouldExposeTestEditor() {
+  return window.location.hostname === "127.0.0.1" && window.location.port === "5173";
 }
