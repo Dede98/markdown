@@ -55,6 +55,17 @@ test.describe("editor core", () => {
     await expectEditorSource(page, "[example](https://local-first.test)");
   });
 
+  test("tab key inserts a tab into the editor source", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "");
+
+    await page.keyboard.press("Tab");
+    await page.keyboard.insertText("indented");
+
+    await expectEditorSource(page, "\tindented");
+    await expect.poll(() => page.evaluate(() => document.activeElement?.closest(".cm-editor") !== null)).toBe(true);
+  });
+
   test("line commands normalize multi-line selections", async ({ page }) => {
     await page.goto("/");
     await replaceEditorText(page, "first\nsecond");

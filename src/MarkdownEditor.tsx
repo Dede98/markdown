@@ -1,7 +1,7 @@
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
-import { EditorState, type Extension } from "@codemirror/state";
+import { EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
@@ -39,6 +39,12 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       markdown(),
       markdownPreview,
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+      Prec.highest(
+        keymap.of([
+          { key: "Tab", run: insertTab, preventDefault: true },
+          { key: "Shift-Tab", run: indentLess, preventDefault: true },
+        ]),
+      ),
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
