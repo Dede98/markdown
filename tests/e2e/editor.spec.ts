@@ -131,6 +131,15 @@ test.describe("editor core", () => {
     await expect(page.getByTitle("Bulleted list")).toHaveAttribute("aria-pressed", "true");
   });
 
+  test("code blocks can contain markdown-looking lines without crashing preview", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "```js\n- not a list\n**not bold**\n```\n\nafter");
+
+    await expect(page.locator(".cm-content")).toContainText("- not a list");
+    await expect(page.locator(".cm-content")).toContainText("**not bold**");
+    await expect(page.locator(".cm-content")).toContainText("after");
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
