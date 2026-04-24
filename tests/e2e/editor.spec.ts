@@ -160,17 +160,34 @@ test.describe("editor core", () => {
 
   test("code blocks highlight js syntax and horizontal rules span content width", async ({ page }) => {
     await page.goto("/");
-    await setEditorText(page, "```js\nconst value = callThing(\"ok\", 42); // note\n```\n\n---\n\nafter");
+    await setEditorText(page, "```\nconst value = callThing(\"ok\", 42); // note\n() => {\n```\n\n---\n\nafter");
 
     await expect(page.locator(".cm-md-code-keyword")).toContainText("const");
     await expect(page.locator(".cm-md-code-function")).toContainText("callThing");
     await expect(page.locator(".cm-md-code-string")).toContainText('"ok"');
     await expect(page.locator(".cm-md-code-number")).toContainText("42");
     await expect(page.locator(".cm-md-code-comment")).toContainText("// note");
+    await expect(page.locator(".cm-md-code-operator").filter({ hasText: "=>" })).toBeVisible();
+    await expect.poll(() => page.locator(".cm-md-code-function").first().evaluate((node) => getComputedStyle(node).color)).not.toBe("rgb(42, 42, 46)");
 
     const ruleWidth = await page.locator(".cm-md-rule-widget").evaluate((node) => node.getBoundingClientRect().width);
     const ruleLineWidth = await page.locator(".cm-md-rule-widget").evaluate((node) => node.parentElement?.getBoundingClientRect().width ?? 0);
     expect(ruleWidth).toBeGreaterThan(ruleLineWidth * 0.95);
+  });
+
+  test("top chrome stays pinned while the document scrolls", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, Array.from({ length: 70 }, (_, index) => `Line ${index + 1}`).join("\n"));
+
+    await page.locator(".cm-scroller").evaluate((node) => {
+      node.scrollTop = node.scrollHeight;
+      node.dispatchEvent(new Event("scroll"));
+    });
+
+    await expect(page.locator(".topbar")).toBeInViewport();
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeInViewport();
+    await expect(page.locator(".topbar")).toHaveCSS("position", "sticky");
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toHaveCSS("position", "sticky");
   });
 
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {

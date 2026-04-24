@@ -38,7 +38,9 @@ button {
   position: relative;
   display: grid;
   grid-template-rows: 38px 49px minmax(0, 1fr) 32px;
+  height: 100vh;
   min-height: 100vh;
+  max-height: 100vh;
   overflow: hidden;
   background: #fbfbfa;
 }
@@ -48,7 +50,9 @@ button {
 }
 
 .topbar {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 20;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -132,7 +136,9 @@ button {
 }
 
 .toolbar {
-  position: relative;
+  position: sticky;
+  top: 38px;
+  z-index: 19;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
@@ -421,26 +427,30 @@ button {
   padding-left: 14px;
 }
 
-.cm-md-code-keyword {
+.cm-editor .cm-md-code-keyword {
   color: #8f3f71;
   font-weight: 650;
 }
 
-.cm-md-code-string {
+.cm-editor .cm-md-code-string {
   color: #5d742f;
 }
 
-.cm-md-code-number {
+.cm-editor .cm-md-code-number {
   color: #2d5b8c;
 }
 
-.cm-md-code-comment {
+.cm-editor .cm-md-code-comment {
   color: #8a8a92;
   font-style: italic;
 }
 
-.cm-md-code-function {
+.cm-editor .cm-md-code-function {
   color: #8a5a1f;
+}
+
+.cm-editor .cm-md-code-operator {
+  color: #6d7178;
 }
 
 @media (max-width: 860px) {

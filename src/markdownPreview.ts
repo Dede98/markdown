@@ -165,12 +165,12 @@ function addDecoration(decorations: Range<Decoration>[], from: number, to: numbe
 }
 
 function decorateCodeLine(decorations: Range<Decoration>[], line: { from: number; text: string }, language: string | null) {
-  if (!language || !["js", "jsx", "javascript", "ts", "tsx", "typescript"].includes(language)) {
+  if (language && !["js", "jsx", "javascript", "ts", "tsx", "typescript"].includes(language)) {
     return;
   }
 
   const tokenPattern =
-    /\/\/.*|\/\*.*?\*\/|(["'`])(?:\\.|(?!\1).)*\1|\b(?:as|async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|return|switch|throw|true|try|type|undefined|var|while)\b|\b\d+(?:\.\d+)?\b|[A-Za-z_$][\w$]*(?=\s*\()/g;
+    /\/\/.*|\/\*.*?\*\/|(["'`])(?:\\.|(?!\1).)*\1|\b(?:as|async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|return|switch|throw|true|try|type|undefined|var|while)\b|\b\d+(?:\.\d+)?\b|[A-Za-z_$][\w$]*(?=\s*\()|=>|[{}()[\].,;=]/g;
 
   for (const match of line.text.matchAll(tokenPattern)) {
     const text = match[0];
@@ -196,6 +196,10 @@ function getCodeTokenClass(token: string) {
 
   if (/^(?:as|async|await|break|case|catch|class|const|continue|default|else|export|extends|false|finally|for|from|function|if|import|interface|let|new|null|return|switch|throw|true|try|type|undefined|var|while)$/.test(token)) {
     return "keyword";
+  }
+
+  if (/^(?:=>|[{}()[\].,;=])$/.test(token)) {
+    return "operator";
   }
 
   return "function";
