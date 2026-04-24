@@ -2,7 +2,7 @@ import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { EditorState, type Extension } from "@codemirror/state";
-import { drawSelection, EditorView, highlightActiveLine, keymap, lineNumbers } from "@codemirror/view";
+import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import { markdownPreview } from "./markdownPreview";
 
@@ -17,6 +17,7 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
+  const initialValueRef = useRef(value);
 
   onChangeRef.current = onChange;
 
@@ -26,7 +27,6 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
     }
 
     const extensions: Extension[] = [
-      lineNumbers(),
       history(),
       drawSelection(),
       indentOnInput(),
@@ -46,20 +46,20 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
         "&": {
           height: "100%",
           backgroundColor: "transparent",
-          color: "#202124",
-          fontSize: zen ? "18px" : "16px",
+          color: "#2a2a2e",
+          fontSize: "18px",
         },
         ".cm-scroller": {
-          fontFamily: '"Avenir Next", Inter, ui-sans-serif, system-ui, sans-serif',
-          lineHeight: "1.72",
-          padding: zen ? "10vh 0 14vh" : "48px 0 72px",
+          fontFamily: 'Charter, "Iowan Old Style", "New York", Georgia, serif',
+          lineHeight: "1.65",
+          padding: "0",
         },
         ".cm-content": {
-          maxWidth: zen ? "760px" : "900px",
+          maxWidth: "700px",
           width: "100%",
           margin: "0 auto",
-          padding: zen ? "0 32px" : "0 44px",
-          caretColor: "#1b5e55",
+          padding: "0 32px",
+          caretColor: "#2d5b8c",
         },
         ".cm-line": {
           padding: "0 2px",
@@ -67,14 +67,14 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
         ".cm-gutters": {
           backgroundColor: "transparent",
           border: "none",
-          color: zen ? "transparent" : "#a4aaa7",
+          color: "transparent",
         },
         ".cm-activeLine": {
-          backgroundColor: "rgba(34, 91, 80, 0.055)",
+          backgroundColor: "transparent",
         },
         ".cm-activeLineGutter": {
           backgroundColor: "transparent",
-          color: "#6f7772",
+          color: "transparent",
         },
         "&.cm-focused": {
           outline: "none",
@@ -85,7 +85,7 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
     const view = new EditorView({
       parent: containerRef.current,
       state: EditorState.create({
-        doc: value,
+        doc: initialValueRef.current,
         extensions,
       }),
     });
@@ -97,7 +97,7 @@ export function MarkdownEditor({ value, zen, onChange, onReady }: MarkdownEditor
       view.destroy();
       viewRef.current = null;
     };
-  }, [onReady, value, zen]);
+  }, [onReady]);
 
-  return <div className="editorMount" ref={containerRef} />;
+  return <div className={zen ? "editorMount editorMountZen" : "editorMount"} ref={containerRef} />;
 }

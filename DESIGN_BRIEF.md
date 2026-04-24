@@ -1,6 +1,6 @@
 # Design Brief
 
-Design exploration is in progress.
+Design exploration has produced first-pass Pencil frames in `markdown.pen`.
 
 ## Product
 
@@ -27,15 +27,35 @@ The app should feel focused, quiet, and document-centric. It should not feel lik
 4. Comments and annotations sidebar.
 5. Minimal open/recent documents view.
 
+## Current Design Artifacts
+
+`markdown.pen` contains light and dark explorations for:
+
+- Zen Mode.
+- Normal Mode.
+- Collaboration with human and AI-agent presence.
+- Comments sidebar.
+- Recent documents/open document view.
+
+The current editor-core spike should only implement the local Zen and Normal editor direction. Collaboration, comments, history, recent documents, and cloud account states remain design references until those product milestones are explicitly started.
+
 ## Zen Mode
 
 Zen Mode should include:
 
 - Main editor surface.
-- Minimal file title/status.
+- Minimal Mac-style titlebar with traffic lights and a centered filename.
 - No persistent toolbar.
 - Minimal visual noise.
 - Strong writing focus.
+- A subtle Zen Mode indicator may sit at the bottom edge.
+
+Visual notes from the design:
+
+- Warm off-white background: `#FBFBFA`.
+- Centered writing column around 700px wide.
+- Document text uses a serif writing face such as Charter where available.
+- Metadata is small, muted, and secondary to the document body.
 
 ## Normal Mode
 
@@ -44,10 +64,19 @@ Normal Mode should include:
 - Main editor surface.
 - Toolbar for common Markdown actions.
 - File controls.
-- Optional outline/status area.
+- Optional utility controls for sidebar/search and document tools.
+- A bottom status bar with local path, Markdown mode, and cursor/status metadata.
 - Entry points for comments and collaboration when available.
 
 Toolbar controls should feel like editing tools, not marketing buttons.
+
+Visual notes from the design:
+
+- Keep the Mac titlebar compact at about 38px tall.
+- Keep the toolbar compact at about 48px tall, centered, and icon-led.
+- Use thin separators and low-contrast borders.
+- Use a 700px writing column with generous top spacing.
+- Avoid card framing around the editor surface.
 
 ## Collaboration
 
@@ -60,6 +89,8 @@ Collaboration UI should show:
 - Comment activity when relevant.
 
 AI-agent presence should make clear which user account owns or authorized the agent.
+
+The Pencil collaboration frames show both light and dark treatments with presence avatars, remote selection highlights, named cursor tags, and an AI tag that includes the authorizing user. These are reference frames only for the current local editor spike.
 
 ## Comments
 
@@ -74,6 +105,8 @@ Possible UI patterns:
 
 The underlying `.md` file should remain readable in other Markdown tools.
 
+The Pencil comments frames place comment markers in the document margin and threads in a right sidebar. This supports the product direction that comments are metadata anchored to Markdown, not normal visible Markdown content.
+
 ## Visual Direction
 
 - Native Mac feel.
@@ -83,6 +116,14 @@ The underlying `.md` file should remain readable in other Markdown tools.
 - No oversized hero areas.
 - No decorative card-heavy dashboard layout.
 - No one-note color palette.
+
+First implementation target:
+
+- Light local editor UI.
+- Native Mac chrome cues.
+- Serif document typography paired with Inter/system UI chrome.
+- Muted separators: `#E5E5EA`.
+- Text palette around `#1A1A1E`, `#2A2A2E`, `#5E5E66`, and `#9A9AA2`.
 
 ## Open Design Questions
 
