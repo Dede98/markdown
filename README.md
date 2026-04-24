@@ -8,7 +8,7 @@ The product goal is a focused Markdown editor that keeps `.md` files as the cano
 
 Planning and design exploration are in progress.
 
-No framework, package manager, or runtime has been selected in code yet. The current direction is documented in the planning files below.
+A first editor-core spike exists on the `spike/editor-core` branch using Vite, React, TypeScript, CodeMirror 6, and lucide icons.
 
 ## Planning Docs
 
@@ -18,6 +18,27 @@ No framework, package manager, or runtime has been selected in code yet. The cur
 - [DESIGN_BRIEF.md](DESIGN_BRIEF.md): design brief and future design notes
 - [AGENTS.md](AGENTS.md): canonical agent instructions
 - [CLAUDE.md](CLAUDE.md): Claude Code compatibility wrapper importing `AGENTS.md`
+
+## Development
+
+Install dependencies:
+
+```sh
+pnpm install
+```
+
+Start the web spike:
+
+```sh
+pnpm dev
+```
+
+Run checks:
+
+```sh
+pnpm typecheck
+pnpm build
+```
 
 ## Core Direction
 

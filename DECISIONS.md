@@ -102,3 +102,17 @@ Rule:
 
 - Put shared agent instructions in `AGENTS.md`.
 - Keep `CLAUDE.md` as an import wrapper unless there is a documented Claude-specific reason to extend it.
+
+## 9. Vite/React For The First Spike
+
+Decision: Use Vite, React, and TypeScript for the first editor-core spike.
+
+Reason:
+
+- It is fast to validate CodeMirror behavior.
+- It can later be wrapped by Tauri.
+- It keeps the web and desktop UI path aligned.
+
+Scope:
+
+- This is a spike decision, not yet a permanent product framework commitment.

@@ -2,9 +2,17 @@
 
 ## Current Phase
 
-This is a greenfield project. No framework or package manager exists yet.
+This is a greenfield project in spike phase.
 
 This document records the intended architecture direction before implementation starts.
+
+The first editor-core spike uses:
+
+- Vite
+- React
+- TypeScript
+- CodeMirror 6
+- lucide-react
 
 ## Source Of Truth
 

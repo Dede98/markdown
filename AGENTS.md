@@ -2,7 +2,9 @@
 
 ## Project Status
 
-This is a greenfield project in planning phase. Do not assume a framework, package manager, or runtime exists until the repository is scaffolded.
+This is a greenfield project in planning and spike phase.
+
+The first editor-core spike uses Vite, React, TypeScript, CodeMirror 6, and lucide-react.
 
 ## Product Direction
 
@@ -27,6 +29,13 @@ Default technical direction:
 - Yjs for future realtime collaboration.
 - App-owned DB/S3 for the first cloud storage milestone.
 - Third-party storage providers come later as adapters.
+
+## Commands
+
+- Install dependencies: `pnpm install`
+- Start dev server: `pnpm dev`
+- Typecheck: `pnpm typecheck`
+- Build: `pnpm build`
 
 ## Planning And Design Docs
 
