@@ -36,6 +36,7 @@ Default technical direction:
 - Start dev server: `pnpm dev`
 - Typecheck: `pnpm typecheck`
 - Build: `pnpm build`
+- Browser E2E: `pnpm test:e2e`
 
 ## Planning And Design Docs
 

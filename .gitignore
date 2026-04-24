@@ -7,6 +7,10 @@ build/
 .vite/
 .turbo/
 
+# Test artifacts
+playwright-report/
+test-results/
+
 # Tauri / Rust outputs
 src-tauri/target/
 target/

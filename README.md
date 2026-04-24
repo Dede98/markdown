@@ -38,6 +38,7 @@ Run checks:
 ```sh
 pnpm typecheck
 pnpm build
+pnpm test:e2e
 ```
 
 ## Core Direction
