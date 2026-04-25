@@ -482,6 +482,9 @@ class TableWidget extends WidgetType {
   }
 
   eq(other: TableWidget): boolean {
+    // Strict deep-compare. CodeMirror still keeps the DOM mounted during
+    // typing because `updateDOM` below patches cells in place, leaving the
+    // focused cell untouched so the contenteditable cursor is preserved.
     if (this.rows.length !== other.rows.length) {
       return false;
     }
@@ -493,12 +496,16 @@ class TableWidget extends WidgetType {
         return false;
       }
     }
-    // Compare row/column shape only — skip cell text. Same-shape widgets are
-    // treated as equal so CodeMirror keeps the existing DOM mid-edit, which
-    // is what preserves the contenteditable cursor while the user types.
     for (let r = 0; r < this.rows.length; r += 1) {
-      if (this.rows[r].length !== other.rows[r].length) {
+      const a = this.rows[r];
+      const b = other.rows[r];
+      if (a.length !== b.length) {
         return false;
+      }
+      for (let c = 0; c < a.length; c += 1) {
+        if (a[c] !== b[c]) {
+          return false;
+        }
       }
     }
     return true;
@@ -533,7 +540,7 @@ class TableWidget extends WidgetType {
         for (let c = 0; c < colCount; c += 1) {
           const cell = cells[idx];
           idx += 1;
-          row.push(normalizeCellText(cell?.textContent));
+          row.push(readCellSource(cell));
         }
         newRows.push(row);
       }
@@ -549,31 +556,59 @@ class TableWidget extends WidgetType {
       });
     };
 
-    const onCellInput = () => {
+    const onCellInput = (event: Event) => {
+      const cell = event.currentTarget as HTMLTableCellElement;
+      // While the user is typing the cell holds raw markdown as plain text.
+      // Sync the data attribute so `commitFromDOM` and `updateDOM` always
+      // read the source of truth from the same place.
+      cell.dataset.mdSource = normalizeCellText(cell.textContent);
       commitFromDOM();
     };
 
-    // Block Enter and Tab from breaking the cell into multi-line content or
-    // moving focus out in surprising ways. Enter would inject a `<div>` /
-    // `<br>` via contenteditable defaults, which serializes to a literal
-    // newline that destroys the GFM table format.
+    // Block Enter from breaking the cell into multi-line content. Enter would
+    // inject a `<br>` / `<div>` via contenteditable defaults, which
+    // serializes to a literal newline that destroys the GFM table format.
     const onCellKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Enter") {
         event.preventDefault();
       }
     };
 
+    const onCellFocus = (event: Event) => {
+      const cell = event.currentTarget as HTMLTableCellElement;
+      // Switch the cell into raw-source editing mode: replace the rendered
+      // markdown HTML with the literal markdown text so the user types
+      // against the source. We restore the rendered view on blur.
+      const source = cell.dataset.mdSource ?? "";
+      if (cell.textContent !== source) {
+        cell.textContent = source;
+      }
+      placeCaretAtEnd(cell);
+    };
+
+    const onCellBlur = (event: Event) => {
+      const cell = event.currentTarget as HTMLTableCellElement;
+      // The data attribute is the source of truth (input handler keeps it
+      // in sync). Re-render markdown so bold / italic / strike / underline /
+      // inline code / link tokens display as styled HTML when not focused.
+      const source = cell.dataset.mdSource ?? normalizeCellText(cell.textContent);
+      renderCellRendered(cell, source);
+    };
+
     const buildCell = (tag: "th" | "td", text: string, align: TableAlign) => {
       const cell = document.createElement(tag);
-      cell.textContent = text;
       cell.contentEditable = "true";
       cell.spellcheck = false;
       cell.className = "cm-md-table-cell";
+      cell.dataset.mdSource = text;
       if (align) {
         cell.style.textAlign = align;
       }
+      renderCellRendered(cell, text);
       cell.addEventListener("input", onCellInput);
       cell.addEventListener("keydown", onCellKeyDown);
+      cell.addEventListener("focus", onCellFocus);
+      cell.addEventListener("blur", onCellBlur);
       return cell;
     };
 
@@ -600,6 +635,49 @@ class TableWidget extends WidgetType {
     return table;
   }
 
+  updateDOM(dom: HTMLElement): boolean {
+    // Patch the existing widget DOM in place to reflect this widget's rows.
+    // The currently focused cell is intentionally left alone so the user's
+    // contenteditable cursor and selection are preserved across the
+    // dispatch round-trip that fires on every keystroke.
+    if (!(dom instanceof HTMLTableElement)) {
+      return false;
+    }
+    const cells = dom.querySelectorAll<HTMLTableCellElement>("th, td");
+    const colCount = this.alignments.length;
+    const rowCount = this.rows.length;
+    if (cells.length !== rowCount * colCount) {
+      return false;
+    }
+    let idx = 0;
+    for (let r = 0; r < rowCount; r += 1) {
+      const row = this.rows[r];
+      if (row.length !== colCount) {
+        return false;
+      }
+      for (let c = 0; c < colCount; c += 1) {
+        const cell = cells[idx];
+        idx += 1;
+        const newSource = row[c] ?? "";
+        if (cell.dataset.mdSource === newSource) {
+          continue;
+        }
+        cell.dataset.mdSource = newSource;
+        if (cell === document.activeElement) {
+          // Active editor cell: only sync the text node if the typed value
+          // really diverged (e.g. external doc change / undo).
+          if (cell.textContent !== newSource) {
+            cell.textContent = newSource;
+            placeCaretAtEnd(cell);
+          }
+        } else {
+          renderCellRendered(cell, newSource);
+        }
+      }
+    }
+    return true;
+  }
+
   // Returning `true` keeps CodeMirror from intercepting clicks and key
   // events on the widget. With `false` CM6 calls `posAtCoords` on click and
   // dispatches a selection update at the block edge, which yanks focus out
@@ -608,6 +686,93 @@ class TableWidget extends WidgetType {
   // caret, accept keystrokes — does the right thing on its own here.
   ignoreEvent(): boolean {
     return true;
+  }
+}
+
+function readCellSource(cell: HTMLTableCellElement | undefined): string {
+  if (!cell) {
+    return "";
+  }
+  // Cell stays in sync via `data-md-source`; if the user is currently
+  // editing this cell the textContent IS the raw source, so the data attr
+  // and textContent agree. Reading the data attr also lets us serialize
+  // non-focused cells (which display rendered HTML) without losing markdown
+  // syntax characters that don't survive a textContent round-trip.
+  if (cell.dataset.mdSource !== undefined) {
+    return cell.dataset.mdSource;
+  }
+  return normalizeCellText(cell.textContent);
+}
+
+function placeCaretAtEnd(node: HTMLElement): void {
+  const selection = node.ownerDocument.getSelection();
+  if (!selection) {
+    return;
+  }
+  const range = node.ownerDocument.createRange();
+  range.selectNodeContents(node);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
+}
+
+// Inline markdown rendered for table cells. The cell holds the raw markdown
+// in `dataset.mdSource` and shows this rendered HTML when not focused;
+// `onCellFocus` swaps back to plain text for editing. Mirrors the inline
+// patterns the main editor recognizes so a bold cell stays bold, links look
+// like links, etc. — without requiring a full CM instance per cell.
+const CELL_INLINE_TOKEN_RE =
+  /\*\*([^*\n]+)\*\*|(?:^|[^*])\*([^*\n]+)\*|~~([^~\n]+)~~|<u>([^<\n]+)<\/u>|`([^`\n]+)`|\[([^\]\n]+)\]\(([^)\n]+)\)/g;
+
+function renderCellRendered(cell: HTMLElement, source: string): void {
+  cell.replaceChildren();
+  if (!source) {
+    return;
+  }
+  let lastIndex = 0;
+  // Reset regex state because RegExp objects with the `g` flag carry it.
+  CELL_INLINE_TOKEN_RE.lastIndex = 0;
+  for (let match = CELL_INLINE_TOKEN_RE.exec(source); match; match = CELL_INLINE_TOKEN_RE.exec(source)) {
+    const tokenStart = match.index + (match[2] !== undefined ? match[0].indexOf("*") : 0);
+    if (tokenStart > lastIndex) {
+      cell.appendChild(document.createTextNode(source.slice(lastIndex, tokenStart)));
+    }
+    if (match[1] !== undefined) {
+      const el = document.createElement("strong");
+      el.textContent = match[1];
+      cell.appendChild(el);
+    } else if (match[2] !== undefined) {
+      const el = document.createElement("em");
+      el.textContent = match[2];
+      cell.appendChild(el);
+    } else if (match[3] !== undefined) {
+      const el = document.createElement("span");
+      el.className = "cm-md-strike";
+      el.textContent = match[3];
+      cell.appendChild(el);
+    } else if (match[4] !== undefined) {
+      const el = document.createElement("span");
+      el.className = "cm-md-underline";
+      el.textContent = match[4];
+      cell.appendChild(el);
+    } else if (match[5] !== undefined) {
+      const el = document.createElement("code");
+      el.className = "cm-md-inline-code";
+      el.textContent = match[5];
+      cell.appendChild(el);
+    } else if (match[6] !== undefined && match[7] !== undefined) {
+      const el = document.createElement("a");
+      el.className = "cm-md-link";
+      el.textContent = match[6];
+      el.setAttribute("href", match[7]);
+      el.setAttribute("target", "_blank");
+      el.setAttribute("rel", "noopener noreferrer");
+      cell.appendChild(el);
+    }
+    lastIndex = match.index + match[0].length;
+  }
+  if (lastIndex < source.length) {
+    cell.appendChild(document.createTextNode(source.slice(lastIndex)));
   }
 }
 

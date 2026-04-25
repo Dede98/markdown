@@ -281,6 +281,45 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-md-table tbody td").first()).toHaveText("1X");
   });
 
+  test("rendered table cells display inline markdown formatting when not focused", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "lead\n\n| **bold** | *italic* | ~~strike~~ |\n| --- | --- | --- |\n| `code` | <u>under</u> | plain |\n\ntail",
+    );
+    await setCursorInsideText(page, "lead");
+
+    // Inline tokens render as styled HTML inside the cells, not as raw chars.
+    await expect(page.locator(".cm-md-table thead th").nth(0).locator("strong")).toHaveText("bold");
+    await expect(page.locator(".cm-md-table thead th").nth(1).locator("em")).toHaveText("italic");
+    await expect(page.locator(".cm-md-table thead th").nth(2).locator(".cm-md-strike")).toHaveText("strike");
+    await expect(page.locator(".cm-md-table tbody td").nth(0).locator("code")).toHaveText("code");
+    await expect(page.locator(".cm-md-table tbody td").nth(1).locator(".cm-md-underline")).toHaveText("under");
+
+    // No raw markdown characters leak into the rendered cell text.
+    await expect(page.locator(".cm-md-table thead")).not.toContainText("**");
+    await expect(page.locator(".cm-md-table thead")).not.toContainText("~~");
+    await expect(page.locator(".cm-md-table tbody")).not.toContainText("<u>");
+  });
+
+  test("focusing a cell switches it to raw markdown for editing", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "lead\n\n| **bold** | plain |\n| --- | --- |\n| 1 | 2 |\n\ntail",
+    );
+
+    // While unfocused the bold cell has the rendered <strong>.
+    const headerCell = page.locator(".cm-md-table thead th").first();
+    await expect(headerCell.locator("strong")).toHaveText("bold");
+
+    // Click switches to raw text. The contenteditable swap happens on focus.
+    await headerCell.click();
+    await expect(headerCell).toHaveText("**bold**");
+    await expect(headerCell.locator("strong")).toHaveCount(0);
+  });
+
   test("pressing Enter inside a table cell does not break the row", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
