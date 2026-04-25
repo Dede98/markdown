@@ -175,9 +175,14 @@ button {
 
 /* macOS Tauri shell: titleBarStyle "Overlay" leaves the traffic-light buttons
  * floating at the top-left of the window. Reserve space inside the topbar so
- * file actions and the centered title cluster don't collide with them. */
+ * file actions and the centered title cluster don't collide with them, and
+ * suppress text selection / caret cursor in the drag region so a click drags
+ * the window instead of starting a text-selection gesture. */
 :root[data-tauri="1"] .topbar {
   padding-left: 88px;
+  user-select: none;
+  -webkit-user-select: none;
+  cursor: default;
 }
 
 :root[data-tauri="1"] .titleCluster {

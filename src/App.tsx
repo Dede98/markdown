@@ -384,6 +384,11 @@ export function App() {
           if (!target.closest("[data-tauri-drag-region]")) {
             return;
           }
+          // WebKit otherwise picks up the mousedown as the start of a text
+          // selection on neighboring text nodes, which races and wins against
+          // the async IPC call into Rust. Suppressing the default selection
+          // gesture lets `startDragging` capture the drag cleanly.
+          event.preventDefault();
           if (event.detail === 2) {
             void appWindow.toggleMaximize();
           } else {
