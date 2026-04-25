@@ -37,7 +37,14 @@ function buildDecorations(view: EditorView): DecorationSet {
 
       if (taskList) {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list cm-md-task-list" }));
-        decorateSyntax(decorations, line.from, line.from + taskList[0].length, lineActive, "cm-md-syntax cm-md-task-marker", new TaskMarkerWidget(taskList[2].toLowerCase() === "x"));
+        decorateSyntax(
+          decorations,
+          line.from,
+          line.from + taskList[0].length,
+          lineActive,
+          "cm-md-syntax cm-md-task-marker",
+          new TaskMarkerWidget(taskList[2].toLowerCase() === "x", line.from, line.from + taskList[0].length),
+        );
       } else if (unorderedList) {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list" }));
         decorateSyntax(decorations, line.from, line.from + unorderedList[0].length, lineActive, "cm-md-syntax cm-md-list-marker", new BulletMarkerWidget());
@@ -214,18 +221,53 @@ class BulletMarkerWidget extends WidgetType {
 }
 
 class TaskMarkerWidget extends WidgetType {
-  constructor(private readonly checked: boolean) {
+  constructor(
+    private readonly checked: boolean,
+    private readonly from: number,
+    private readonly to: number,
+  ) {
     super();
   }
 
   eq(other: TaskMarkerWidget) {
-    return this.checked === other.checked;
+    return this.checked === other.checked && this.from === other.from && this.to === other.to;
   }
 
-  toDOM() {
+  toDOM(view: EditorView) {
     const marker = document.createElement("span");
     marker.className = this.checked ? "cm-md-task-widget cm-md-task-widget-checked" : "cm-md-task-widget";
+    marker.setAttribute("role", "checkbox");
+    marker.setAttribute("aria-checked", String(this.checked));
+    marker.tabIndex = 0;
+    marker.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      this.toggle(view);
+    });
+    marker.addEventListener("keydown", (event) => {
+      if (event.key === " " || event.key === "Enter") {
+        event.preventDefault();
+        this.toggle(view);
+      }
+    });
     return marker;
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+
+  private toggle(view: EditorView) {
+    const text = view.state.doc.sliceString(this.from, this.to);
+    const replaced = this.checked ? text.replace(/\[[xX]\]/, "[ ]") : text.replace(/\[ \]/, "[x]");
+
+    if (replaced === text) {
+      return;
+    }
+
+    view.dispatch({
+      changes: { from: this.from, to: this.to, insert: replaced },
+      userEvent: "input.toggle",
+    });
   }
 }
 

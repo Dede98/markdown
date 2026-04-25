@@ -184,6 +184,18 @@ export function handleBackspace(view: EditorView): boolean {
     return true;
   }
 
+  const headingPrefix = line.text.match(/^(#{1,6}\s+)/);
+
+  if (headingPrefix && cursor === line.from + headingPrefix[1].length) {
+    view.dispatch({
+      changes: { from: line.from, to: line.from + headingPrefix[1].length, insert: "" },
+      selection: { anchor: line.from },
+      userEvent: "delete",
+    });
+
+    return true;
+  }
+
   return false;
 }
 

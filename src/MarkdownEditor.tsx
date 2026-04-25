@@ -5,7 +5,9 @@ import { EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
+import { autoPairExtension, linkPasteExtension } from "./editorInputs";
 import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
+import { insertLink, wrapSelection } from "./markdownCommands";
 import { markdownPreview } from "./markdownPreview";
 
 type MarkdownEditorProps = {
@@ -48,8 +50,11 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
           { key: "Shift-Tab", run: handleListShiftTab },
           { key: "Tab", run: insertTab, preventDefault: true },
           { key: "Shift-Tab", run: indentLess, preventDefault: true },
+          ...buildFormattingKeymap(),
         ]),
       ),
+      autoPairExtension,
+      linkPasteExtension,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
       EditorView.updateListener.of((update) => {
@@ -134,4 +139,28 @@ function getWindowWithEditor() {
 
 function shouldExposeTestEditor() {
   return window.location.hostname === "127.0.0.1" && window.location.port === "5173";
+}
+
+function buildFormattingKeymap() {
+  const bold = (view: EditorView) => {
+    wrapSelection(view, { before: "**", after: "**", placeholder: "bold" });
+    return true;
+  };
+  const italic = (view: EditorView) => {
+    wrapSelection(view, { before: "*", after: "*", placeholder: "italic" });
+    return true;
+  };
+  const link = (view: EditorView) => {
+    insertLink(view);
+    return true;
+  };
+
+  return [
+    { key: "Mod-b", preventDefault: true, run: bold },
+    { key: "Ctrl-b", preventDefault: true, run: bold },
+    { key: "Mod-i", preventDefault: true, run: italic },
+    { key: "Ctrl-i", preventDefault: true, run: italic },
+    { key: "Mod-k", preventDefault: true, run: link },
+    { key: "Ctrl-k", preventDefault: true, run: link },
+  ];
 }

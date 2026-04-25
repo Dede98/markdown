@@ -314,6 +314,99 @@ test.describe("editor core", () => {
     await expectEditorSource(page, "```\n  first\n  second");
   });
 
+  test("backspace at the start of a heading removes the heading prefix", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "## Morning light");
+
+    await setEditorSelection(page, "## ".length);
+    await page.keyboard.press("Backspace");
+
+    await expectEditorSource(page, "Morning light");
+    await expectEditorSourceNot(page, "## Morning light");
+  });
+
+  test("typing an inline marker over a selection wraps the text", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "focus");
+
+    await setEditorSelection(page, 0, "focus".length);
+    await page.keyboard.insertText("*");
+
+    await expectEditorSource(page, "*focus*");
+    await expectEditorSourceNot(page, "*focu*");
+  });
+
+  test("typing a bracket over a selection wraps the text in markdown link syntax", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "site");
+
+    await setEditorSelection(page, 0, "site".length);
+    await page.keyboard.insertText("[");
+
+    await expectEditorSource(page, "[site]");
+  });
+
+  test("mod+b shortcut bolds the current selection", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "ready");
+
+    await setEditorSelection(page, 0, "ready".length);
+    await page.keyboard.press(modKeyShortcut("b"));
+
+    await expectEditorSource(page, "**ready**");
+  });
+
+  test("mod+i shortcut italicizes the current selection", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "soft");
+
+    await setEditorSelection(page, 0, "soft".length);
+    await page.keyboard.press(modKeyShortcut("i"));
+
+    await expectEditorSource(page, "*soft*");
+  });
+
+  test("mod+k shortcut wraps the selection in a markdown link", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "spec");
+
+    await setEditorSelection(page, 0, "spec".length);
+    await page.keyboard.press(modKeyShortcut("k"));
+
+    await expectEditorSource(page, "[spec](https://example.com)");
+  });
+
+  test("clicking the rendered task checkbox toggles the source between [ ] and [x]", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- [ ] write tests\n\nafter");
+
+    await setEditorSelection(page, "- [ ] write tests\n\nafter".length);
+    await page.locator(".cm-md-task-widget").first().click();
+
+    await expectEditorSource(page, "- [x] write tests");
+
+    await page.locator(".cm-md-task-widget").first().click();
+    await expectEditorSource(page, "- [ ] write tests");
+  });
+
+  test("pasting a url over a selection inserts a markdown link", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "spec");
+
+    await setEditorSelection(page, 0, "spec".length);
+    await pasteText(page, "https://local-first.test");
+
+    await expectEditorSource(page, "[spec](https://local-first.test)");
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
@@ -382,6 +475,33 @@ function skipMobileKeyboardTest(testInfo: TestInfo) {
     testInfo.project.name === "chrome-mobile",
     "Mobile chrome simulates a virtual keyboard; keymap-binding behavior is verified on desktop only.",
   );
+}
+
+function modKeyShortcut(letter: string) {
+  return `Control+${letter.toUpperCase()}`;
+}
+
+async function pasteText(page: Page, text: string) {
+  await page.evaluate((value) => {
+    const target = document.querySelector<HTMLElement>(".cm-content");
+
+    if (!target) {
+      throw new Error("CodeMirror content element is not available");
+    }
+
+    target.focus();
+
+    const data = new DataTransfer();
+    data.setData("text/plain", value);
+
+    const event = new ClipboardEvent("paste", {
+      bubbles: true,
+      cancelable: true,
+      clipboardData: data,
+    });
+
+    target.dispatchEvent(event);
+  }, text);
 }
 
 async function selectAllEditorText(page: Page) {
