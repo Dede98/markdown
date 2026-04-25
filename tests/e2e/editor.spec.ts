@@ -267,18 +267,19 @@ test.describe("editor core", () => {
       "before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nafter",
     );
 
-    // Click the first body cell to focus the contenteditable, then append.
     const firstCell = page.locator(".cm-md-table tbody tr").first().locator("td").first();
     await firstCell.click();
+    // Click swaps the cell into edit mode (an <input> takes its place) and
+    // selects the existing value, so typing replaces it. End-key first
+    // collapses selection to the right so `keyboard.type` appends.
+    const input = firstCell.locator("input.cm-md-table-cell-input");
+    await expect(input).toBeFocused();
+    await page.keyboard.press("End");
     await page.keyboard.type("X");
 
-    // Source should reflect the edit. The serialiser pads with single spaces
-    // around each cell so the original cell value `1` becomes `1X`.
     await expectEditorSource(page, "| 1X | 2 |");
-    // Widget structure stays — same row/col shape so eq() returns true and
-    // CodeMirror keeps the existing DOM (cursor preserved during typing).
     await expect(page.locator(".cm-md-table")).toHaveCount(1);
-    await expect(page.locator(".cm-md-table tbody td").first()).toHaveText("1X");
+    await expect(input).toHaveValue("1X");
   });
 
   test("rendered table cells display inline markdown formatting when not focused", async ({ page }) => {
@@ -289,20 +290,18 @@ test.describe("editor core", () => {
     );
     await setCursorInsideText(page, "lead");
 
-    // Inline tokens render as styled HTML inside the cells, not as raw chars.
     await expect(page.locator(".cm-md-table thead th").nth(0).locator("strong")).toHaveText("bold");
     await expect(page.locator(".cm-md-table thead th").nth(1).locator("em")).toHaveText("italic");
     await expect(page.locator(".cm-md-table thead th").nth(2).locator(".cm-md-strike")).toHaveText("strike");
     await expect(page.locator(".cm-md-table tbody td").nth(0).locator("code")).toHaveText("code");
     await expect(page.locator(".cm-md-table tbody td").nth(1).locator(".cm-md-underline")).toHaveText("under");
 
-    // No raw markdown characters leak into the rendered cell text.
     await expect(page.locator(".cm-md-table thead")).not.toContainText("**");
     await expect(page.locator(".cm-md-table thead")).not.toContainText("~~");
     await expect(page.locator(".cm-md-table tbody")).not.toContainText("<u>");
   });
 
-  test("focusing a cell switches it to raw markdown for editing", async ({ page }, testInfo) => {
+  test("clicking a cell mounts a text input prefilled with the raw markdown", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
     await setEditorText(
@@ -310,34 +309,31 @@ test.describe("editor core", () => {
       "lead\n\n| **bold** | plain |\n| --- | --- |\n| 1 | 2 |\n\ntail",
     );
 
-    // While unfocused the bold cell has the rendered <strong>.
     const headerCell = page.locator(".cm-md-table thead th").first();
     await expect(headerCell.locator("strong")).toHaveText("bold");
 
-    // Click switches to raw text. The contenteditable swap happens on focus.
     await headerCell.click();
-    await expect(headerCell).toHaveText("**bold**");
+    const input = headerCell.locator("input.cm-md-table-cell-input");
+    await expect(input).toBeFocused();
+    await expect(input).toHaveValue("**bold**");
+    // Rendered HTML is cleared while in edit mode.
     await expect(headerCell.locator("strong")).toHaveCount(0);
   });
 
-  test("pressing Enter inside a table cell does not break the row", async ({ page }, testInfo) => {
+  test("blurring the cell input restores the rendered HTML view", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
     await setEditorText(
       page,
-      "before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nafter",
+      "lead\n\n| **bold** | plain |\n| --- | --- |\n| 1 | 2 |\n\ntail",
     );
 
-    const firstCell = page.locator(".cm-md-table tbody tr").first().locator("td").first();
-    await firstCell.click();
-    await page.keyboard.press("Enter");
-    await page.keyboard.type("Y");
-
-    // Enter must be swallowed by the cell keydown handler — otherwise the
-    // contenteditable would inject a `<br>` / `<div>` that serialises to a
-    // newline and destroys the GFM row.
-    await expectEditorSource(page, "| 1Y | 2 |");
-    await expectEditorSourceNot(page, "| 1\n");
+    const headerCell = page.locator(".cm-md-table thead th").first();
+    await headerCell.click();
+    await expect(headerCell.locator("input")).toBeFocused();
+    await page.keyboard.press("Escape");
+    await expect(headerCell.locator("input")).toHaveCount(0);
+    await expect(headerCell.locator("strong")).toHaveText("bold");
   });
 
   test("a non-table line that just happens to start with a pipe does not become a widget", async ({ page }) => {

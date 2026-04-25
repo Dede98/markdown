@@ -556,59 +556,75 @@ class TableWidget extends WidgetType {
       });
     };
 
-    const onCellInput = (event: Event) => {
-      const cell = event.currentTarget as HTMLTableCellElement;
-      // While the user is typing the cell holds raw markdown as plain text.
-      // Sync the data attribute so `commitFromDOM` and `updateDOM` always
-      // read the source of truth from the same place.
-      cell.dataset.mdSource = normalizeCellText(cell.textContent);
-      commitFromDOM();
-    };
-
-    // Block Enter from breaking the cell into multi-line content. Enter would
-    // inject a `<br>` / `<div>` via contenteditable defaults, which
-    // serializes to a literal newline that destroys the GFM table format.
-    const onCellKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Enter") {
-        event.preventDefault();
+    // Click on a cell swaps in a real <input> element so the user gets a
+    // browser-native text field with its own selection model. CodeMirror's
+    // selection handling and the input's selection handling don't fight
+    // because the input is opaque to CM6 (the widget reports
+    // `ignoreEvent: true` so CM6 never tries to interpret events that
+    // originate inside it).
+    const enterEditMode = (cell: HTMLTableCellElement) => {
+      if (cell.querySelector("input")) {
+        return;
       }
-    };
-
-    const onCellFocus = (event: Event) => {
-      const cell = event.currentTarget as HTMLTableCellElement;
-      // Switch the cell into raw-source editing mode: replace the rendered
-      // markdown HTML with the literal markdown text so the user types
-      // against the source. We restore the rendered view on blur.
       const source = cell.dataset.mdSource ?? "";
-      if (cell.textContent !== source) {
-        cell.textContent = source;
-      }
-      placeCaretAtEnd(cell);
+      cell.replaceChildren();
+      cell.classList.add("cm-md-table-cell--editing");
+      const input = cell.ownerDocument.createElement("input");
+      input.type = "text";
+      input.value = source;
+      input.spellcheck = false;
+      input.className = "cm-md-table-cell-input";
+
+      input.addEventListener("input", () => {
+        cell.dataset.mdSource = normalizeCellText(input.value);
+        input.value = cell.dataset.mdSource;
+        commitFromDOM();
+      });
+
+      input.addEventListener("blur", () => {
+        cell.classList.remove("cm-md-table-cell--editing");
+        renderCellRendered(cell, cell.dataset.mdSource ?? "");
+      });
+
+      input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === "Escape") {
+          event.preventDefault();
+          input.blur();
+        }
+      });
+
+      cell.appendChild(input);
+      // Defer focus so the click that triggered edit mode doesn't end up
+      // moving the caret immediately on a freshly-mounted element.
+      requestAnimationFrame(() => {
+        if (input.isConnected) {
+          input.focus();
+          input.select();
+        }
+      });
     };
 
-    const onCellBlur = (event: Event) => {
+    const onCellMouseDown = (event: MouseEvent) => {
       const cell = event.currentTarget as HTMLTableCellElement;
-      // The data attribute is the source of truth (input handler keeps it
-      // in sync). Re-render markdown so bold / italic / strike / underline /
-      // inline code / link tokens display as styled HTML when not focused.
-      const source = cell.dataset.mdSource ?? normalizeCellText(cell.textContent);
-      renderCellRendered(cell, source);
+      if (cell.classList.contains("cm-md-table-cell--editing")) {
+        return;
+      }
+      // Block CM6's own pointer handling and the editor's selection update;
+      // we'll move focus into the input ourselves.
+      event.preventDefault();
+      event.stopPropagation();
+      enterEditMode(cell);
     };
 
     const buildCell = (tag: "th" | "td", text: string, align: TableAlign) => {
       const cell = document.createElement(tag);
-      cell.contentEditable = "true";
-      cell.spellcheck = false;
       cell.className = "cm-md-table-cell";
       cell.dataset.mdSource = text;
       if (align) {
         cell.style.textAlign = align;
       }
       renderCellRendered(cell, text);
-      cell.addEventListener("input", onCellInput);
-      cell.addEventListener("keydown", onCellKeyDown);
-      cell.addEventListener("focus", onCellFocus);
-      cell.addEventListener("blur", onCellBlur);
+      cell.addEventListener("mousedown", onCellMouseDown);
       return cell;
     };
 
@@ -637,9 +653,10 @@ class TableWidget extends WidgetType {
 
   updateDOM(dom: HTMLElement): boolean {
     // Patch the existing widget DOM in place to reflect this widget's rows.
-    // The currently focused cell is intentionally left alone so the user's
-    // contenteditable cursor and selection are preserved across the
-    // dispatch round-trip that fires on every keystroke.
+    // The cell currently in edit mode (containing the focused <input>) is
+    // intentionally left alone so the user's caret and selection inside the
+    // input are preserved across the dispatch round-trip that fires on
+    // every keystroke.
     if (!(dom instanceof HTMLTableElement)) {
       return false;
     }
@@ -663,27 +680,26 @@ class TableWidget extends WidgetType {
           continue;
         }
         cell.dataset.mdSource = newSource;
-        if (cell === document.activeElement) {
-          // Active editor cell: only sync the text node if the typed value
-          // really diverged (e.g. external doc change / undo).
-          if (cell.textContent !== newSource) {
-            cell.textContent = newSource;
-            placeCaretAtEnd(cell);
+        const input = cell.querySelector<HTMLInputElement>("input.cm-md-table-cell-input");
+        if (input) {
+          // Active editor cell: only sync the input value if it really
+          // diverged (e.g. external doc change while editing).
+          if (input.value !== newSource) {
+            input.value = newSource;
           }
-        } else {
-          renderCellRendered(cell, newSource);
+          continue;
         }
+        renderCellRendered(cell, newSource);
       }
     }
     return true;
   }
 
   // Returning `true` keeps CodeMirror from intercepting clicks and key
-  // events on the widget. With `false` CM6 calls `posAtCoords` on click and
-  // dispatches a selection update at the block edge, which yanks focus out
-  // of the contenteditable cell the user just tried to click into. The
-  // browser's default contenteditable handling — focus the cell, place the
-  // caret, accept keystrokes — does the right thing on its own here.
+  // events on the widget. With `false` CM6 calls `posAtCoords` on every
+  // click and dispatches a selection update at the block edge, which would
+  // yank focus from the cell input the user just clicked into and push the
+  // selection model into a confused state.
   ignoreEvent(): boolean {
     return true;
   }
@@ -693,27 +709,18 @@ function readCellSource(cell: HTMLTableCellElement | undefined): string {
   if (!cell) {
     return "";
   }
-  // Cell stays in sync via `data-md-source`; if the user is currently
-  // editing this cell the textContent IS the raw source, so the data attr
-  // and textContent agree. Reading the data attr also lets us serialize
-  // non-focused cells (which display rendered HTML) without losing markdown
-  // syntax characters that don't survive a textContent round-trip.
+  // The cell stores its raw markdown on `data-md-source`. Reading from the
+  // data attribute lets us serialize non-editing cells (which display
+  // rendered HTML) without losing markdown syntax characters that wouldn't
+  // survive a textContent round-trip.
   if (cell.dataset.mdSource !== undefined) {
     return cell.dataset.mdSource;
   }
-  return normalizeCellText(cell.textContent);
-}
-
-function placeCaretAtEnd(node: HTMLElement): void {
-  const selection = node.ownerDocument.getSelection();
-  if (!selection) {
-    return;
+  const input = cell.querySelector<HTMLInputElement>("input.cm-md-table-cell-input");
+  if (input) {
+    return normalizeCellText(input.value);
   }
-  const range = node.ownerDocument.createRange();
-  range.selectNodeContents(node);
-  range.collapse(false);
-  selection.removeAllRanges();
-  selection.addRange(range);
+  return normalizeCellText(cell.textContent);
 }
 
 // Inline markdown rendered for table cells. The cell holds the raw markdown

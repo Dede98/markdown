@@ -588,14 +588,29 @@ button {
   border: 1px solid var(--rule);
   padding: 0.32em 0.7em;
   vertical-align: top;
-  /* contenteditable cells need a non-zero width even when empty so the user
-   * has a visible hit target; min-width keeps the cell from collapsing. */
   min-width: 1.5em;
 }
 
-.cm-md-table-cell:focus {
-  outline: none;
+.cm-md-table-cell {
+  cursor: text;
+}
+
+.cm-md-table-cell--editing {
   background: var(--bg-active);
+  /* Tighten padding while the input lives inside so the input-rendered text
+   * lands on the same baseline as the rendered HTML it replaces. */
+  padding: 0;
+}
+
+.cm-md-table-cell-input {
+  width: 100%;
+  margin: 0;
+  padding: 0.32em 0.7em;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  outline: none;
 }
 
 .cm-md-table thead th {
