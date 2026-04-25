@@ -4,7 +4,7 @@ test.describe("editor core", () => {
   test("loads the normal editor shell", async ({ page }, testInfo) => {
     await page.goto("/");
 
-    await expect(page.locator(".documentTitle")).toHaveText("on-the-quiet-hour.md");
+    await expect(page.locator(".documentTitle")).toHaveText("untitled.md");
     await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
     await expect(page.locator(".cm-content")).toContainText("On the Quiet Hour");
     await expect(page.getByText("Markdown")).toBeVisible();
@@ -407,6 +407,117 @@ test.describe("editor core", () => {
     await expectEditorSource(page, "[spec](https://local-first.test)");
   });
 
+  test("file actions are reachable from the topbar in normal mode", async ({ page }) => {
+    await page.goto("/");
+
+    await expect(page.getByRole("button", { name: "New file" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open file" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Save file" })).toBeVisible();
+  });
+
+  test("status badge tracks editor dirtiness", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installFakeFileAdapter(page);
+    await page.goto("/");
+
+    await expect(page.locator(".documentState")).toHaveText("New");
+
+    await setEditorText(page, "# fresh");
+    await expect(page.locator(".documentState")).toHaveText("Unsaved");
+  });
+
+  test("new file replaces the buffer and resets the file name", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installFakeFileAdapter(page);
+    await page.goto("/");
+
+    await setEditorText(page, "old buffer");
+    await page.evaluate(() => {
+      (window as unknown as { confirm: () => boolean }).confirm = () => true;
+    });
+
+    await page.getByRole("button", { name: "New file" }).click();
+
+    await expectEditorSource(page, "");
+    await expect(page.locator(".documentTitle")).toHaveText("untitled.md");
+    await expect(page.locator(".documentState")).toHaveText("New");
+  });
+
+  test("open file loads adapter contents into the editor", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installFakeFileAdapter(page, {
+      openFile: { name: "draft.md", contents: "# Draft\n\nfresh body" },
+    });
+    await page.goto("/");
+
+    await page.evaluate(() => {
+      (window as unknown as { confirm: () => boolean }).confirm = () => true;
+    });
+    await page.getByRole("button", { name: "Open file" }).click();
+
+    await expectEditorSource(page, "# Draft\n\nfresh body");
+    await expect(page.locator(".documentTitle")).toHaveText("draft.md");
+    await expect(page.locator(".documentState")).toHaveText("Saved");
+  });
+
+  test("save file delegates to save-as when no handle exists", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installFakeFileAdapter(page, {
+      saveAsResult: { name: "notes.md", handleId: "fs-1" },
+    });
+    await page.goto("/");
+
+    await setEditorText(page, "draft body");
+    await page.getByRole("button", { name: "Save file" }).click();
+
+    await expect(page.locator(".documentState")).toHaveText("Saved");
+    await expect(page.locator(".documentTitle")).toHaveText("notes.md");
+
+    const calls = await page.evaluate(() => (window as unknown as { __fileAdapterCalls: unknown[] }).__fileAdapterCalls);
+    expect(calls).toEqual([{ kind: "saveAs", name: "untitled.md", contents: "draft body" }]);
+  });
+
+  test("save file writes back to an existing handle without re-prompting", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installFakeFileAdapter(page, {
+      openFile: { name: "draft.md", contents: "first" },
+    });
+    await page.goto("/");
+
+    await page.evaluate(() => {
+      (window as unknown as { confirm: () => boolean }).confirm = () => true;
+    });
+    await page.getByRole("button", { name: "Open file" }).click();
+    await expectEditorSource(page, "first");
+
+    await setEditorText(page, "second");
+    await expect(page.locator(".documentState")).toHaveText("Unsaved");
+
+    await page.getByRole("button", { name: "Save file" }).click();
+    await expect(page.locator(".documentState")).toHaveText("Saved");
+
+    const calls = await page.evaluate(() => (window as unknown as { __fileAdapterCalls: unknown[] }).__fileAdapterCalls);
+    expect(calls).toEqual([
+      { kind: "open" },
+      { kind: "save", name: "draft.md", contents: "second" },
+    ]);
+  });
+
+  test("mod+s shortcut triggers a save through the adapter", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installFakeFileAdapter(page, {
+      saveAsResult: { name: "shortcut.md", handleId: "fs-2" },
+    });
+    await page.goto("/");
+
+    await setEditorText(page, "shortcut body");
+    await page.keyboard.press(modKeyShortcut("s"));
+
+    await expect(page.locator(".documentState")).toHaveText("Saved");
+    const calls = await page.evaluate(() => (window as unknown as { __fileAdapterCalls: unknown[] }).__fileAdapterCalls);
+    expect(calls).toEqual([{ kind: "saveAs", name: "untitled.md", contents: "shortcut body" }]);
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
@@ -562,4 +673,55 @@ async function getEditorSource(page: Page) {
 
     return view.state.doc.toString();
   });
+}
+
+type FakeAdapterOptions = {
+  openFile?: { name: string; contents: string };
+  saveAsResult?: { name: string; handleId: string };
+};
+
+async function installFakeFileAdapter(page: Page, options: FakeAdapterOptions = {}) {
+  await page.addInitScript((opts) => {
+    type Call =
+      | { kind: "new" }
+      | { kind: "open" }
+      | { kind: "save"; name: string; contents: string }
+      | { kind: "saveAs"; name: string; contents: string };
+
+    const win = window as unknown as {
+      __fileAdapterCalls: Call[];
+      __markdownFileAdapterOverride: unknown;
+      confirm: () => boolean;
+    };
+
+    win.__fileAdapterCalls = [];
+    const openSpec = opts.openFile;
+    const saveAsSpec = opts.saveAsResult;
+
+    win.__markdownFileAdapterOverride = {
+      canSaveInPlace: () => true,
+      newFile: () => {
+        win.__fileAdapterCalls.push({ kind: "new" });
+        return { name: "untitled.md", contents: "", handle: null };
+      },
+      openFile: async () => {
+        win.__fileAdapterCalls.push({ kind: "open" });
+        if (!openSpec) {
+          return null;
+        }
+        return { name: openSpec.name, contents: openSpec.contents, handle: { __mock: true, name: openSpec.name } };
+      },
+      saveFile: async (handle: unknown, contents: string, name: string) => {
+        win.__fileAdapterCalls.push({ kind: "save", name, contents });
+        return { name, handle };
+      },
+      saveFileAs: async (name: string, contents: string) => {
+        win.__fileAdapterCalls.push({ kind: "saveAs", name, contents });
+        if (!saveAsSpec) {
+          return { name, handle: { __mock: true, name } };
+        }
+        return { name: saveAsSpec.name, handle: { __mock: true, id: saveAsSpec.handleId } };
+      },
+    };
+  }, options);
 }

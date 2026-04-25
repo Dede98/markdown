@@ -66,6 +66,36 @@ button {
   min-width: 72px;
 }
 
+.fileActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 72px;
+}
+
+.iconButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #5e5a54;
+  cursor: pointer;
+}
+
+.iconButton:hover:not(:disabled) {
+  background: #f0f0f2;
+  color: #1a1a1e;
+}
+
+.iconButton:disabled {
+  cursor: progress;
+  opacity: 0.55;
+}
+
 .titleCluster {
   position: absolute;
   left: 50%;
@@ -102,6 +132,30 @@ button {
   border-radius: 50%;
   background: #cdd0d4;
   content: "";
+}
+
+.documentState--unsaved::before {
+  background: #c08a3e;
+}
+
+.documentState--unsaved {
+  color: #8a5a1f;
+}
+
+.documentState--saving::before {
+  background: #2d5b8c;
+}
+
+.documentState--saving {
+  color: #2d5b8c;
+}
+
+.documentState--error::before {
+  background: #b03a2e;
+}
+
+.documentState--error {
+  color: #b03a2e;
 }
 
 .modeButton,
@@ -475,7 +529,8 @@ button {
   }
 
   .modeButton span,
-  .toolbarSideLeft {
+  .toolbarSideLeft,
+  .documentState {
     display: none;
   }
 

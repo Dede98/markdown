@@ -3,7 +3,9 @@ import {
   Bold,
   Code,
   Code2,
+  FilePlus,
   FileText,
+  FolderOpen,
   Heading1,
   Heading2,
   Italic,
@@ -15,15 +17,21 @@ import {
   PanelTopClose,
   PanelTopOpen,
   Quote,
+  Save,
 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
+import {
+  DEFAULT_NEW_FILE_NAME,
+  type FileAdapter,
+  type FileHandle,
+  type LocalFile,
+} from "./fileAdapter";
 import { insertBlock, insertLink, setHeading, toggleLinePrefix, wrapSelection } from "./markdownCommands";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { webFileAdapter } from "./webFileAdapter";
 
 const initialMarkdown = `# On the Quiet Hour
-
-Draft - 1,420 words - Saved locally
 
 There is a particular quality to the hour before everyone else wakes. The house is still speaking in the low voice it uses when no one is listening, and the windows have not yet been asked to carry any light.
 
@@ -40,11 +48,50 @@ Three things I try to keep near when I work:
 - and the small discipline of not checking anything
 `;
 
+type FileState = {
+  name: string;
+  handle: FileHandle | null;
+  savedContents: string;
+};
+
+type SaveStatus = "idle" | "saving" | "error";
+
+type AdapterWindow = Window & {
+  __markdownFileAdapter?: FileAdapter;
+  __markdownFileAdapterOverride?: FileAdapter;
+};
+
+function getActiveAdapter(): FileAdapter {
+  if (typeof window !== "undefined") {
+    const win = window as AdapterWindow;
+    if (win.__markdownFileAdapterOverride) {
+      return win.__markdownFileAdapterOverride;
+    }
+  }
+  return webFileAdapter;
+}
+
+const initialFile: FileState = {
+  name: "untitled.md",
+  handle: null,
+  savedContents: initialMarkdown,
+};
+
 export function App() {
+  const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
   const [zen, setZen] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [fileVersion, setFileVersion] = useState(0);
   const editorRef = useRef<EditorView | null>(null);
+
+  const dirty = markdown !== file.savedContents;
+  const badge = useMemo(
+    () => describeStatus({ saveStatus, dirty, hasHandle: file.handle !== null }),
+    [saveStatus, dirty, file.handle],
+  );
 
   const withEditor = useCallback((command: (view: EditorView) => void) => {
     if (editorRef.current) {
@@ -56,14 +103,201 @@ export function App() {
     editorRef.current = view;
   }, []);
 
+  const replaceFile = useCallback((next: LocalFile) => {
+    setFile({ name: next.name, handle: next.handle, savedContents: next.contents });
+    setMarkdown(next.contents);
+    setSaveStatus("idle");
+    setSaveError(null);
+    setFileVersion((value) => value + 1);
+  }, []);
+
+  const guardDirty = useCallback(
+    (intent: "new" | "open") => {
+      if (!dirty || typeof window === "undefined") {
+        return true;
+      }
+      const message =
+        intent === "new"
+          ? "Discard unsaved changes and start a new file?"
+          : "Discard unsaved changes and open another file?";
+      return window.confirm(message);
+    },
+    [dirty],
+  );
+
+  const handleNew = useCallback(() => {
+    if (!guardDirty("new")) {
+      return;
+    }
+    const adapter = getActiveAdapter();
+    const fresh = adapter.newFile();
+    replaceFile(fresh);
+  }, [guardDirty, replaceFile]);
+
+  const handleOpen = useCallback(async () => {
+    if (!guardDirty("open")) {
+      return;
+    }
+    const adapter = getActiveAdapter();
+
+    try {
+      const opened = await adapter.openFile();
+      if (!opened) {
+        return;
+      }
+      replaceFile(opened);
+    } catch (error) {
+      console.error("Open failed", error);
+      setSaveStatus("error");
+      setSaveError(error instanceof Error ? error.message : "Open failed");
+    }
+  }, [guardDirty, replaceFile]);
+
+  const handleSaveAs = useCallback(async () => {
+    const adapter = getActiveAdapter();
+    setSaveStatus("saving");
+    setSaveError(null);
+
+    try {
+      const result = await adapter.saveFileAs(file.name || DEFAULT_NEW_FILE_NAME, markdown);
+      if (!result) {
+        setSaveStatus("idle");
+        return;
+      }
+      setFile({ name: result.name, handle: result.handle, savedContents: markdown });
+      setSaveStatus("idle");
+    } catch (error) {
+      console.error("Save-as failed", error);
+      setSaveStatus("error");
+      setSaveError(error instanceof Error ? error.message : "Save failed");
+    }
+  }, [file.name, markdown]);
+
+  const handleSave = useCallback(async () => {
+    const adapter = getActiveAdapter();
+
+    if (!file.handle) {
+      await handleSaveAs();
+      return;
+    }
+
+    setSaveStatus("saving");
+    setSaveError(null);
+
+    try {
+      const result = await adapter.saveFile(file.handle, markdown, file.name);
+      setFile({ name: result.name, handle: result.handle, savedContents: markdown });
+      setSaveStatus("idle");
+    } catch (error) {
+      console.error("Save failed", error);
+      setSaveStatus("error");
+      setSaveError(error instanceof Error ? error.message : "Save failed");
+    }
+  }, [file.handle, file.name, handleSaveAs, markdown]);
+
+  // Keyboard shortcuts at the window level so they catch Cmd/Ctrl-O/N
+  // before the browser uses them, and so saving works even outside the editor.
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const mod = event.metaKey || event.ctrlKey;
+      if (!mod) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+
+      if (key === "s") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.shiftKey) {
+          void handleSaveAs();
+        } else {
+          void handleSave();
+        }
+        return;
+      }
+
+      if (key === "o" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        void handleOpen();
+        return;
+      }
+
+      if (key === "n" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleNew();
+      }
+    };
+
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
+  }, [handleNew, handleOpen, handleSave, handleSaveAs]);
+
+  // Beforeunload guard: warn the user if they navigate away with unsaved changes.
+  useEffect(() => {
+    if (!dirty) {
+      return;
+    }
+    const onBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
+  // Expose the active adapter on window so spikes/tests can introspect or override it.
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const win = window as AdapterWindow;
+    win.__markdownFileAdapter = getActiveAdapter();
+    return () => {
+      if (win.__markdownFileAdapter === getActiveAdapter()) {
+        delete win.__markdownFileAdapter;
+      }
+    };
+  }, []);
+
   return (
     <main className={zen ? "app appZen" : "app"}>
       <header className="topbar">
-        <div className="windowSlot" aria-hidden="true" />
+        {!zen ? (
+          <div className="fileActions" role="toolbar" aria-label="File actions">
+            <button className="iconButton" type="button" title="New file" aria-label="New file" onClick={handleNew}>
+              <FilePlus size={16} />
+            </button>
+            <button className="iconButton" type="button" title="Open file" aria-label="Open file" onClick={handleOpen}>
+              <FolderOpen size={16} />
+            </button>
+            <button
+              className="iconButton"
+              type="button"
+              title="Save file"
+              aria-label="Save file"
+              onClick={() => void handleSave()}
+              disabled={saveStatus === "saving"}
+            >
+              <Save size={16} />
+            </button>
+          </div>
+        ) : (
+          <div className="windowSlot" aria-hidden="true" />
+        )}
 
         <div className="titleCluster">
-          <div className="documentTitle">on-the-quiet-hour.md</div>
-          {!zen && <div className="documentState">saved</div>}
+          <div className="documentTitle">{file.name || DEFAULT_NEW_FILE_NAME}</div>
+          {!zen && (
+            <div
+              className={`documentState documentState--${badge.tone}`}
+              data-state={badge.tone}
+              title={saveError ?? badge.label}
+            >
+              {badge.label}
+            </div>
+          )}
         </div>
 
         <button className="modeButton" type="button" onClick={() => setZen((value) => !value)} title={zen ? "Normal Mode" : "Zen Mode"}>
@@ -143,7 +377,7 @@ export function App() {
       )}
 
       <section className="editorShell" aria-label="Markdown editor">
-        <MarkdownEditor value={markdown} zen={zen} onChange={setMarkdown} onFormatChange={setActiveFormat} onReady={handleReady} />
+        <MarkdownEditor key={fileVersion} value={file.savedContents} zen={zen} onChange={setMarkdown} onFormatChange={setActiveFormat} onReady={handleReady} />
       </section>
 
       {zen ? (
@@ -155,7 +389,7 @@ export function App() {
         <footer className="statusbar">
           <div>
             <FileText size={12} />
-            <span>~/Documents/Writing/on-the-quiet-hour.md</span>
+            <span>{file.name || DEFAULT_NEW_FILE_NAME}</span>
           </div>
           <div>
             <span>Markdown</span>
@@ -165,6 +399,30 @@ export function App() {
       )}
     </main>
   );
+}
+
+function describeStatus({
+  saveStatus,
+  dirty,
+  hasHandle,
+}: {
+  saveStatus: SaveStatus;
+  dirty: boolean;
+  hasHandle: boolean;
+}): { label: string; tone: "saved" | "unsaved" | "saving" | "error" | "new" } {
+  if (saveStatus === "saving") {
+    return { label: "Saving…", tone: "saving" };
+  }
+  if (saveStatus === "error") {
+    return { label: "Save failed", tone: "error" };
+  }
+  if (!hasHandle && !dirty) {
+    return { label: "New", tone: "new" };
+  }
+  if (dirty) {
+    return { label: "Unsaved", tone: "unsaved" };
+  }
+  return { label: "Saved", tone: "saved" };
 }
 
 function wordCount(markdown: string) {
