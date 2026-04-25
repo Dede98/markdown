@@ -1,6 +1,6 @@
 [package]
 name = "markdown-editor"
-version = "0.0.3"
+version = "0.0.5"
 description = "Local-first Markdown editor (Tauri spike)"
 edition = "2021"
 rust-version = "1.77"
