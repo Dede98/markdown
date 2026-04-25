@@ -7,7 +7,6 @@ export type ActiveFormat = {
   bold: boolean;
   italic: boolean;
   strike: boolean;
-  underline: boolean;
   inlineCode: boolean;
   link: boolean;
   unorderedList: boolean;
@@ -24,7 +23,6 @@ export const emptyFormat: ActiveFormat = {
   bold: false,
   italic: false,
   strike: false,
-  underline: false,
   inlineCode: false,
   link: false,
   unorderedList: false,
@@ -77,12 +75,6 @@ export function getActiveFormat(state: EditorState): ActiveFormat {
   for (const match of text.matchAll(/~~([^~\n]+)~~/g)) {
     if (isOffsetInsideMatch(offset, match.index!, match[0].length)) {
       format.strike = true;
-    }
-  }
-
-  for (const match of text.matchAll(/<u>([^<\n]+)<\/u>/gi)) {
-    if (isOffsetInsideMatch(offset, match.index!, match[0].length)) {
-      format.underline = true;
     }
   }
 

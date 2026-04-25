@@ -88,28 +88,6 @@ function buildDecorations(view: EditorView): DecorationSet {
         decorateSyntax(decorations, start + match[0].length - 2, start + match[0].length, activeSyntax);
       }
 
-      for (const match of text.matchAll(/<u>([^<\n]+)<\/u>/gi)) {
-        const start = line.from + match.index!;
-        const activeSyntax = isRangeActive(view, start, start + match[0].length);
-        decorateSyntax(decorations, start, start + 3, activeSyntax);
-        addDecoration(decorations, start + 3, start + match[0].length - 4, Decoration.mark({ class: "cm-md-underline" }));
-        decorateSyntax(decorations, start + match[0].length - 4, start + match[0].length, activeSyntax);
-      }
-
-      // HTML comments — single-line only. When the cursor is inside the
-      // comment we show the markup as muted syntax; otherwise the comment is
-      // hidden entirely so the rendered document stays clean.
-      for (const match of text.matchAll(/<!--[\s\S]*?-->/g)) {
-        const start = line.from + match.index!;
-        const end = start + match[0].length;
-        const activeSyntax = isRangeActive(view, start, end);
-        if (activeSyntax) {
-          addDecoration(decorations, start, end, Decoration.mark({ class: "cm-md-syntax" }));
-        } else {
-          addDecoration(decorations, start, end, Decoration.replace({}));
-        }
-      }
-
       for (const match of text.matchAll(/\[([^\]\n]+)\]\(([^)\n]+)\)/g)) {
         const start = line.from + match.index!;
         const labelStart = start + 1;
@@ -142,34 +120,16 @@ function buildDecorations(view: EditorView): DecorationSet {
         }
       }
 
-      // GFM tables: when a pipe-bordered line is followed by a separator
-      // row, treat the run of pipe-lines as a single table block. While the
-      // cursor is anywhere inside the block we keep the source visible and
-      // mark each line with `cm-md-table-row` so the source still reads as a
-      // grid; otherwise the whole block is replaced with a real <table>.
-      if (tableRow && !tableSeparator) {
-        const block = collectTableBlock(view, line);
-        if (block) {
-          const blockActive = isBlockActive(view, block.fromLine, block.toLine);
-          if (!blockActive) {
-            addDecoration(
-              decorations,
-              block.from,
-              block.to,
-              Decoration.replace({ widget: new TableWidget(block.rows, block.alignments), block: true }),
-            );
-            if (block.to + 1 > to) {
-              break;
-            }
-            position = block.to + 1;
-            continue;
-          }
-          // Cursor is inside the block; render each pipe-line as source rows.
-          for (const num of block.lineNumbers) {
-            const blockLine = view.state.doc.line(num);
-            const isSep = TABLE_SEPARATOR.test(blockLine.text);
-            const cls = isSep ? "cm-md-table-row cm-md-table-separator" : "cm-md-table-row";
-            addDecoration(decorations, blockLine.from, blockLine.from, Decoration.line({ class: cls }));
+      // GFM tables: decorate any pipe-bordered line. The separator row
+      // (`| --- | --- |`) gets its own class so we can hide it visually when
+      // the cursor is elsewhere; the pipe syntax itself fades out off-cursor.
+      if (tableRow || tableSeparator) {
+        const cls = tableSeparator ? "cm-md-table-row cm-md-table-separator" : "cm-md-table-row";
+        addDecoration(decorations, line.from, line.from, Decoration.line({ class: cls }));
+        if (!lineActive) {
+          for (const match of text.matchAll(/\|/g)) {
+            const start = line.from + match.index!;
+            addDecoration(decorations, start, start + 1, Decoration.mark({ class: "cm-md-syntax cm-md-table-pipe" }));
           }
         }
       }
@@ -340,162 +300,6 @@ class RuleWidget extends WidgetType {
     const rule = document.createElement("span");
     rule.className = "cm-md-rule-widget";
     return rule;
-  }
-}
-
-type CellAlignment = "left" | "center" | "right";
-
-const TABLE_ROW = /^\|.*\|\s*$/;
-const TABLE_SEPARATOR = /^\|?\s*:?-{2,}:?(\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/;
-
-function splitTableCells(text: string): string[] {
-  let trimmed = text.trim();
-  if (trimmed.startsWith("|")) {
-    trimmed = trimmed.slice(1);
-  }
-  if (trimmed.endsWith("|")) {
-    trimmed = trimmed.slice(0, -1);
-  }
-  return trimmed.split("|").map((cell) => cell.trim());
-}
-
-function parseAlignments(text: string): CellAlignment[] {
-  return splitTableCells(text).map((cell) => {
-    const startColon = cell.startsWith(":");
-    const endColon = cell.endsWith(":");
-    if (startColon && endColon) return "center";
-    if (endColon) return "right";
-    return "left";
-  });
-}
-
-function collectTableBlock(
-  view: EditorView,
-  startLine: { number: number; from: number; to: number; text: string },
-): {
-  from: number;
-  to: number;
-  fromLine: number;
-  toLine: number;
-  rows: string[][];
-  alignments: CellAlignment[];
-  lineNumbers: number[];
-} | null {
-  const totalLines = view.state.doc.lines;
-  if (startLine.number >= totalLines) {
-    return null;
-  }
-  const separator = view.state.doc.line(startLine.number + 1);
-  if (!TABLE_SEPARATOR.test(separator.text)) {
-    return null;
-  }
-  const headerCells = splitTableCells(startLine.text);
-  const alignments = parseAlignments(separator.text);
-  const rows: string[][] = [headerCells];
-  const lineNumbers: number[] = [startLine.number, separator.number];
-  let lastLineEnd = separator.to;
-  let toLine = separator.number;
-  for (let n = separator.number + 1; n <= totalLines; n += 1) {
-    const candidate = view.state.doc.line(n);
-    if (!TABLE_ROW.test(candidate.text) || TABLE_SEPARATOR.test(candidate.text)) {
-      break;
-    }
-    rows.push(splitTableCells(candidate.text));
-    lineNumbers.push(n);
-    lastLineEnd = candidate.to;
-    toLine = n;
-  }
-  return {
-    from: startLine.from,
-    to: lastLineEnd,
-    fromLine: startLine.number,
-    toLine,
-    rows,
-    alignments,
-    lineNumbers,
-  };
-}
-
-function isBlockActive(view: EditorView, fromLine: number, toLine: number): boolean {
-  for (let n = fromLine; n <= toLine; n += 1) {
-    const line = view.state.doc.line(n);
-    if (isLineActive(view, line.from, line.to)) {
-      return true;
-    }
-  }
-  return false;
-}
-
-class TableWidget extends WidgetType {
-  constructor(
-    private readonly rows: string[][],
-    private readonly alignments: CellAlignment[],
-  ) {
-    super();
-  }
-
-  eq(other: TableWidget): boolean {
-    if (this.rows.length !== other.rows.length) return false;
-    if (this.alignments.length !== other.alignments.length) return false;
-    for (let i = 0; i < this.alignments.length; i += 1) {
-      if (this.alignments[i] !== other.alignments[i]) return false;
-    }
-    for (let i = 0; i < this.rows.length; i += 1) {
-      const a = this.rows[i];
-      const b = other.rows[i];
-      if (a.length !== b.length) return false;
-      for (let j = 0; j < a.length; j += 1) {
-        if (a[j] !== b[j]) return false;
-      }
-    }
-    return true;
-  }
-
-  toDOM(): HTMLElement {
-    const table = document.createElement("table");
-    table.className = "cm-md-table";
-
-    const [header, ...body] = this.rows;
-
-    if (header) {
-      const thead = document.createElement("thead");
-      const tr = document.createElement("tr");
-      header.forEach((cell, idx) => {
-        const th = document.createElement("th");
-        th.textContent = cell;
-        const align = this.alignments[idx];
-        if (align && align !== "left") {
-          th.style.textAlign = align;
-        }
-        tr.appendChild(th);
-      });
-      thead.appendChild(tr);
-      table.appendChild(thead);
-    }
-
-    if (body.length > 0) {
-      const tbody = document.createElement("tbody");
-      for (const row of body) {
-        const tr = document.createElement("tr");
-        row.forEach((cell, idx) => {
-          const td = document.createElement("td");
-          td.textContent = cell;
-          const align = this.alignments[idx];
-          if (align && align !== "left") {
-            td.style.textAlign = align;
-          }
-          tr.appendChild(td);
-        });
-        tbody.appendChild(tr);
-      }
-      table.appendChild(tbody);
-    }
-
-    return table;
-  }
-
-  ignoreEvent(): boolean {
-    return false;
   }
 }
 
