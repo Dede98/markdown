@@ -253,10 +253,52 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-md-table")).toHaveCount(1);
 
     // Clicking the widget positions the cursor at the block edge but the
-    // widget itself stays. Direct cell editing is not in scope for this
-    // surface — structural edits will arrive on a context-menu path.
+    // The widget itself stays mounted; clicking just routes the cursor for
+    // CodeMirror, the cell remains editable in place.
     await page.locator(".cm-md-table").click();
     await expect(page.locator(".cm-md-table")).toHaveCount(1);
+  });
+
+  test("typing in a rendered table cell writes back to the markdown source", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nafter",
+    );
+
+    // Click the first body cell to focus the contenteditable, then append.
+    const firstCell = page.locator(".cm-md-table tbody tr").first().locator("td").first();
+    await firstCell.click();
+    await page.keyboard.type("X");
+
+    // Source should reflect the edit. The serialiser pads with single spaces
+    // around each cell so the original cell value `1` becomes `1X`.
+    await expectEditorSource(page, "| 1X | 2 |");
+    // Widget structure stays — same row/col shape so eq() returns true and
+    // CodeMirror keeps the existing DOM (cursor preserved during typing).
+    await expect(page.locator(".cm-md-table")).toHaveCount(1);
+    await expect(page.locator(".cm-md-table tbody td").first()).toHaveText("1X");
+  });
+
+  test("pressing Enter inside a table cell does not break the row", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nafter",
+    );
+
+    const firstCell = page.locator(".cm-md-table tbody tr").first().locator("td").first();
+    await firstCell.click();
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("Y");
+
+    // Enter must be swallowed by the cell keydown handler — otherwise the
+    // contenteditable would inject a `<br>` / `<div>` that serialises to a
+    // newline and destroys the GFM row.
+    await expectEditorSource(page, "| 1Y | 2 |");
+    await expectEditorSourceNot(page, "| 1\n");
   });
 
   test("a non-table line that just happens to start with a pipe does not become a widget", async ({ page }) => {

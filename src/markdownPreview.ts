@@ -493,53 +493,105 @@ class TableWidget extends WidgetType {
         return false;
       }
     }
+    // Compare row/column shape only — skip cell text. Same-shape widgets are
+    // treated as equal so CodeMirror keeps the existing DOM mid-edit, which
+    // is what preserves the contenteditable cursor while the user types.
     for (let r = 0; r < this.rows.length; r += 1) {
-      const a = this.rows[r];
-      const b = other.rows[r];
-      if (a.length !== b.length) {
+      if (this.rows[r].length !== other.rows[r].length) {
         return false;
-      }
-      for (let c = 0; c < a.length; c += 1) {
-        if (a[c] !== b[c]) {
-          return false;
-        }
       }
     }
     return true;
   }
 
-  toDOM(): HTMLElement {
+  toDOM(view: EditorView): HTMLElement {
     const table = document.createElement("table");
     table.className = "cm-md-table";
     const colCount = this.alignments.length;
+    const rowCount = this.rows.length;
+
+    // Look up the widget's CURRENT source range via the rendered DOM. The
+    // widget instance's positions go stale as the doc changes; reading them
+    // from the live state on every commit keeps the dispatch correct even
+    // after upstream edits have shifted the table around.
+    const commitFromDOM = () => {
+      const tablePos = view.posAtDOM(table);
+      if (tablePos < 0) {
+        return;
+      }
+      const line = view.state.doc.lineAt(tablePos);
+      const block = collectTableBlock(view.state.doc, line);
+      if (!block) {
+        return;
+      }
+
+      const cells = table.querySelectorAll<HTMLTableCellElement>("th, td");
+      const newRows: string[][] = [];
+      let idx = 0;
+      for (let r = 0; r < rowCount; r += 1) {
+        const row: string[] = [];
+        for (let c = 0; c < colCount; c += 1) {
+          const cell = cells[idx];
+          idx += 1;
+          row.push(normalizeCellText(cell?.textContent));
+        }
+        newRows.push(row);
+      }
+
+      const newSource = serializeTableSource(newRows, this.alignments);
+      const oldSource = view.state.sliceDoc(block.firstLine.from, block.lastLine.to);
+      if (oldSource === newSource) {
+        return;
+      }
+      view.dispatch({
+        changes: { from: block.firstLine.from, to: block.lastLine.to, insert: newSource },
+        userEvent: "input.table",
+      });
+    };
+
+    const onCellInput = () => {
+      commitFromDOM();
+    };
+
+    // Block Enter and Tab from breaking the cell into multi-line content or
+    // moving focus out in surprising ways. Enter would inject a `<div>` /
+    // `<br>` via contenteditable defaults, which serializes to a literal
+    // newline that destroys the GFM table format.
+    const onCellKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter") {
+        event.preventDefault();
+      }
+    };
+
+    const buildCell = (tag: "th" | "td", text: string, align: TableAlign) => {
+      const cell = document.createElement(tag);
+      cell.textContent = text;
+      cell.contentEditable = "true";
+      cell.spellcheck = false;
+      cell.className = "cm-md-table-cell";
+      if (align) {
+        cell.style.textAlign = align;
+      }
+      cell.addEventListener("input", onCellInput);
+      cell.addEventListener("keydown", onCellKeyDown);
+      return cell;
+    };
 
     const thead = document.createElement("thead");
     const headerRow = document.createElement("tr");
     const header = this.rows[0] ?? [];
     for (let c = 0; c < colCount; c += 1) {
-      const th = document.createElement("th");
-      th.textContent = header[c] ?? "";
-      const align = this.alignments[c];
-      if (align) {
-        th.style.textAlign = align;
-      }
-      headerRow.appendChild(th);
+      headerRow.appendChild(buildCell("th", header[c] ?? "", this.alignments[c]));
     }
     thead.appendChild(headerRow);
     table.appendChild(thead);
 
     const tbody = document.createElement("tbody");
-    for (let r = 1; r < this.rows.length; r += 1) {
+    for (let r = 1; r < rowCount; r += 1) {
       const tr = document.createElement("tr");
       const cells = this.rows[r];
       for (let c = 0; c < colCount; c += 1) {
-        const td = document.createElement("td");
-        td.textContent = cells[c] ?? "";
-        const align = this.alignments[c];
-        if (align) {
-          td.style.textAlign = align;
-        }
-        tr.appendChild(td);
+        tr.appendChild(buildCell("td", cells[c] ?? "", this.alignments[c]));
       }
       tbody.appendChild(tr);
     }
@@ -548,14 +600,54 @@ class TableWidget extends WidgetType {
     return table;
   }
 
-  // Returning `false` lets CodeMirror handle pointer events on the widget so
-  // a click positions the cursor at the nearest valid offset outside the
-  // block. The widget itself stays rendered — direct cell editing is not a
-  // goal of this surface; structural edits will arrive as a separate
-  // context-menu / toolbar path.
+  // Returning `true` keeps CodeMirror from intercepting clicks and key
+  // events on the widget. With `false` CM6 calls `posAtCoords` on click and
+  // dispatches a selection update at the block edge, which yanks focus out
+  // of the contenteditable cell the user just tried to click into. The
+  // browser's default contenteditable handling — focus the cell, place the
+  // caret, accept keystrokes — does the right thing on its own here.
   ignoreEvent(): boolean {
-    return false;
+    return true;
   }
+}
+
+function normalizeCellText(raw: string | null | undefined): string {
+  if (!raw) {
+    return "";
+  }
+  // Newlines inside a GFM cell break the row; collapse any that slip in via
+  // paste into single spaces and trim surrounding whitespace.
+  return raw.replace(/\s*\r?\n\s*/g, " ");
+}
+
+function serializeTableSource(rows: string[][], alignments: TableAlign[]): string {
+  const renderRow = (cells: string[]) => {
+    const padded = alignments.map((_, i) => (cells[i] ?? "").trim());
+    return `| ${padded.join(" | ")} |`;
+  };
+  const renderSeparator = () =>
+    `| ${alignments
+      .map((a) => {
+        if (a === "center") {
+          return ":---:";
+        }
+        if (a === "left") {
+          return ":---";
+        }
+        if (a === "right") {
+          return "---:";
+        }
+        return "---";
+      })
+      .join(" | ")} |`;
+
+  const lines: string[] = [];
+  lines.push(renderRow(rows[0] ?? []));
+  lines.push(renderSeparator());
+  for (let r = 1; r < rows.length; r += 1) {
+    lines.push(renderRow(rows[r] ?? []));
+  }
+  return lines.join("\n");
 }
 
 // Table blocks always render as a real `<table>` widget regardless of cursor
