@@ -1,5 +1,15 @@
-import type { Range } from "@codemirror/state";
+import { type EditorState, type Line, type Range, StateField, type Text } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
+
+type TableAlign = "left" | "center" | "right" | null;
+
+type TableBlock = {
+  firstLine: Line;
+  lastLine: Line;
+  // [header, ...body]; the separator row is consumed for `alignments`.
+  rows: string[][];
+  alignments: TableAlign[];
+};
 
 function buildDecorations(view: EditorView): DecorationSet {
   const decorations: Range<Decoration>[] = [];
@@ -216,9 +226,13 @@ function buildDecorations(view: EditorView): DecorationSet {
         }
       }
 
-      // GFM tables: decorate any pipe-bordered line. The separator row
-      // (`| --- | --- |`) gets its own class so we can hide it visually when
-      // the cursor is elsewhere; the pipe syntax itself fades out off-cursor.
+      // GFM tables, source mode: decorate any pipe-bordered line. The
+      // separator row (`| --- | --- |`) gets its own class so we can hide
+      // it visually when the cursor is elsewhere; the pipe syntax itself
+      // fades out off-cursor. The block-level <table> widget that replaces
+      // an inactive block lives in `tableBlockState` (a StateField) below,
+      // because CodeMirror requires block decorations to come from a
+      // state field rather than a ViewPlugin.
       if (tableRow || tableSeparator) {
         const cls = tableSeparator ? "cm-md-table-row cm-md-table-separator" : "cm-md-table-row";
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: cls }));
@@ -398,6 +412,223 @@ class RuleWidget extends WidgetType {
     return rule;
   }
 }
+
+const TABLE_SEPARATOR_REGEX = /^\|?\s*:?-{2,}:?(\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/;
+const TABLE_ROW_REGEX = /^\|.*\|\s*$/;
+
+// Walk forward from a candidate header line to collect a complete GFM table:
+// header + separator + zero or more body rows. Returns null if the second
+// line doesn't match the separator pattern (i.e. this is not really a table,
+// just a one-off pipe-bordered line). The separator row is consumed for
+// `alignments` and not included in `rows`.
+function collectTableBlock(textBuf: Text, headerLine: Line): TableBlock | null {
+  if (headerLine.number + 1 > textBuf.lines) {
+    return null;
+  }
+  const sepLine = textBuf.line(headerLine.number + 1);
+  if (!TABLE_SEPARATOR_REGEX.test(sepLine.text)) {
+    return null;
+  }
+
+  const alignments = splitTableRow(sepLine.text).map(parseAlignment);
+  const header = splitTableRow(headerLine.text);
+  const body: string[][] = [];
+  let lastLine: Line = sepLine;
+
+  for (let n = sepLine.number + 1; n <= textBuf.lines; n += 1) {
+    const candidate = textBuf.line(n);
+    if (!TABLE_ROW_REGEX.test(candidate.text) || TABLE_SEPARATOR_REGEX.test(candidate.text)) {
+      break;
+    }
+    body.push(splitTableRow(candidate.text));
+    lastLine = candidate;
+  }
+
+  return {
+    firstLine: headerLine,
+    lastLine,
+    rows: [header, ...body],
+    alignments,
+  };
+}
+
+function splitTableRow(text: string): string[] {
+  let stripped = text.trim();
+  if (stripped.startsWith("|")) {
+    stripped = stripped.slice(1);
+  }
+  if (stripped.endsWith("|")) {
+    stripped = stripped.slice(0, -1);
+  }
+  return stripped.split("|").map((cell) => cell.trim());
+}
+
+function parseAlignment(cell: string): TableAlign {
+  const trimmed = cell.trim();
+  const left = trimmed.startsWith(":");
+  const right = trimmed.endsWith(":");
+  if (left && right) {
+    return "center";
+  }
+  if (right) {
+    return "right";
+  }
+  if (left) {
+    return "left";
+  }
+  return null;
+}
+
+class TableWidget extends WidgetType {
+  constructor(
+    private readonly rows: string[][],
+    private readonly alignments: TableAlign[],
+  ) {
+    super();
+  }
+
+  eq(other: TableWidget): boolean {
+    if (this.rows.length !== other.rows.length) {
+      return false;
+    }
+    if (this.alignments.length !== other.alignments.length) {
+      return false;
+    }
+    for (let i = 0; i < this.alignments.length; i += 1) {
+      if (this.alignments[i] !== other.alignments[i]) {
+        return false;
+      }
+    }
+    for (let r = 0; r < this.rows.length; r += 1) {
+      const a = this.rows[r];
+      const b = other.rows[r];
+      if (a.length !== b.length) {
+        return false;
+      }
+      for (let c = 0; c < a.length; c += 1) {
+        if (a[c] !== b[c]) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  toDOM(): HTMLElement {
+    const table = document.createElement("table");
+    table.className = "cm-md-table";
+    const colCount = this.alignments.length;
+
+    const thead = document.createElement("thead");
+    const headerRow = document.createElement("tr");
+    const header = this.rows[0] ?? [];
+    for (let c = 0; c < colCount; c += 1) {
+      const th = document.createElement("th");
+      th.textContent = header[c] ?? "";
+      const align = this.alignments[c];
+      if (align) {
+        th.style.textAlign = align;
+      }
+      headerRow.appendChild(th);
+    }
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    const tbody = document.createElement("tbody");
+    for (let r = 1; r < this.rows.length; r += 1) {
+      const tr = document.createElement("tr");
+      const cells = this.rows[r];
+      for (let c = 0; c < colCount; c += 1) {
+        const td = document.createElement("td");
+        td.textContent = cells[c] ?? "";
+        const align = this.alignments[c];
+        if (align) {
+          td.style.textAlign = align;
+        }
+        tr.appendChild(td);
+      }
+      tbody.appendChild(tr);
+    }
+    table.appendChild(tbody);
+
+    return table;
+  }
+
+  // Locked widget: a click on the table places the cursor at the block's
+  // edge, which flips `isStateTableBlockActive` true on the next render and
+  // the editor falls back to source view so the user can edit. If we
+  // returned false, CodeMirror would forward events to the widget DOM and
+  // the user could never enter the block to edit it.
+  ignoreEvent(): boolean {
+    return true;
+  }
+}
+
+// CodeMirror requires block-level decorations to live in a state field, not
+// a ViewPlugin (the layout pass needs to know about line replacements before
+// the viewport renders). Per-line / inline marks for tables stay in the
+// ViewPlugin above; this field handles ONLY the block-level <table> widget
+// that replaces a complete inactive table block.
+function buildTableBlockDecorations(state: EditorState): DecorationSet {
+  const decorations: Range<Decoration>[] = [];
+  const textBuf = state.doc;
+  let inCodeFence = false;
+
+  for (let n = 1; n <= textBuf.lines; n += 1) {
+    const line = textBuf.line(n);
+    const lineText = line.text;
+
+    if (/^```/.test(lineText)) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence) {
+      continue;
+    }
+
+    if (!TABLE_ROW_REGEX.test(lineText) || TABLE_SEPARATOR_REGEX.test(lineText)) {
+      continue;
+    }
+
+    const block = collectTableBlock(textBuf, line);
+    if (!block) {
+      continue;
+    }
+    if (isStateTableBlockActive(state, block)) {
+      // Block is being edited; the ViewPlugin's per-line source view shows.
+      // Skip past the block so we don't re-detect interior rows.
+      n = block.lastLine.number;
+      continue;
+    }
+
+    decorations.push(
+      Decoration.replace({
+        widget: new TableWidget(block.rows, block.alignments),
+        block: true,
+      }).range(block.firstLine.from, block.lastLine.to),
+    );
+    n = block.lastLine.number;
+  }
+
+  return Decoration.set(decorations, true);
+}
+
+function isStateTableBlockActive(state: EditorState, block: TableBlock): boolean {
+  return state.selection.ranges.some(
+    (range) => range.from <= block.lastLine.to && range.to >= block.firstLine.from,
+  );
+}
+
+export const tableBlockState = StateField.define<DecorationSet>({
+  create: (state) => buildTableBlockDecorations(state),
+  update: (value, tr) => {
+    if (tr.docChanged || tr.selection) {
+      return buildTableBlockDecorations(tr.state);
+    }
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 export const markdownPreview = ViewPlugin.fromClass(
   class {

@@ -184,6 +184,55 @@ test.describe("editor core", () => {
     await expect(page.getByTitle("Underline")).toHaveAttribute("aria-pressed", "false");
   });
 
+  test("gfm tables render as a real <table> widget when the cursor is outside the block", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "lead paragraph\n\n| Col A | Col B | Col C |\n| ----- | :---: | ----: |\n| 1     | 2     | 3     |\n| 4     | 5     | 6     |\n\ntail paragraph",
+    );
+    await setCursorInsideText(page, "lead");
+
+    // Widget shape: real <table>, header row + 2 body rows.
+    await expect(page.locator(".cm-md-table")).toHaveCount(1);
+    await expect(page.locator(".cm-md-table thead tr")).toHaveCount(1);
+    await expect(page.locator(".cm-md-table tbody tr")).toHaveCount(2);
+    await expect(page.locator(".cm-md-table thead th").nth(0)).toHaveText("Col A");
+    await expect(page.locator(".cm-md-table tbody tr").nth(0).locator("td").nth(2)).toHaveText("3");
+
+    // Alignments: separator was `| --- | :---: | ----: |`.
+    await expect(page.locator(".cm-md-table thead th").nth(1)).toHaveCSS("text-align", "center");
+    await expect(page.locator(".cm-md-table thead th").nth(2)).toHaveCSS("text-align", "right");
+
+    // Critical regression check: content downstream of the block must still
+    // render. The previous reverted attempt broke decorations everywhere
+    // after the table because the block-level replace overlapped per-line
+    // decorations on the same lines.
+    await expect(page.locator(".cm-content")).toContainText("lead paragraph");
+    await expect(page.locator(".cm-content")).toContainText("tail paragraph");
+  });
+
+  test("clicking inside a table block falls back to source view for editing", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "before\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\nafter",
+    );
+
+    // Cursor on the header line should flip the block to source mode.
+    await setCursorInsideText(page, "| A | B |");
+    await expect(page.locator(".cm-md-table")).toHaveCount(0);
+    await expect(page.locator(".cm-md-table-row")).toHaveCount(3);
+  });
+
+  test("a non-table line that just happens to start with a pipe does not become a widget", async ({ page }) => {
+    await page.goto("/");
+    // No separator line below the pipe row -> not a real GFM table.
+    await setEditorText(page, "| just one row |\n\nafter");
+    await setCursorInsideText(page, "after");
+
+    await expect(page.locator(".cm-md-table")).toHaveCount(0);
+  });
+
   test("inline html comments hide their span without crashing the surrounding line", async ({ page }) => {
     await page.goto("/");
     // The link inside the comment is the canonical reproducer for the

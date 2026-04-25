@@ -8,7 +8,7 @@ import { getActiveFormat, type ActiveFormat } from "./editorFormat";
 import { autoPairExtension, linkPasteExtension } from "./editorInputs";
 import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
 import { insertLink, wrapSelection } from "./markdownCommands";
-import { markdownPreview } from "./markdownPreview";
+import { markdownPreview, tableBlockState } from "./markdownPreview";
 
 type MarkdownEditorProps = {
   value: string;
@@ -41,6 +41,7 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       highlightActiveLine(),
       markdown(),
       markdownPreview,
+      tableBlockState,
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       Prec.highest(
         keymap.of([
