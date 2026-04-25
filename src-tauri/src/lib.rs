@@ -6,12 +6,19 @@
 // 2. Build a native macOS-style menu (App / File / Edit) with File > New /
 //    Open / Save / Save As, and forward those clicks to the frontend as
 //    `menu:new` / `menu:open` / `menu:save` / `menu:save-as` events.
+// 3. Carry OS-supplied file paths into the webview when the app is launched
+//    via Finder double-click or "Open With" — `RunEvent::Opened` fires before
+//    JS can mount listeners, so paths are queued and the frontend drains them
+//    on startup via `drain_pending_open_paths`. Live arrivals (already-running
+//    app gets a new file) are forwarded as `file:open-path` events.
 //
 // Naming rule: this is a *file* shell. No "document", "doc id", or "sync"
 // concepts leak into menu ids or event names.
 
+use std::sync::Mutex;
+
 use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 const MENU_NEW: &str = "menu_new";
 const MENU_OPEN: &str = "menu_open";
@@ -23,11 +30,43 @@ const EVENT_OPEN: &str = "menu:open";
 const EVENT_SAVE: &str = "menu:save";
 const EVENT_SAVE_AS: &str = "menu:save-as";
 
+const EVENT_OPEN_PATH: &str = "file:open-path";
+
+#[derive(Default)]
+struct PendingOpenPaths(Mutex<Vec<String>>);
+
+impl PendingOpenPaths {
+    // Always recover from a poisoned lock — the queue holds OS-supplied paths
+    // that must not be lost just because another thread panicked elsewhere.
+    fn lock_recover(&self) -> std::sync::MutexGuard<'_, Vec<String>> {
+        match self.0.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        }
+    }
+}
+
+#[tauri::command]
+fn drain_pending_open_paths<R: tauri::Runtime>(
+    webview: tauri::Webview<R>,
+    state: tauri::State<'_, PendingOpenPaths>,
+) -> Vec<String> {
+    // Defense in depth: only the main webview can drain the queue. If a future
+    // change adds a second webview window, paths intended for the editor are
+    // not handed to it accidentally.
+    if webview.label() != "main" {
+        return Vec::new();
+    }
+    state.lock_recover().drain(..).collect()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
+        .manage(PendingOpenPaths::default())
+        .invoke_handler(tauri::generate_handler![drain_pending_open_paths])
         .setup(|app| {
             let handle = app.handle();
             let menu = build_app_menu(handle)?;
@@ -50,8 +89,36 @@ pub fn run() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        // macOS file association / "Open With" / drag-onto-dock-icon all land
+        // here. The webview may or may not exist yet:
+        //   - cold start: no webview → queue the path, JS drains on mount
+        //   - warm: webview exists → emit live and skip the queue, otherwise
+        //     a stale entry from a previous run would also be re-loaded
+        if let tauri::RunEvent::Opened { urls } = event {
+            let state = app_handle.state::<PendingOpenPaths>();
+            let has_webview = !app_handle.webview_windows().is_empty();
+            for url in urls {
+                let Ok(path) = url.to_file_path() else { continue };
+                // Skip non-UTF-8 paths instead of mangling them with U+FFFD;
+                // a corrupted string would just fail at readTextFile anyway.
+                let Some(path_str) = path.to_str().map(|s| s.to_string()) else {
+                    eprintln!("skipping non-UTF-8 path from RunEvent::Opened");
+                    continue;
+                };
+                if has_webview {
+                    if let Err(err) = app_handle.emit(EVENT_OPEN_PATH, &path_str) {
+                        eprintln!("failed to emit {EVENT_OPEN_PATH}: {err}");
+                    }
+                } else {
+                    state.lock_recover().push(path_str);
+                }
+            }
+        }
+    });
 }
 
 fn build_app_menu<R: tauri::Runtime>(

@@ -32,7 +32,7 @@ import {
 } from "./fileAdapter";
 import { insertBlock, insertLink, setHeading, toggleLinePrefix, wrapSelection } from "./markdownCommands";
 import { MarkdownEditor } from "./MarkdownEditor";
-import { tauriFileAdapter } from "./tauriFileAdapter";
+import { isMarkdownPath, openMarkdownFromPath, tauriFileAdapter } from "./tauriFileAdapter";
 import {
   applyTheme,
   describeTheme,
@@ -284,6 +284,32 @@ export function App() {
     }
   }, [file.handle, file.name, handleSaveAs]);
 
+  // Load a file by absolute path. Shared by the OS file-open path (Finder
+  // double-click, "Open With", drag onto the dock icon) and the in-window
+  // drag-drop handler. Non-markdown paths are silently ignored so a stray
+  // drop on the editor doesn't replace the working file.
+  const loadPathFile = useCallback(
+    async (path: string) => {
+      if (!path || !isMarkdownPath(path)) {
+        return;
+      }
+      if (!guardDirty("open")) {
+        return;
+      }
+      try {
+        const next = await openMarkdownFromPath(path);
+        if (next) {
+          replaceFile(next);
+        }
+      } catch (error) {
+        console.error("Failed to open path", path, error);
+        setSaveStatus("error");
+        setSaveError(error instanceof Error ? error.message : "Failed to open file");
+      }
+    },
+    [guardDirty, replaceFile],
+  );
+
   // Keyboard shortcuts at the window level so they catch Cmd/Ctrl-O/N
   // before the browser uses them, and so saving works even outside the editor.
   useEffect(() => {
@@ -379,6 +405,90 @@ export function App() {
       }
     };
   }, []);
+
+  // OS-supplied paths: Finder double-click, "Open With", drag-onto-dock-icon
+  // all land here. Cold starts drain `drain_pending_open_paths` (RunEvent::Opened
+  // fires before the webview can listen, so paths are queued in Rust). Live
+  // arrivals come through `file:open-path`. Drag-drop into the window arrives
+  // via the built-in `tauri://drag-drop` event with a `paths` payload.
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    const unlisteners: Array<() => void> = [];
+
+    const subscribe = async () => {
+      try {
+        const [{ invoke }, { listen }] = await Promise.all([
+          import("@tauri-apps/api/core"),
+          import("@tauri-apps/api/event"),
+        ]);
+
+        const onOpenPath = await listen<unknown>("file:open-path", (event) => {
+          if (typeof event.payload === "string" && event.payload.length > 0) {
+            void loadPathFile(event.payload);
+          }
+        });
+        // tauri://drag-drop fires *only* on the drop phase — Tauri 2 emits
+        // separate events (`tauri://drag-enter`, `drag-over`, `drag-leave`)
+        // for the other phases, so no `type` filter is needed here.
+        const onDragDrop = await listen<{ paths?: unknown }>("tauri://drag-drop", (event) => {
+          const raw = event.payload?.paths;
+          if (!Array.isArray(raw)) {
+            return;
+          }
+          // Validate each entry is a non-empty string before letting it touch
+          // the filesystem — the IPC payload type is a TS-side hint only.
+          const target = raw.find(
+            (entry): entry is string =>
+              typeof entry === "string" && entry.length > 0 && isMarkdownPath(entry),
+          );
+          if (target) {
+            // Single-window app: load the first markdown path; the rest are
+            // dropped silently for now. TODO: route extras to recent files.
+            void loadPathFile(target);
+          }
+        });
+
+        if (disposed) {
+          onOpenPath();
+          onDragDrop();
+          return;
+        }
+        unlisteners.push(onOpenPath, onDragDrop);
+
+        // Cold-start drain: any path the OS handed us before listeners were
+        // attached lives in Rust state; pull it now and load the first match.
+        try {
+          const queued = await invoke<unknown>("drain_pending_open_paths");
+          if (!disposed && Array.isArray(queued)) {
+            const target = queued.find(
+              (entry): entry is string =>
+                typeof entry === "string" && entry.length > 0 && isMarkdownPath(entry),
+            );
+            if (target) {
+              void loadPathFile(target);
+            }
+          }
+        } catch (error) {
+          console.error("Failed to drain pending open paths", error);
+        }
+      } catch (error) {
+        console.error("Failed to bind file-open events", error);
+      }
+    };
+
+    void subscribe();
+
+    return () => {
+      disposed = true;
+      for (const unlisten of unlisteners) {
+        unlisten();
+      }
+    };
+  }, [loadPathFile]);
 
   // Native menu bridge: when running inside Tauri, the File menu (New/Open/
   // Save/Save As) emits `menu:*` events from Rust. Forward them to the same

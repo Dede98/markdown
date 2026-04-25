@@ -158,3 +158,33 @@ export const tauriFileAdapter: FileAdapter = {
     return { name: basename(path), handle: path };
   },
 };
+
+// Tauri-only entry: load a file by absolute path. Used when the OS hands the
+// app a path through Finder double-click, "Open With", drag-onto-dock, or a
+// drop into the webview. The web adapter has no equivalent because browsers
+// never receive a real filesystem path from those gestures.
+//
+// Read errors propagate: scope violations (path outside the fs:scope allow
+// list), missing files, and permission denials must reach the caller so the
+// UI can surface a real reason instead of pretending nothing happened.
+export async function openMarkdownFromPath(path: string): Promise<LocalFile | null> {
+  if (!path) {
+    return null;
+  }
+  const contents = await readPath(path);
+  return { name: basename(path), contents, handle: path };
+}
+
+const MARKDOWN_EXTENSIONS = new Set(["md", "markdown", "mdx", "mdown"]);
+
+// Path filter used by the drag-drop and file-open handlers. Accepts the same
+// extensions the picker shows so a dropped file is opened iff the picker would
+// have offered it.
+export function isMarkdownPath(path: string): boolean {
+  const trimmed = path.replace(/\\/g, "/");
+  const dot = trimmed.lastIndexOf(".");
+  if (dot < 0 || dot === trimmed.length - 1) {
+    return false;
+  }
+  return MARKDOWN_EXTENSIONS.has(trimmed.slice(dot + 1).toLowerCase());
+}
