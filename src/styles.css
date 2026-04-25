@@ -550,21 +550,52 @@ button {
   text-decoration-color: var(--fg-faint);
 }
 
-/* GFM tables: lay each pipe-bordered line on a soft surface and lighten the
- * pipes when the cursor is elsewhere so the live preview reads as a grid
- * without hiding the underlying Markdown when editing. */
+.cm-md-underline {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+/* GFM tables — source view: when the cursor sits inside the block we keep
+ * the raw pipe lines visible but typeset them with monospace so columns
+ * line up. The block-widget below takes over when the cursor leaves. */
 .cm-md-table-row {
-  background: var(--code-bg-block);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.92em;
+  color: var(--fg-body);
 }
 
 .cm-md-table-separator {
   color: var(--fg-faint);
 }
 
-.cm-md-table-pipe {
-  color: var(--rule);
+/* GFM tables — rendered widget: a real <table> with thin rules and
+ * comfortable padding. Sits inline with the document column so the writing
+ * surface keeps its 700 px width. */
+.cm-md-table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.6em 0;
+  font-size: 0.95em;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid var(--rule);
+  padding: 6px 12px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.cm-md-table th {
+  background: var(--bg-surface-hover);
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.cm-md-table tbody tr:nth-child(even) td {
+  background: var(--bg-surface-hover);
 }
 
 .cm-md-inline-code {
