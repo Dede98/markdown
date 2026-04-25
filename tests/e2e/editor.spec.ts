@@ -142,12 +142,28 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).not.toContainText("line");
   });
 
-  test("html comments stay visible while the cursor sits inside them", async ({ page }) => {
+  test("html comments stay hidden even when the cursor lands on the comment offset", async ({ page }) => {
     await page.goto("/");
     await setEditorText(page, "before\n\n<!-- secret -->\n\nafter");
 
+    // Block-level replace makes the position uneditable, but we still try to
+    // park the selection at the comment line — comments must remain hidden
+    // regardless. A future "raw markdown" mode will expose them for editing.
     await setCursorInsideText(page, "secret");
-    await expect(page.locator(".cm-content")).toContainText("<!-- secret -->");
+    await expect(page.locator(".cm-content")).not.toContainText("<!--");
+    await expect(page.locator(".cm-content")).not.toContainText("secret");
+  });
+
+  test("fully-comment lines collapse so no empty placeholder line remains", async ({ page }) => {
+    await page.goto("/");
+    // Source has 5 lines (`before`, blank, comment, blank, `after`). With the
+    // block-level replace the comment line should drop out of the rendered
+    // line count entirely.
+    await setEditorText(page, "before\n\n<!-- gone -->\n\nafter");
+    await setCursorInsideText(page, "before");
+
+    const renderedLines = await page.locator(".cm-line").count();
+    expect(renderedLines).toBeLessThan(5);
   });
 
   test("underline toolbar wraps selection in <u>...</u> and renders with underline", async ({ page }) => {
@@ -215,11 +231,30 @@ test.describe("editor core", () => {
     await page.goto("/");
     await setEditorText(
       page,
-      "before\n\n| A | B |\n| - | - |\n| 1 | 2 |\n\nafter",
+      "before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nafter",
     );
 
     // Cursor on the header line should flip the block to source mode.
     await setCursorInsideText(page, "| A | B |");
+    await expect(page.locator(".cm-md-table")).toHaveCount(0);
+    await expect(page.locator(".cm-md-table-row")).toHaveCount(3);
+  });
+
+  test("clicking the rendered table widget surfaces the source view for editing", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nafter",
+    );
+    await setCursorInsideText(page, "before");
+    await expect(page.locator(".cm-md-table")).toHaveCount(1);
+
+    // A click on the rendered widget must position the cursor at the block
+    // edge (the editor handles pointer events because TableWidget.ignoreEvent
+    // returns false), which flips the block to source view on the next
+    // render so the user can edit the underlying markdown.
+    await page.locator(".cm-md-table").click();
     await expect(page.locator(".cm-md-table")).toHaveCount(0);
     await expect(page.locator(".cm-md-table-row")).toHaveCount(3);
   });

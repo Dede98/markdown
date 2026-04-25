@@ -88,11 +88,10 @@ function buildDecorations(view: EditorView): DecorationSet {
           first.from === 0 && (last.to >= text.length || text.length === 0);
 
         if (fullyComment) {
-          if (lineActive && line.to > line.from) {
-            addDecoration(decorations, line.from, line.to, Decoration.mark({ class: "cm-md-syntax" }));
-          } else if (!lineActive && line.to > line.from) {
-            addDecoration(decorations, line.from, line.to, Decoration.replace({}));
-          }
+          // Fully-comment lines collapse via the `htmlCommentBlockState`
+          // StateField (block-level replace). Block decorations cannot live
+          // in a ViewPlugin, so the only thing this branch does is skip the
+          // rest of the per-line markdown processing and advance.
           if (line.to + 1 > to) {
             break;
           }
@@ -100,25 +99,20 @@ function buildDecorations(view: EditorView): DecorationSet {
           continue;
         }
 
-        // Partial-comment line: emit just the comment-range decorations and
-        // skip the rest of the per-line markdown processing. Falling through
-        // would let the link / bold / strike branches add their own
-        // `Decoration.replace` ranges on text that is already covered by the
-        // comment replace, which CodeMirror rejects as overlapping (the exact
-        // failure class that broke the previous attempt). Surrounding prose
-        // therefore renders as plain text on a comment line — a deliberate
-        // simplification given how rare mixed prose+comment lines are.
+        // Partial-comment line: hide the comment span via inline replace.
+        // Falling through to the markdown branches would let bold / italic /
+        // link emit their own `Decoration.replace` ranges that overlap the
+        // comment replace, which CodeMirror rejects (the exact failure class
+        // that broke the prior attempt). Surrounding prose therefore renders
+        // as plain text on a comment line — comments are always invisible,
+        // independent of cursor position.
         for (const range of commentRanges) {
           const fromAbs = line.from + range.from;
           const toAbs = line.from + range.to;
           if (fromAbs >= toAbs) {
             continue;
           }
-          if (lineActive) {
-            addDecoration(decorations, fromAbs, toAbs, Decoration.mark({ class: "cm-md-syntax" }));
-          } else {
-            addDecoration(decorations, fromAbs, toAbs, Decoration.replace({}));
-          }
+          addDecoration(decorations, fromAbs, toAbs, Decoration.replace({}));
         }
         if (line.to + 1 > to) {
           break;
@@ -554,13 +548,13 @@ class TableWidget extends WidgetType {
     return table;
   }
 
-  // Locked widget: a click on the table places the cursor at the block's
-  // edge, which flips `isStateTableBlockActive` true on the next render and
-  // the editor falls back to source view so the user can edit. If we
-  // returned false, CodeMirror would forward events to the widget DOM and
-  // the user could never enter the block to edit it.
+  // Returning `false` lets CodeMirror handle pointer events on the widget:
+  // a click positions the cursor at the nearest valid offset (the block
+  // edge), which flips `isStateTableBlockActive` true on the next render so
+  // the source view appears for editing. With `true` here CM6 swallows the
+  // click entirely and the user cannot enter the block.
   ignoreEvent(): boolean {
-    return true;
+    return false;
   }
 }
 
@@ -624,6 +618,91 @@ export const tableBlockState = StateField.define<DecorationSet>({
   update: (value, tr) => {
     if (tr.docChanged || tr.selection) {
       return buildTableBlockDecorations(tr.state);
+    }
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
+// HTML comments fully collapse: any line that is entirely covered by one or
+// more `<!-- … -->` ranges (single-line, multi-line interior, multi-line
+// open, or multi-line close) is replaced with a block-level decoration so
+// the line disappears from layout entirely — no empty placeholder remains.
+// Lives in a StateField because block-level replacements cannot come from a
+// ViewPlugin. Comments are always invisible regardless of cursor position;
+// a future "raw markdown" mode will expose them for editing.
+function buildHtmlCommentBlockDecorations(state: EditorState): DecorationSet {
+  const decorations: Range<Decoration>[] = [];
+  const textBuf = state.doc;
+  let inHtmlComment = false;
+  let inCodeFence = false;
+
+  for (let n = 1; n <= textBuf.lines; n += 1) {
+    const line = textBuf.line(n);
+    const text = line.text;
+
+    if (/^```/.test(text)) {
+      inCodeFence = !inCodeFence;
+      continue;
+    }
+    if (inCodeFence) {
+      continue;
+    }
+
+    const ranges: Array<{ from: number; to: number }> = [];
+    let scanPos = 0;
+    let openInProgress: boolean = inHtmlComment;
+    while (scanPos <= text.length) {
+      if (openInProgress) {
+        const closeIdx = text.indexOf("-->", scanPos);
+        if (closeIdx === -1) {
+          ranges.push({ from: scanPos, to: text.length });
+          break;
+        }
+        ranges.push({ from: scanPos, to: closeIdx + 3 });
+        scanPos = closeIdx + 3;
+        openInProgress = false;
+      } else {
+        const openIdx = text.indexOf("<!--", scanPos);
+        if (openIdx === -1) {
+          break;
+        }
+        scanPos = openIdx;
+        openInProgress = true;
+      }
+    }
+    inHtmlComment = openInProgress;
+
+    if (ranges.length === 0) {
+      continue;
+    }
+
+    const first = ranges[0];
+    const last = ranges[ranges.length - 1];
+    const fullyComment =
+      first.from === 0 && (last.to >= text.length || text.length === 0);
+    if (!fullyComment) {
+      continue;
+    }
+
+    // Span the line including its trailing newline so the line disappears
+    // from layout. For the last line of the doc there is no trailing
+    // newline; clamp to doc length to keep the range valid.
+    const fromAbs = line.from;
+    const toAbs = Math.min(line.to + 1, textBuf.length);
+    decorations.push(
+      Decoration.replace({ block: true }).range(fromAbs, toAbs),
+    );
+  }
+
+  return Decoration.set(decorations, true);
+}
+
+export const htmlCommentBlockState = StateField.define<DecorationSet>({
+  create: (state) => buildHtmlCommentBlockDecorations(state),
+  update: (value, tr) => {
+    if (tr.docChanged) {
+      return buildHtmlCommentBlockDecorations(tr.state);
     }
     return value;
   },
