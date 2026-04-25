@@ -173,6 +173,17 @@ function buildDecorations(view: EditorView): DecorationSet {
         decorateSyntax(decorations, start + match[0].length - 2, start + match[0].length, activeSyntax);
       }
 
+      // HTML underline `<u>…</u>`. Markdown has no native underline syntax, so
+      // the `<u>` tag is the de-facto convention. The opening tag is 3 chars
+      // and the closing is 4; otherwise this mirrors the strike branch above.
+      for (const match of text.matchAll(/<u>([^<\n]+)<\/u>/g)) {
+        const start = line.from + match.index!;
+        const activeSyntax = isRangeActive(view, start, start + match[0].length);
+        decorateSyntax(decorations, start, start + 3, activeSyntax);
+        addDecoration(decorations, start + 3, start + match[0].length - 4, Decoration.mark({ class: "cm-md-underline" }));
+        decorateSyntax(decorations, start + match[0].length - 4, start + match[0].length, activeSyntax);
+      }
+
       for (const match of text.matchAll(/\[([^\]\n]+)\]\(([^)\n]+)\)/g)) {
         const start = line.from + match.index!;
         const labelStart = start + 1;

@@ -550,6 +550,12 @@ button {
   text-decoration-color: var(--fg-faint);
 }
 
+.cm-md-underline {
+  text-decoration: underline;
+  text-decoration-color: var(--fg-faint);
+  text-underline-offset: 3px;
+}
+
 /* GFM tables: lay each pipe-bordered line on a soft surface and lighten the
  * pipes when the cursor is elsewhere so the live preview reads as a grid
  * without hiding the underlying Markdown when editing. */

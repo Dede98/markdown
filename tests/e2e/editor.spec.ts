@@ -150,6 +150,40 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).toContainText("<!-- secret -->");
   });
 
+  test("underline toolbar wraps selection in <u>...</u> and renders with underline", async ({ page }) => {
+    await page.goto("/");
+    await replaceEditorText(page, "underscore");
+
+    await page.getByTitle("Underline").click();
+    await expectEditorSource(page, "<u>underscore</u>");
+  });
+
+  test("underline tags hide off-cursor and surface back on-cursor", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "before <u>here</u> tail");
+
+    await setCursorInsideText(page, "before");
+    await expect(page.locator(".cm-content")).toContainText("here");
+    await expect(page.locator(".cm-content")).not.toContainText("<u>");
+    await expect(page.locator(".cm-content")).not.toContainText("</u>");
+    await expect(page.locator(".cm-md-underline")).toContainText("here");
+
+    await setCursorInsideText(page, "here");
+    await expect(page.locator(".cm-content")).toContainText("<u>here</u>");
+  });
+
+  test("underline button reflects active cursor formatting", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "<u>line</u> plain");
+
+    await setCursorInsideText(page, "line");
+    await expect(page.getByTitle("Underline")).toHaveAttribute("aria-pressed", "true");
+
+    await setCursorInsideText(page, "plain");
+    await expect(page.getByTitle("Underline")).toHaveAttribute("aria-pressed", "false");
+  });
+
   test("inline html comments hide their span without crashing the surrounding line", async ({ page }) => {
     await page.goto("/");
     // The link inside the comment is the canonical reproducer for the

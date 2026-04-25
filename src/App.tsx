@@ -24,6 +24,7 @@ import {
   Strikethrough,
   Sun,
   Table as TableIcon,
+  Underline,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
@@ -705,6 +706,9 @@ export function App() {
             </button>
             <button className={activeFormat.italic ? "isActive" : undefined} aria-pressed={activeFormat.italic} title="Italic" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "*", after: "*", placeholder: "italic" }))}>
               <Italic size={14} />
+            </button>
+            <button className={activeFormat.underline ? "isActive" : undefined} aria-pressed={activeFormat.underline} title="Underline" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "<u>", after: "</u>", placeholder: "underline" }))}>
+              <Underline size={14} />
             </button>
             <button className={activeFormat.strike ? "isActive" : undefined} aria-pressed={activeFormat.strike} title="Strikethrough" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "~~", after: "~~", placeholder: "strike" }))}>
               <Strikethrough size={14} />
