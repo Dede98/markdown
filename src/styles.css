@@ -173,22 +173,15 @@ button {
   background: var(--bg-chrome);
 }
 
-/* macOS Tauri shell: titleBarStyle "Overlay" leaves the traffic-light buttons
- * floating at the top-left of the window. Reserve space inside the topbar so
- * file actions and the centered title cluster don't collide with them, and
- * suppress text selection / caret cursor in the drag region so a click drags
- * the window instead of starting a text-selection gesture. */
+/* macOS Tauri shell: titleBarStyle "Transparent" keeps a thin native titlebar
+ * at the very top that hosts the traffic-light buttons and handles dragging
+ * via the OS. Our React topbar sits directly below it. Suppress text selection
+ * so a click on the topbar text starts a window drag (via the explicit handler
+ * in App.tsx) instead of a text-selection gesture. */
 :root[data-tauri="1"] .topbar {
-  padding-left: 88px;
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
-}
-
-:root[data-tauri="1"] .titleCluster {
-  /* The topbar gained a 68px left offset; nudge the absolutely-positioned
-   * title cluster back so its visual center matches the document column. */
-  max-width: min(420px, calc(100vw - 360px));
 }
 
 .windowSlot {
