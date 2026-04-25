@@ -78,7 +78,7 @@ function isOffsetInsideMatch(offset: number, start: number, length: number) {
   return offset > start && offset < start + length;
 }
 
-function isInsideCodeBlock(state: EditorState, cursor: number) {
+export function isInsideCodeBlock(state: EditorState, cursor: number) {
   let inside = false;
 
   for (let lineNo = 1; lineNo <= state.doc.lines; lineNo += 1) {

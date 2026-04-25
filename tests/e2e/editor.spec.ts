@@ -201,6 +201,119 @@ test.describe("editor core", () => {
     await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toHaveCSS("position", "sticky");
   });
 
+  test("enter continues an unordered list with the same marker", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- first");
+
+    await pressEnterInEditor(page);
+    await page.keyboard.insertText("second");
+
+    await expectEditorSource(page, "- first\n- second");
+  });
+
+  test("enter increments the next ordered list number", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "1. apple");
+
+    await pressEnterInEditor(page);
+    await page.keyboard.insertText("banana");
+
+    await expectEditorSource(page, "1. apple\n2. banana");
+  });
+
+  test("enter continues task lists with a fresh unchecked box", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- [x] done");
+
+    await pressEnterInEditor(page);
+    await page.keyboard.insertText("next");
+
+    await expectEditorSource(page, "- [x] done\n- [ ] next");
+  });
+
+  test("enter on an empty list item ends the list", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- item\n- ");
+
+    await pressEnterInEditor(page);
+    await page.keyboard.insertText("after");
+
+    await expectEditorSource(page, "- item\n\nafter");
+    await expectEditorSourceNot(page, "- item\n- \nafter");
+  });
+
+  test("enter continues a blockquote with the same prefix", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "> quoted");
+
+    await pressEnterInEditor(page);
+    await page.keyboard.insertText("more");
+
+    await expectEditorSource(page, "> quoted\n> more");
+  });
+
+  test("enter on an empty blockquote line ends the quote", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "> quoted\n> ");
+
+    await pressEnterInEditor(page);
+    await page.keyboard.insertText("plain");
+
+    await expectEditorSource(page, "> quoted\n\nplain");
+    await expectEditorSourceNot(page, "> quoted\n> \nplain");
+  });
+
+  test("backspace at the start of a list item removes the marker", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- item");
+
+    await setEditorSelection(page, "- ".length);
+    await page.keyboard.press("Backspace");
+
+    await expectEditorSource(page, "item");
+    await expectEditorSourceNot(page, "- item");
+  });
+
+  test("tab indents an unordered list item by two spaces", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- top\n- nested");
+
+    await setEditorSelection(page, "- top\n- nested".length);
+    await page.keyboard.press("Tab");
+
+    await expectEditorSource(page, "- top\n  - nested");
+  });
+
+  test("shift+tab outdents a nested list item", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- top\n  - nested");
+
+    await setEditorSelection(page, "- top\n  - nested".length);
+    await page.keyboard.press("Shift+Tab");
+
+    await expectEditorSource(page, "- top\n- nested");
+  });
+
+  test("enter inside a code block keeps the current indentation", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "```\n  first");
+
+    await pressEnterInEditor(page);
+    await page.keyboard.insertText("second");
+
+    await expectEditorSource(page, "```\n  first\n  second");
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
@@ -258,6 +371,17 @@ async function setEditorText(page: Page, text: string, selectText = false) {
   if (selectText) {
     await selectAllEditorText(page);
   }
+}
+
+async function pressEnterInEditor(page: Page) {
+  await page.keyboard.press("Enter");
+}
+
+function skipMobileKeyboardTest(testInfo: TestInfo) {
+  test.skip(
+    testInfo.project.name === "chrome-mobile",
+    "Mobile chrome simulates a virtual keyboard; keymap-binding behavior is verified on desktop only.",
+  );
 }
 
 async function selectAllEditorText(page: Page) {

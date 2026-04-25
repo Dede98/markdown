@@ -5,6 +5,7 @@ import { EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
+import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
 import { markdownPreview } from "./markdownPreview";
 
 type MarkdownEditorProps = {
@@ -41,6 +42,10 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       Prec.highest(
         keymap.of([
+          { key: "Enter", run: handleEnter },
+          { key: "Backspace", run: handleBackspace },
+          { key: "Tab", run: handleListTab },
+          { key: "Shift-Tab", run: handleListShiftTab },
           { key: "Tab", run: insertTab, preventDefault: true },
           { key: "Shift-Tab", run: indentLess, preventDefault: true },
         ]),
