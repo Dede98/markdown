@@ -535,7 +535,7 @@ export function App() {
 
   return (
     <main className={zen ? "app appZen" : "app"}>
-      <header className="topbar">
+      <header className="topbar" data-tauri-drag-region>
         {!zen ? (
           <div className="fileActions" role="toolbar" aria-label="File actions">
             <button className="iconButton" type="button" title="New file" aria-label="New file" onClick={handleNew}>
