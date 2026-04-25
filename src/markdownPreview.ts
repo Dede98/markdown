@@ -648,10 +648,28 @@ class TableWidget extends WidgetType {
     }
     table.appendChild(tbody);
 
+    // Ask CodeMirror to remeasure right after the widget mounts. Without
+    // this, CM6 keeps the height it estimated from the source-line count
+    // (lines 1.6em-ish each) which can be quite a bit shorter than the
+    // rendered table (cell min-height + padding + borders + margin), and
+    // the height map drifts by that delta — once per widget — affecting
+    // every cursor calculation downstream.
+    view.requestMeasure();
+
     return table;
   }
 
-  updateDOM(dom: HTMLElement): boolean {
+  // Help CM6's height map land on a value much closer to the rendered
+  // table. Each visible row contributes the cell `min-height: 1.6em`
+  // (1.6 * 0.95em font * 16px ≈ 24px), plus top + bottom padding of
+  // 0.32em (≈ 5px each side ≈ 10px) and a border. ~36px per row plus a
+  // small margin per table block keeps the estimate in the right ballpark
+  // even before the measure pass runs.
+  get estimatedHeight(): number {
+    return this.rows.length * 36 + 12;
+  }
+
+  updateDOM(dom: HTMLElement, view: EditorView): boolean {
     // Patch the existing widget DOM in place to reflect this widget's rows.
     // The cell currently in edit mode (containing the focused <input>) is
     // intentionally left alone so the user's caret and selection inside the
@@ -667,6 +685,7 @@ class TableWidget extends WidgetType {
       return false;
     }
     let idx = 0;
+    let touched = false;
     for (let r = 0; r < rowCount; r += 1) {
       const row = this.rows[r];
       if (row.length !== colCount) {
@@ -679,6 +698,7 @@ class TableWidget extends WidgetType {
         if (cell.dataset.mdSource === newSource) {
           continue;
         }
+        touched = true;
         cell.dataset.mdSource = newSource;
         const input = cell.querySelector<HTMLInputElement>("input.cm-md-table-cell-input");
         if (input) {
@@ -691,6 +711,14 @@ class TableWidget extends WidgetType {
         }
         renderCellRendered(cell, newSource);
       }
+    }
+    if (touched) {
+      // Cell content can change rendered cell height (an empty cell drops
+      // back to `min-height`, a wrapped value extends taller). Force a
+      // re-measure so CM6's height map keeps up with the visible widget
+      // size — without this, the click-target drift compounds per table
+      // as edits accumulate across the doc.
+      view.requestMeasure();
     }
     return true;
   }
