@@ -518,6 +518,79 @@ test.describe("editor core", () => {
     expect(calls).toEqual([{ kind: "saveAs", name: "untitled.md", contents: "shortcut body" }]);
   });
 
+  test("mod+s captures the latest typed characters when the shortcut races a pending render", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installFakeFileAdapter(page, {
+      saveAsResult: { name: "typed.md", handleId: "fs-typed" },
+    });
+    await page.goto("/");
+
+    // Drive text through the real keyboard path so `setMarkdown` is queued via
+    // CodeMirror's onChange. Mod+S immediately afterwards must read the latest
+    // value via the ref instead of a stale closure.
+    await setEditorText(page, "");
+    await page.keyboard.insertText("racy body");
+    await page.keyboard.press(modKeyShortcut("s"));
+
+    await expect(page.locator(".documentState")).toHaveText("Saved");
+    const calls = await page.evaluate(() => (window as unknown as { __fileAdapterCalls: unknown[] }).__fileAdapterCalls);
+    expect(calls).toEqual([{ kind: "saveAs", name: "untitled.md", contents: "racy body" }]);
+  });
+
+  test("theme toggle cycles light, dark, and system and reflects the choice on <html>", async ({ page }) => {
+    await seedTheme(page, "light");
+    await page.goto("/");
+
+    const toggle = page.getByRole("button", { name: /theme/i });
+    await expect(toggle).toHaveAccessibleName(/light theme/i);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    await toggle.click();
+    await expect(toggle).toHaveAccessibleName(/dark theme/i);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    await toggle.click();
+    // System resolves to either light or dark; both are acceptable, but the
+    // label must indicate "System" so the user can tell what they picked.
+    await expect(toggle).toHaveAccessibleName(/system theme/i);
+    const resolvedUnderSystem = await page.locator("html").getAttribute("data-theme");
+    expect(["light", "dark"]).toContain(resolvedUnderSystem);
+
+    await toggle.click();
+    await expect(toggle).toHaveAccessibleName(/light theme/i);
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  });
+
+  test("theme preference persists across reloads via localStorage", async ({ page }) => {
+    // Start from a known light state, then click once to land on "dark" no matter
+    // what the OS prefers. We avoid `seedTheme` here because `addInitScript`
+    // would re-seed on reload and overwrite the value the user just chose.
+    await page.goto("/");
+    await page.evaluate(() => window.localStorage.setItem("markdown.theme", "light"));
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+
+    await page.getByRole("button", { name: /theme/i }).click();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+
+    const stored = await page.evaluate(() => window.localStorage.getItem("markdown.theme"));
+    expect(stored).toBe("dark");
+
+    await page.reload();
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.getByRole("button", { name: /theme/i })).toHaveAccessibleName(/dark theme/i);
+  });
+
+  test("pre-paint bootstrap applies the stored theme before React mounts", async ({ page }) => {
+    await seedTheme(page, "dark");
+    await page.goto("/");
+
+    // The inline script in index.html runs before the React app, so the
+    // attribute must already be set by the time the topbar appears.
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+    await expect(page.getByRole("button", { name: /theme/i })).toHaveAccessibleName(/dark theme/i);
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
@@ -679,6 +752,18 @@ type FakeAdapterOptions = {
   openFile?: { name: string; contents: string };
   saveAsResult?: { name: string; handleId: string };
 };
+
+async function seedTheme(page: Page, pref: "light" | "dark" | "system") {
+  // Stamp the pref into localStorage before navigation so the pre-paint script
+  // in index.html resolves the same way the user would on a real reload.
+  await page.addInitScript((value) => {
+    try {
+      window.localStorage.setItem("markdown.theme", value);
+    } catch {
+      // Storage may be unavailable; tests will still exercise default-system path.
+    }
+  }, pref);
+}
 
 async function installFakeFileAdapter(page: Page, options: FakeAdapterOptions = {}) {
   await page.addInitScript((opts) => {

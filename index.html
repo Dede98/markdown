@@ -3,7 +3,29 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
     <title>Markdown Editor</title>
+    <!--
+      Resolve and apply the user's theme before first paint to avoid a flash.
+      Mirrors `src/theme.ts` — keep the storage key and resolution rules in sync.
+    -->
+    <script>
+      (function () {
+        try {
+          var stored = window.localStorage.getItem("markdown.theme");
+          var pref = stored === "light" || stored === "dark" || stored === "system" ? stored : "system";
+          var resolved =
+            pref === "system"
+              ? window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+                ? "dark"
+                : "light"
+              : pref;
+          document.documentElement.setAttribute("data-theme", resolved);
+        } catch (e) {
+          document.documentElement.setAttribute("data-theme", "light");
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

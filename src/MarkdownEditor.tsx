@@ -65,11 +65,13 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
           onFormatChangeRef.current(getActiveFormat(update.state));
         }
       }),
+      // Theme values are CSS custom properties so the editor switches with
+      // the rest of the app on `data-theme` change without rebuilding the view.
       EditorView.theme({
         "&": {
           height: "100%",
           backgroundColor: "transparent",
-          color: "#2a2a2e",
+          color: "var(--fg-body)",
           fontSize: "18px",
         },
         ".cm-scroller": {
@@ -82,7 +84,7 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
           width: "100%",
           margin: "0 auto",
           padding: "0 32px",
-          caretColor: "#2d5b8c",
+          caretColor: "var(--accent)",
         },
         ".cm-line": {
           padding: "0 2px",
@@ -101,6 +103,9 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
         },
         "&.cm-focused": {
           outline: "none",
+        },
+        ".cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection": {
+          background: "var(--selection-bg)",
         },
       }),
     ];

@@ -14,10 +14,13 @@ import {
   ListChecks,
   ListOrdered,
   Minus,
+  Monitor,
+  Moon,
   PanelTopClose,
   PanelTopOpen,
   Quote,
   Save,
+  Sun,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
@@ -30,6 +33,17 @@ import {
 import { insertBlock, insertLink, setHeading, toggleLinePrefix, wrapSelection } from "./markdownCommands";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { tauriFileAdapter } from "./tauriFileAdapter";
+import {
+  applyTheme,
+  describeTheme,
+  getStoredTheme,
+  nextTheme,
+  resolveTheme,
+  storeTheme,
+  subscribeToSystemTheme,
+  type ResolvedTheme,
+  type ThemePref,
+} from "./theme";
 import { webFileAdapter } from "./webFileAdapter";
 
 const initialMarkdown = `# On the Quiet Hour
@@ -78,7 +92,11 @@ function isTauriRuntime(): boolean {
 }
 
 function getActiveAdapter(): FileAdapter {
-  if (typeof window !== "undefined") {
+  // Honor the test override only on dev builds. Vite tree-shakes the
+  // `import.meta.env.DEV` branch in production, so a malicious page in a
+  // shipped build cannot stamp `__markdownFileAdapterOverride` and intercept
+  // saves through the editor's normal save path.
+  if (import.meta.env.DEV && typeof window !== "undefined") {
     const win = window as AdapterWindow;
     if (win.__markdownFileAdapterOverride) {
       return win.__markdownFileAdapterOverride;
@@ -88,6 +106,16 @@ function getActiveAdapter(): FileAdapter {
     return tauriFileAdapter;
   }
   return webFileAdapter;
+}
+
+// Only expose the adapter global on the local Vite dev origin. Mirrors the
+// gating used for `__markdownEditorView` in MarkdownEditor.tsx so production
+// builds (web or Tauri) do not surface internals through `window`.
+function shouldExposeAdapter(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.location.hostname === "127.0.0.1" && window.location.port === "5173";
 }
 
 const initialFile: FileState = {
@@ -104,7 +132,21 @@ export function App() {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fileVersion, setFileVersion] = useState(0);
+  // Read the stored pref once so the two state slots share the same source of
+  // truth even if `localStorage` throws on a later read.
+  const [themePref, setThemePref] = useState<ThemePref>(() => getStoredTheme());
+  const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(themePref));
   const editorRef = useRef<EditorView | null>(null);
+  // Latest editor text. Saving from a keyboard shortcut runs in the same tick
+  // as `setMarkdown`, so a closure-captured `markdown` would be stale; reading
+  // through the ref guarantees the on-disk content matches what the user sees.
+  const markdownRef = useRef(markdown);
+  markdownRef.current = markdown;
+  // Mirror `fileVersion` so async save callbacks can detect that the user
+  // switched files mid-save (replaceFile bumps fileVersion). Without this an
+  // in-flight save would clobber the freshly-opened file's name/handle/savedContents.
+  const fileVersionRef = useRef(fileVersion);
+  fileVersionRef.current = fileVersion;
 
   const dirty = markdown !== file.savedContents;
   const badge = useMemo(
@@ -177,20 +219,37 @@ export function App() {
     setSaveStatus("saving");
     setSaveError(null);
 
+    // Snapshot the current text and file identity so a save that races a
+    // file switch never clobbers the new file's state. `fileVersionRef`
+    // bumps in `replaceFile`; if it has changed by the time the picker
+    // resolves, the post-await commit is dropped.
+    const contents = markdownRef.current;
+    const startVersion = fileVersionRef.current;
+    const stillCurrent = () => fileVersionRef.current === startVersion;
+
     try {
-      const result = await adapter.saveFileAs(file.name || DEFAULT_NEW_FILE_NAME, markdown);
+      const result = await adapter.saveFileAs(file.name || DEFAULT_NEW_FILE_NAME, contents);
+      if (!stillCurrent()) {
+        return;
+      }
       if (!result) {
         setSaveStatus("idle");
         return;
       }
-      setFile({ name: result.name, handle: result.handle, savedContents: markdown });
+      setFile({ name: result.name, handle: result.handle, savedContents: contents });
       setSaveStatus("idle");
     } catch (error) {
+      if (!stillCurrent()) {
+        // Don't pollute the new file's badge, but never silently swallow a
+        // failed write — log so the operator can see the original failure.
+        console.error("Save-as failed (file switched mid-save)", error);
+        return;
+      }
       console.error("Save-as failed", error);
       setSaveStatus("error");
       setSaveError(error instanceof Error ? error.message : "Save failed");
     }
-  }, [file.name, markdown]);
+  }, [file.name]);
 
   const handleSave = useCallback(async () => {
     const adapter = getActiveAdapter();
@@ -203,16 +262,27 @@ export function App() {
     setSaveStatus("saving");
     setSaveError(null);
 
+    const contents = markdownRef.current;
+    const startVersion = fileVersionRef.current;
+    const stillCurrent = () => fileVersionRef.current === startVersion;
+
     try {
-      const result = await adapter.saveFile(file.handle, markdown, file.name);
-      setFile({ name: result.name, handle: result.handle, savedContents: markdown });
+      const result = await adapter.saveFile(file.handle, contents, file.name);
+      if (!stillCurrent()) {
+        return;
+      }
+      setFile({ name: result.name, handle: result.handle, savedContents: contents });
       setSaveStatus("idle");
     } catch (error) {
+      if (!stillCurrent()) {
+        console.error("Save failed (file switched mid-save)", error);
+        return;
+      }
       console.error("Save failed", error);
       setSaveStatus("error");
       setSaveError(error instanceof Error ? error.message : "Save failed");
     }
-  }, [file.handle, file.name, handleSaveAs, markdown]);
+  }, [file.handle, file.name, handleSaveAs]);
 
   // Keyboard shortcuts at the window level so they catch Cmd/Ctrl-O/N
   // before the browser uses them, and so saving works even outside the editor.
@@ -253,6 +323,31 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [handleNew, handleOpen, handleSave, handleSaveAs]);
 
+  // Theme: re-apply on preference change and follow the OS when in "system".
+  // The bootstrap script in `index.html` sets the initial `data-theme` before
+  // first paint to avoid a flash; this effect keeps it in sync afterwards.
+  useEffect(() => {
+    setResolvedTheme(applyTheme(themePref));
+    if (themePref !== "system") {
+      return;
+    }
+    return subscribeToSystemTheme((next) => {
+      // `applyTheme("system")` re-resolves and writes `data-theme`; we then
+      // commit the listener-supplied value to React state. Trusting `next`
+      // here keeps the two in sync without a redundant matchMedia query.
+      applyTheme("system");
+      setResolvedTheme(next);
+    });
+  }, [themePref]);
+
+  const cycleTheme = useCallback(() => {
+    setThemePref((current) => {
+      const next = nextTheme(current);
+      storeTheme(next);
+      return next;
+    });
+  }, []);
+
   // Beforeunload guard: warn the user if they navigate away with unsaved changes.
   useEffect(() => {
     if (!dirty) {
@@ -267,14 +362,19 @@ export function App() {
   }, [dirty]);
 
   // Expose the active adapter on window so spikes/tests can introspect or override it.
+  // Gated to the local dev origin so production builds do not surface internals
+  // — mirrors the gating used for `__markdownEditorView` in MarkdownEditor.tsx.
   useEffect(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || !shouldExposeAdapter()) {
       return;
     }
     const win = window as AdapterWindow;
-    win.__markdownFileAdapter = getActiveAdapter();
+    // Capture the exposed reference so cleanup compares the same object even
+    // if `getActiveAdapter()` would later return a different instance.
+    const exposed = getActiveAdapter();
+    win.__markdownFileAdapter = exposed;
     return () => {
-      if (win.__markdownFileAdapter === getActiveAdapter()) {
+      if (win.__markdownFileAdapter === exposed) {
         delete win.__markdownFileAdapter;
       }
     };
@@ -362,10 +462,27 @@ export function App() {
           )}
         </div>
 
-        <button className="modeButton" type="button" onClick={() => setZen((value) => !value)} title={zen ? "Normal Mode" : "Zen Mode"}>
-          {zen ? <PanelTopOpen size={18} /> : <PanelTopClose size={18} />}
-          <span>{zen ? "Normal" : "Zen"}</span>
-        </button>
+        <div className="topbarRight">
+          <button
+            className="iconButton themeToggle"
+            type="button"
+            title={describeTheme(themePref, resolvedTheme).hint}
+            aria-label={describeTheme(themePref, resolvedTheme).label}
+            onClick={cycleTheme}
+          >
+            {themePref === "system" ? (
+              <Monitor size={16} />
+            ) : themePref === "dark" ? (
+              <Moon size={16} />
+            ) : (
+              <Sun size={16} />
+            )}
+          </button>
+          <button className="modeButton" type="button" onClick={() => setZen((value) => !value)} title={zen ? "Normal Mode" : "Zen Mode"}>
+            {zen ? <PanelTopOpen size={18} /> : <PanelTopClose size={18} />}
+            <span>{zen ? "Normal" : "Zen"}</span>
+          </button>
+        </div>
       </header>
 
       {!zen && (

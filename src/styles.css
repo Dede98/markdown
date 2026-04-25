@@ -1,11 +1,116 @@
+/* ---------------------------------------------------------------------------
+ * Theme tokens
+ * ---------------------------------------------------------------------------
+ * Light is the default. `data-theme="dark"` on <html> overrides the tokens.
+ * The resolved value is set before render by an inline script in index.html
+ * (see `src/theme.ts` for the runtime model). Authors should write component
+ * styles against `var(--token)` and NEVER hardcode hex values.
+ * ------------------------------------------------------------------------- */
 :root {
-  color: #1a1a1e;
-  background: #fbfbfa;
+  --bg-app: #fbfbfa;
+  --bg-chrome: #fbfbfa;
+  --bg-surface: #ffffff;
+  --bg-surface-hover: #f0f0f2;
+  --bg-active: #e8eef5;
+
+  --fg-strong: #1a1a1e;
+  --fg-body: #2a2a2e;
+  --fg-muted: #5e5e66;
+  --fg-faint: #9a9aa2;
+  --fg-icon: #5e5a54;
+  --fg-icon-strong: #1a1a1e;
+
+  --rule: #e5e5ea;
+  --rule-soft: #cdd0d4;
+  --rule-arrow: #9b968e;
+
+  --accent: #2d5b8c;
+  --accent-bg: #e8eef5;
+  --accent-fg: #1f4f82;
+  --accent-underline: rgba(45, 91, 140, 0.28);
+  --accent-check: #ffffff;
+
+  --code-bg-inline: #f0f0f2;
+  --code-border-inline: #e5e5ea;
+  --code-fg: #2a2a2e;
+  --code-bg-block: #f3f3f4;
+  --code-fence: #5e5e66;
+
+  --syntax-keyword: #8f3f71;
+  --syntax-string: #5d742f;
+  --syntax-number: #2d5b8c;
+  --syntax-comment: #8a8a92;
+  --syntax-function: #8a5a1f;
+  --syntax-operator: #6d7178;
+
+  --tone-idle-dot: #cdd0d4;
+  --tone-saving-fg: #2d5b8c;
+  --tone-unsaved-dot: #c08a3e;
+  --tone-unsaved-fg: #8a5a1f;
+  --tone-error-fg: #b03a2e;
+
+  --bullet-marker: #8a8a92;
+
+  --selection-bg: rgba(45, 91, 140, 0.18);
+
+  color-scheme: light;
+  color: var(--fg-strong);
+  background: var(--bg-app);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme="dark"] {
+  --bg-app: #161618;
+  --bg-chrome: #161618;
+  --bg-surface: #1f1f22;
+  --bg-surface-hover: #25252a;
+  --bg-active: #1f2b3d;
+
+  --fg-strong: #e8e8ec;
+  --fg-body: #d8d8dc;
+  --fg-muted: #9a9aa2;
+  --fg-faint: #6a6a72;
+  --fg-icon: #9a9aa2;
+  --fg-icon-strong: #e8e8ec;
+
+  --rule: #2b2b30;
+  --rule-soft: #44444a;
+  --rule-arrow: #6a6a72;
+
+  --accent: #8ba8d0;
+  --accent-bg: #1f2b3d;
+  --accent-fg: #b5c9e5;
+  --accent-underline: rgba(139, 168, 208, 0.32);
+  --accent-check: #161618;
+
+  --code-bg-inline: #1f1f22;
+  --code-border-inline: #2b2b30;
+  --code-fg: #d8d8dc;
+  --code-bg-block: #1b1b1e;
+  --code-fence: #6a6a72;
+
+  --syntax-keyword: #c586c0;
+  --syntax-string: #a8c77c;
+  --syntax-number: #8ba8d0;
+  --syntax-comment: #7a7a82;
+  --syntax-function: #d4a567;
+  --syntax-operator: #8e939a;
+
+  --tone-idle-dot: #44444a;
+  --tone-saving-fg: #8ba8d0;
+  --tone-unsaved-dot: #d4a567;
+  --tone-unsaved-fg: #c09a66;
+  --tone-error-fg: #e07a6e;
+
+  --bullet-marker: #7a7a82;
+
+  --selection-bg: rgba(139, 168, 208, 0.28);
+
+  color-scheme: dark;
 }
 
 * {
@@ -16,10 +121,16 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background: var(--bg-app);
+  color: var(--fg-body);
 }
 
 button {
   font: inherit;
+}
+
+::selection {
+  background: var(--selection-bg);
 }
 
 .srOnly {
@@ -42,7 +153,7 @@ button {
   min-height: 100vh;
   max-height: 100vh;
   overflow: hidden;
-  background: #fbfbfa;
+  background: var(--bg-app);
 }
 
 .appZen {
@@ -58,8 +169,8 @@ button {
   justify-content: space-between;
   gap: 16px;
   padding: 0 20px;
-  border-bottom: 1px solid #e5e5ea;
-  background: #fbfbfa;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-chrome);
 }
 
 .windowSlot {
@@ -82,13 +193,13 @@ button {
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: #5e5a54;
+  color: var(--fg-icon);
   cursor: pointer;
 }
 
 .iconButton:hover:not(:disabled) {
-  background: #f0f0f2;
-  color: #1a1a1e;
+  background: var(--bg-surface-hover);
+  color: var(--fg-icon-strong);
 }
 
 .iconButton:disabled {
@@ -109,7 +220,7 @@ button {
 
 .documentTitle {
   overflow: hidden;
-  color: #5e5e66;
+  color: var(--fg-muted);
   font-size: 12px;
   font-weight: 500;
   text-overflow: ellipsis;
@@ -120,7 +231,7 @@ button {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: #9a9aa2;
+  color: var(--fg-faint);
   font-size: 11px;
   line-height: 1;
   white-space: nowrap;
@@ -130,32 +241,32 @@ button {
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #cdd0d4;
+  background: var(--tone-idle-dot);
   content: "";
 }
 
 .documentState--unsaved::before {
-  background: #c08a3e;
+  background: var(--tone-unsaved-dot);
 }
 
 .documentState--unsaved {
-  color: #8a5a1f;
+  color: var(--tone-unsaved-fg);
 }
 
 .documentState--saving::before {
-  background: #2d5b8c;
+  background: var(--tone-saving-fg);
 }
 
 .documentState--saving {
-  color: #2d5b8c;
+  color: var(--tone-saving-fg);
 }
 
 .documentState--error::before {
-  background: #b03a2e;
+  background: var(--tone-error-fg);
 }
 
 .documentState--error {
-  color: #b03a2e;
+  color: var(--tone-error-fg);
 }
 
 .modeButton,
@@ -165,7 +276,7 @@ button {
   justify-content: center;
   border: 0;
   background: transparent;
-  color: #5e5a54;
+  color: var(--fg-icon);
   cursor: pointer;
 }
 
@@ -180,13 +291,13 @@ button {
 
 .modeButton:hover,
 .toolbar button:hover {
-  background: #f0f0f2;
-  color: #1a1a1e;
+  background: var(--bg-surface-hover);
+  color: var(--fg-icon-strong);
 }
 
 .toolbar button.isActive {
-  background: #e8eef5;
-  color: #1f4f82;
+  background: var(--accent-bg);
+  color: var(--accent-fg);
 }
 
 .toolbar {
@@ -198,8 +309,8 @@ button {
   align-items: center;
   min-width: 0;
   padding: 8px 20px;
-  border-bottom: 1px solid #e5e5ea;
-  background: #fbfbfa;
+  border-bottom: 1px solid var(--rule);
+  background: var(--bg-chrome);
 }
 
 .toolbarCenter,
@@ -220,7 +331,7 @@ button {
 .toolbarSideRight {
   justify-content: flex-end;
   gap: 14px;
-  color: #9a9aa2;
+  color: var(--fg-faint);
   font-size: 11px;
 }
 
@@ -236,13 +347,13 @@ button {
   align-items: center;
   width: 102px;
   height: 30px;
-  border: 1px solid #e5e5ea;
+  border: 1px solid var(--rule);
   border-radius: 6px;
-  background: #ffffff;
+  background: var(--bg-surface);
 }
 
 .toolbar .headingMenu.isActive {
-  background: #e8eef5;
+  background: var(--accent-bg);
 }
 
 .toolbar .headingMenu::after {
@@ -250,8 +361,8 @@ button {
   right: 10px;
   width: 7px;
   height: 7px;
-  border-right: 1.5px solid #9b968e;
-  border-bottom: 1.5px solid #9b968e;
+  border-right: 1.5px solid var(--rule-arrow);
+  border-bottom: 1.5px solid var(--rule-arrow);
   content: "";
   pointer-events: none;
   transform: translateY(-2px) rotate(45deg);
@@ -263,7 +374,7 @@ button {
   border: 0;
   appearance: none;
   background: transparent;
-  color: #2a2a2e;
+  color: var(--fg-body);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
@@ -275,7 +386,7 @@ button {
   width: 1px;
   height: 20px;
   margin: 0 6px;
-  background: #e5e5ea;
+  background: var(--rule);
 }
 
 .editorShell {
@@ -298,8 +409,8 @@ button {
   justify-content: space-between;
   gap: 16px;
   padding: 0 16px;
-  background: #fbfbfa;
-  color: #9a9aa2;
+  background: var(--bg-chrome);
+  color: var(--fg-faint);
   font-size: 11px;
 }
 
@@ -326,10 +437,10 @@ button {
   gap: 8px;
   height: 32px;
   padding: 0 14px;
-  border: 1px solid #e5e5ea;
+  border: 1px solid var(--rule);
   border-radius: 16px;
-  background: #ffffff;
-  color: #5e5e66;
+  background: var(--bg-surface);
+  color: var(--fg-muted);
   font-size: 11px;
   font-weight: 500;
 }
@@ -338,7 +449,7 @@ button {
   width: 6px;
   height: 6px;
   border-radius: 50%;
-  background: #2d5b8c;
+  background: var(--accent);
 }
 
 .cm-editor {
@@ -350,7 +461,7 @@ button {
 }
 
 .cm-md-heading {
-  color: #1a1a1e;
+  color: var(--fg-strong);
   font-weight: 700;
   line-height: 1.18;
   text-decoration: none;
@@ -379,7 +490,7 @@ button {
 }
 
 .cm-md-syntax {
-  color: #9a9aa2;
+  color: var(--fg-faint);
 }
 
 .cm-md-bold {
@@ -391,18 +502,18 @@ button {
 }
 
 .cm-md-inline-code {
-  border: 1px solid #e5e5ea;
+  border: 1px solid var(--code-border-inline);
   border-radius: 5px;
-  background: #f0f0f2;
-  color: #2a2a2e;
+  background: var(--code-bg-inline);
+  color: var(--code-fg);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.88em;
   padding: 0 0.25em;
 }
 
 .cm-md-quote {
-  border-left: 2px solid #cdd0d4;
-  color: #5e5e66;
+  border-left: 2px solid var(--rule-soft);
+  color: var(--fg-muted);
   font-style: italic;
   padding-left: 18px;
 }
@@ -417,7 +528,7 @@ button {
   height: 0.38em;
   border-radius: 999px;
   margin: 0 0.64em 0 0.24em;
-  background: #8a8a92;
+  background: var(--bullet-marker);
   vertical-align: 0.12em;
 }
 
@@ -425,38 +536,38 @@ button {
   display: inline-block;
   width: 0.82em;
   height: 0.82em;
-  border: 1.5px solid #9a9aa2;
+  border: 1.5px solid var(--fg-faint);
   border-radius: 3px;
   margin: 0 0.52em 0 0.08em;
   vertical-align: -0.08em;
 }
 
 .cm-md-task-widget-checked {
-  border-color: #2d5b8c;
+  border-color: var(--accent);
   background:
-    linear-gradient(135deg, transparent 46%, #ffffff 48%, #ffffff 58%, transparent 60%),
-    linear-gradient(45deg, transparent 52%, #ffffff 54%, #ffffff 64%, transparent 66%),
-    #2d5b8c;
+    linear-gradient(135deg, transparent 46%, var(--accent-check) 48%, var(--accent-check) 58%, transparent 60%),
+    linear-gradient(45deg, transparent 52%, var(--accent-check) 54%, var(--accent-check) 64%, transparent 66%),
+    var(--accent);
 }
 
 .cm-md-list-marker,
 .cm-md-task-marker {
-  color: #9a9aa2;
+  color: var(--fg-faint);
 }
 
 .cm-md-link {
-  color: #2d5b8c;
+  color: var(--accent);
   text-decoration: underline;
-  text-decoration-color: rgba(45, 91, 140, 0.28);
+  text-decoration-color: var(--accent-underline);
   text-underline-offset: 3px;
 }
 
 .cm-md-link-url {
-  color: #9a9aa2;
+  color: var(--fg-faint);
 }
 
 .cm-md-rule {
-  color: #cdd0d4;
+  color: var(--rule-soft);
 }
 
 .cm-md-rule-widget {
@@ -464,17 +575,17 @@ button {
   width: 100%;
   height: 1px;
   margin: 0.72em 0;
-  background: #cdd0d4;
+  background: var(--rule-soft);
 }
 
 .cm-md-code-fence {
-  color: #5e5e66;
+  color: var(--code-fence);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
 }
 
 .cm-md-code-line {
-  background: #f3f3f4;
-  color: #2a2a2e;
+  background: var(--code-bg-block);
+  color: var(--code-fg);
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.9em;
   line-height: 1.55;
@@ -482,29 +593,41 @@ button {
 }
 
 .cm-editor .cm-md-code-keyword {
-  color: #8f3f71;
+  color: var(--syntax-keyword);
   font-weight: 650;
 }
 
 .cm-editor .cm-md-code-string {
-  color: #5d742f;
+  color: var(--syntax-string);
 }
 
 .cm-editor .cm-md-code-number {
-  color: #2d5b8c;
+  color: var(--syntax-number);
 }
 
 .cm-editor .cm-md-code-comment {
-  color: #8a8a92;
+  color: var(--syntax-comment);
   font-style: italic;
 }
 
 .cm-editor .cm-md-code-function {
-  color: #8a5a1f;
+  color: var(--syntax-function);
 }
 
 .cm-editor .cm-md-code-operator {
-  color: #6d7178;
+  color: var(--syntax-operator);
+}
+
+/* Theme toggle button uses the same icon-button shell. */
+.themeToggle {
+  width: 30px;
+  height: 30px;
+}
+
+.topbarRight {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 @media (max-width: 860px) {
