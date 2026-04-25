@@ -5,6 +5,10 @@ function buildDecorations(view: EditorView): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   let inCodeFence = false;
   let codeFenceLanguage: string | null = null;
+  // Multi-line `<!--` … `-->` carries across lines like a fenced code block.
+  // Tracked at the visible-range scope so the loop can hide every line that
+  // sits between the open and close markers.
+  let inHtmlComment = false;
 
   for (const { from, to } of view.visibleRanges) {
     let position = from;
@@ -25,6 +29,87 @@ function buildDecorations(view: EditorView): DecorationSet {
       if (codeLine) {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-code-line" }));
         decorateCodeLine(decorations, line, codeFenceLanguage);
+        if (line.to + 1 > to) {
+          break;
+        }
+        position = line.to + 1;
+        continue;
+      }
+
+      // HTML comments: walk the line to find every `<!--` / `-->` range and
+      // carry an "open across newlines" flag. A line whose content is entirely
+      // inside a comment is hidden via line-range replace (off-cursor) or
+      // dimmed via `cm-md-syntax` (on-cursor); partial comments decorate the
+      // matched span and fall through to normal markdown processing for the
+      // surrounding text.
+      const commentRanges: Array<{ from: number; to: number }> = [];
+      {
+        let scanPos = 0;
+        let openInProgress: boolean = inHtmlComment;
+        while (scanPos <= text.length) {
+          if (openInProgress) {
+            const closeIdx = text.indexOf("-->", scanPos);
+            if (closeIdx === -1) {
+              commentRanges.push({ from: scanPos, to: text.length });
+              break;
+            }
+            commentRanges.push({ from: scanPos, to: closeIdx + 3 });
+            scanPos = closeIdx + 3;
+            openInProgress = false;
+          } else {
+            const openIdx = text.indexOf("<!--", scanPos);
+            if (openIdx === -1) {
+              break;
+            }
+            scanPos = openIdx;
+            openInProgress = true;
+          }
+        }
+        inHtmlComment = openInProgress;
+      }
+
+      if (commentRanges.length > 0) {
+        const first = commentRanges[0];
+        const last = commentRanges[commentRanges.length - 1];
+        // "Full" means the comment range(s) cover the entire visible line.
+        // For the multi-line interior case, an empty line still counts so the
+        // empty line is treated as fully-comment (no markdown processing).
+        const fullyComment =
+          first.from === 0 && (last.to >= text.length || text.length === 0);
+
+        if (fullyComment) {
+          if (lineActive && line.to > line.from) {
+            addDecoration(decorations, line.from, line.to, Decoration.mark({ class: "cm-md-syntax" }));
+          } else if (!lineActive && line.to > line.from) {
+            addDecoration(decorations, line.from, line.to, Decoration.replace({}));
+          }
+          if (line.to + 1 > to) {
+            break;
+          }
+          position = line.to + 1;
+          continue;
+        }
+
+        // Partial-comment line: emit just the comment-range decorations and
+        // skip the rest of the per-line markdown processing. Falling through
+        // would let the link / bold / strike branches add their own
+        // `Decoration.replace` ranges on text that is already covered by the
+        // comment replace, which CodeMirror rejects as overlapping (the exact
+        // failure class that broke the previous attempt). Surrounding prose
+        // therefore renders as plain text on a comment line — a deliberate
+        // simplification given how rare mixed prose+comment lines are.
+        for (const range of commentRanges) {
+          const fromAbs = line.from + range.from;
+          const toAbs = line.from + range.to;
+          if (fromAbs >= toAbs) {
+            continue;
+          }
+          if (lineActive) {
+            addDecoration(decorations, fromAbs, toAbs, Decoration.mark({ class: "cm-md-syntax" }));
+          } else {
+            addDecoration(decorations, fromAbs, toAbs, Decoration.replace({}));
+          }
+        }
         if (line.to + 1 > to) {
           break;
         }

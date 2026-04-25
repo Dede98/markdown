@@ -124,6 +124,46 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).not.toContainText("---");
   });
 
+  test("html comments are hidden in preview both single-line and multi-line", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "before\n\n<!-- single -->\n\n<!--\nmulti\nline\n-->\n\nafter",
+    );
+    await setCursorInsideText(page, "before");
+
+    // Off-cursor comments must not surface in the rendered surface.
+    await expect(page.locator(".cm-content")).toContainText("before");
+    await expect(page.locator(".cm-content")).toContainText("after");
+    await expect(page.locator(".cm-content")).not.toContainText("<!--");
+    await expect(page.locator(".cm-content")).not.toContainText("-->");
+    await expect(page.locator(".cm-content")).not.toContainText("single");
+    await expect(page.locator(".cm-content")).not.toContainText("multi");
+    await expect(page.locator(".cm-content")).not.toContainText("line");
+  });
+
+  test("html comments stay visible while the cursor sits inside them", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "before\n\n<!-- secret -->\n\nafter");
+
+    await setCursorInsideText(page, "secret");
+    await expect(page.locator(".cm-content")).toContainText("<!-- secret -->");
+  });
+
+  test("inline html comments hide their span without crashing the surrounding line", async ({ page }) => {
+    await page.goto("/");
+    // The link inside the comment is the canonical reproducer for the
+    // overlapping-replace failure: the link off-cursor branch wants to replace
+    // the URL span, which sits inside the already-replaced comment range.
+    await setEditorText(page, "lead <!-- [a](https://example.com) --> tail\n\nelsewhere");
+    await setCursorInsideText(page, "elsewhere");
+
+    await expect(page.locator(".cm-content")).toContainText("lead");
+    await expect(page.locator(".cm-content")).toContainText("tail");
+    await expect(page.locator(".cm-content")).not.toContainText("<!--");
+    await expect(page.locator(".cm-content")).not.toContainText("https://example.com");
+  });
+
   test("inline markdown syntax appears only when the cursor is inside that range", async ({ page }) => {
     await page.goto("/");
     await setEditorText(page, "**bold** plain `code`");
