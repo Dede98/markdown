@@ -349,6 +349,65 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [handleNew, handleOpen, handleSave, handleSaveAs]);
 
+  // Tauri drag region: with `titleBarStyle: "Overlay"` the OS no longer treats
+  // the top of the window as a draggable titlebar, and Tauri 2 does not auto-
+  // wire `data-tauri-drag-region` in every layout (sticky parents miss the
+  // injection). Bind an explicit handler: a primary-button mousedown anywhere
+  // inside a tagged region calls `startDragging`, and a double-click toggles
+  // maximize, matching native macOS behavior.
+  useEffect(() => {
+    if (!isTauriRuntime() || typeof document === "undefined") {
+      return;
+    }
+
+    let cleanup: (() => void) | null = null;
+    let disposed = false;
+
+    void (async () => {
+      try {
+        const { getCurrentWindow } = await import("@tauri-apps/api/window");
+        const appWindow = getCurrentWindow();
+        const onMouseDown = (event: MouseEvent) => {
+          if (event.button !== 0) {
+            return;
+          }
+          const target = event.target;
+          if (!(target instanceof Element)) {
+            return;
+          }
+          // Skip if the user clicked an interactive control. Tauri's auto-
+          // detection does this too, but we duplicate it here so the explicit
+          // path is self-contained.
+          if (target.closest("button, a, input, select, textarea, [role=button]")) {
+            return;
+          }
+          if (!target.closest("[data-tauri-drag-region]")) {
+            return;
+          }
+          if (event.detail === 2) {
+            void appWindow.toggleMaximize();
+          } else {
+            void appWindow.startDragging();
+          }
+        };
+        if (disposed) {
+          return;
+        }
+        document.addEventListener("mousedown", onMouseDown);
+        cleanup = () => document.removeEventListener("mousedown", onMouseDown);
+      } catch (error) {
+        console.error("Failed to bind window drag handler", error);
+      }
+    })();
+
+    return () => {
+      disposed = true;
+      if (cleanup) {
+        cleanup();
+      }
+    };
+  }, []);
+
   // Theme: re-apply on preference change and follow the OS when in "system".
   // The bootstrap script in `index.html` sets the initial `data-theme` before
   // first paint to avoid a flash; this effect keeps it in sync afterwards.
