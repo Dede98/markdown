@@ -57,7 +57,18 @@ pub fn run() {
 fn build_app_menu<R: tauri::Runtime>(
     handle: &tauri::AppHandle<R>,
 ) -> tauri::Result<Menu<R>> {
-    let app_metadata = AboutMetadata::default();
+    // The About panel surfaces basic provenance for the spike build. Version is
+    // pulled from Cargo at compile time so the panel never drifts from the bundle.
+    let app_metadata = AboutMetadata {
+        name: Some("Markdown".into()),
+        version: Some(env!("CARGO_PKG_VERSION").into()),
+        authors: Some(vec!["ole.de".into()]),
+        comments: Some("Local-first Markdown editor (spike).".into()),
+        copyright: Some("© 2026 ole.de".into()),
+        website: Some("https://ole.de".into()),
+        website_label: Some("ole.de".into()),
+        ..Default::default()
+    };
 
     let app_submenu = Submenu::with_items(
         handle,
