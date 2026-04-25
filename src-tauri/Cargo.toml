@@ -1,0 +1,24 @@
+[package]
+name = "markdown-editor"
+version = "0.0.0"
+description = "Local-first Markdown editor (Tauri spike)"
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "markdown_editor_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+# Default features. Add `custom-protocol` only for prod builds via tauri-cli.
+custom-protocol = ["tauri/custom-protocol"]

@@ -29,6 +29,7 @@ import {
 } from "./fileAdapter";
 import { insertBlock, insertLink, setHeading, toggleLinePrefix, wrapSelection } from "./markdownCommands";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { tauriFileAdapter } from "./tauriFileAdapter";
 import { webFileAdapter } from "./webFileAdapter";
 
 const initialMarkdown = `# On the Quiet Hour
@@ -56,10 +57,25 @@ type FileState = {
 
 type SaveStatus = "idle" | "saving" | "error";
 
+type TauriRuntimeWindow = Window & {
+  __TAURI_INTERNALS__?: unknown;
+  __TAURI__?: unknown;
+};
+
 type AdapterWindow = Window & {
   __markdownFileAdapter?: FileAdapter;
   __markdownFileAdapterOverride?: FileAdapter;
 };
+
+function isTauriRuntime(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const win = window as TauriRuntimeWindow;
+  // Tauri 2 sets `__TAURI_INTERNALS__`; keep `__TAURI__` for forward/back compat
+  // and so adapter swap can be forced from a test by stamping the global.
+  return Boolean(win.__TAURI_INTERNALS__ ?? win.__TAURI__);
+}
 
 function getActiveAdapter(): FileAdapter {
   if (typeof window !== "undefined") {
@@ -67,6 +83,9 @@ function getActiveAdapter(): FileAdapter {
     if (win.__markdownFileAdapterOverride) {
       return win.__markdownFileAdapterOverride;
     }
+  }
+  if (isTauriRuntime()) {
+    return tauriFileAdapter;
   }
   return webFileAdapter;
 }
@@ -260,6 +279,49 @@ export function App() {
       }
     };
   }, []);
+
+  // Native menu bridge: when running inside Tauri, the File menu (New/Open/
+  // Save/Save As) emits `menu:*` events from Rust. Forward them to the same
+  // handlers used by toolbar buttons and Cmd-shortcuts so there is one path.
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+
+    let disposed = false;
+    const unlisteners: Array<() => void> = [];
+
+    const subscribe = async () => {
+      try {
+        const { listen } = await import("@tauri-apps/api/event");
+        const bindings: Array<[string, () => void]> = [
+          ["menu:new", () => handleNew()],
+          ["menu:open", () => void handleOpen()],
+          ["menu:save", () => void handleSave()],
+          ["menu:save-as", () => void handleSaveAs()],
+        ];
+        for (const [event, run] of bindings) {
+          const unlisten = await listen(event, run);
+          if (disposed) {
+            unlisten();
+            continue;
+          }
+          unlisteners.push(unlisten);
+        }
+      } catch (error) {
+        console.error("Failed to bind native menu events", error);
+      }
+    };
+
+    void subscribe();
+
+    return () => {
+      disposed = true;
+      for (const unlisten of unlisteners) {
+        unlisten();
+      }
+    };
+  }, [handleNew, handleOpen, handleSave, handleSaveAs]);
 
   return (
     <main className={zen ? "app appZen" : "app"}>
