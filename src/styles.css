@@ -479,16 +479,19 @@ button {
   overflow: auto;
 }
 
-/* CodeMirror's default caret colour is black, which disappears against the
- * dark theme background. Drive both the primary and drop cursors from the
- * theme's strong-foreground token so the caret stays visible in both modes. */
+/* CodeMirror's default caret colour is black (1 px hairline), which all but
+ * disappears against the dark theme background. Drive both the primary and
+ * drop cursors from the theme's strong-foreground token and bump the width
+ * so the caret stays easy to track in either mode. */
 .cm-editor .cm-cursor,
 .cm-editor .cm-dropCursor {
   border-left-color: var(--fg-strong);
+  border-left-width: 2px;
 }
 
 .cm-editor.cm-focused .cm-cursor {
   border-left-color: var(--fg-strong);
+  border-left-width: 2px;
 }
 
 .cm-md-heading {
@@ -601,6 +604,12 @@ button {
   padding: 0.32em 0.7em;
   vertical-align: top;
   min-width: 1.5em;
+  /* Lock cells to a stable minimum height so the widget's overall geometry
+   * doesn't drift as cells gain or lose content. CodeMirror caches per-line
+   * heights for the height map, and a wobbly widget height makes click /
+   * arrow-key cursor placement above and below the table inaccurate. */
+  min-height: 1.6em;
+  line-height: 1.4;
 }
 
 .cm-md-table-cell {
