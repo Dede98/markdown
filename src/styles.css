@@ -479,6 +479,18 @@ button {
   overflow: auto;
 }
 
+/* CodeMirror's default caret colour is black, which disappears against the
+ * dark theme background. Drive both the primary and drop cursors from the
+ * theme's strong-foreground token so the caret stays visible in both modes. */
+.cm-editor .cm-cursor,
+.cm-editor .cm-dropCursor {
+  border-left-color: var(--fg-strong);
+}
+
+.cm-editor.cm-focused .cm-cursor {
+  border-left-color: var(--fg-strong);
+}
+
 .cm-md-heading {
   color: var(--fg-strong);
   font-weight: 700;
