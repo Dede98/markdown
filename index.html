@@ -24,6 +24,12 @@
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "light");
         }
+        // Mark the document as the Tauri shell so CSS can reserve space for
+        // the macOS traffic-light overlay before first paint. The web build
+        // never sees this attribute.
+        if (window.__TAURI_INTERNALS__ || window.__TAURI__) {
+          document.documentElement.setAttribute("data-tauri", "1");
+        }
       })();
     </script>
   </head>
