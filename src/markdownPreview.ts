@@ -548,21 +548,28 @@ class TableWidget extends WidgetType {
     return table;
   }
 
-  // Returning `false` lets CodeMirror handle pointer events on the widget:
-  // a click positions the cursor at the nearest valid offset (the block
-  // edge), which flips `isStateTableBlockActive` true on the next render so
-  // the source view appears for editing. With `true` here CM6 swallows the
-  // click entirely and the user cannot enter the block.
+  // Returning `false` lets CodeMirror handle pointer events on the widget so
+  // a click positions the cursor at the nearest valid offset outside the
+  // block. The widget itself stays rendered — direct cell editing is not a
+  // goal of this surface; structural edits will arrive as a separate
+  // context-menu / toolbar path.
   ignoreEvent(): boolean {
     return false;
   }
 }
 
-// CodeMirror requires block-level decorations to live in a state field, not
-// a ViewPlugin (the layout pass needs to know about line replacements before
-// the viewport renders). Per-line / inline marks for tables stay in the
-// ViewPlugin above; this field handles ONLY the block-level <table> widget
-// that replaces a complete inactive table block.
+// Table blocks always render as a real `<table>` widget regardless of cursor
+// position. A previous design toggled to a per-line source view when the
+// cursor entered the block range, but that caused jarring layout shifts (the
+// widget's rendered height differs from the source view's height) and made
+// arrow-key navigation feel like the cursor was jumping. Cells are not
+// directly editable; structural edits (add/delete row/column, change
+// alignment) will arrive as a separate context-menu surface.
+//
+// Block decorations must live in a StateField because CodeMirror rejects
+// them from a ViewPlugin. Per-line `cm-md-table-row` source decorations
+// emitted by the ViewPlugin still apply to lines covered by the widget but
+// have no visual effect — the block replace hides those lines wholesale.
 function buildTableBlockDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const textBuf = state.doc;
@@ -588,12 +595,6 @@ function buildTableBlockDecorations(state: EditorState): DecorationSet {
     if (!block) {
       continue;
     }
-    if (isStateTableBlockActive(state, block)) {
-      // Block is being edited; the ViewPlugin's per-line source view shows.
-      // Skip past the block so we don't re-detect interior rows.
-      n = block.lastLine.number;
-      continue;
-    }
 
     decorations.push(
       Decoration.replace({
@@ -607,16 +608,12 @@ function buildTableBlockDecorations(state: EditorState): DecorationSet {
   return Decoration.set(decorations, true);
 }
 
-function isStateTableBlockActive(state: EditorState, block: TableBlock): boolean {
-  return state.selection.ranges.some(
-    (range) => range.from <= block.lastLine.to && range.to >= block.firstLine.from,
-  );
-}
-
 export const tableBlockState = StateField.define<DecorationSet>({
   create: (state) => buildTableBlockDecorations(state),
+  // Selection-only changes can't affect the widget output anymore (no cursor
+  // toggle), so skip rebuild on `tr.selection` for free perf.
   update: (value, tr) => {
-    if (tr.docChanged || tr.selection) {
+    if (tr.docChanged) {
       return buildTableBlockDecorations(tr.state);
     }
     return value;

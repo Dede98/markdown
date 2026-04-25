@@ -227,20 +227,22 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).toContainText("tail paragraph");
   });
 
-  test("clicking inside a table block falls back to source view for editing", async ({ page }) => {
+  test("table widget keeps rendering even when the cursor is parked at the block offset", async ({ page }) => {
     await page.goto("/");
     await setEditorText(
       page,
       "before\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nafter",
     );
 
-    // Cursor on the header line should flip the block to source mode.
+    // Park the cursor on the header line. Block widgets are not directly
+    // editable; the previous cursor-driven source toggle caused jarring
+    // layout shifts on every arrow keypress, so the widget now stays
+    // rendered regardless of where the selection lands.
     await setCursorInsideText(page, "| A | B |");
-    await expect(page.locator(".cm-md-table")).toHaveCount(0);
-    await expect(page.locator(".cm-md-table-row")).toHaveCount(3);
+    await expect(page.locator(".cm-md-table")).toHaveCount(1);
   });
 
-  test("clicking the rendered table widget surfaces the source view for editing", async ({ page }, testInfo) => {
+  test("clicking the rendered table widget keeps the widget visible", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
     await setEditorText(
@@ -250,13 +252,11 @@ test.describe("editor core", () => {
     await setCursorInsideText(page, "before");
     await expect(page.locator(".cm-md-table")).toHaveCount(1);
 
-    // A click on the rendered widget must position the cursor at the block
-    // edge (the editor handles pointer events because TableWidget.ignoreEvent
-    // returns false), which flips the block to source view on the next
-    // render so the user can edit the underlying markdown.
+    // Clicking the widget positions the cursor at the block edge but the
+    // widget itself stays. Direct cell editing is not in scope for this
+    // surface — structural edits will arrive on a context-menu path.
     await page.locator(".cm-md-table").click();
-    await expect(page.locator(".cm-md-table")).toHaveCount(0);
-    await expect(page.locator(".cm-md-table-row")).toHaveCount(3);
+    await expect(page.locator(".cm-md-table")).toHaveCount(1);
   });
 
   test("a non-table line that just happens to start with a pipe does not become a widget", async ({ page }) => {
