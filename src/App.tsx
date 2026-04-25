@@ -349,14 +349,13 @@ export function App() {
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [handleNew, handleOpen, handleSave, handleSaveAs]);
 
-  // Tauri drag region: with `titleBarStyle: "Overlay"` the OS no longer treats
-  // the top of the window as a draggable titlebar, and Tauri 2 does not auto-
-  // wire `data-tauri-drag-region` in every layout (sticky parents miss the
-  // injection). Bind an explicit handler: a primary-button mousedown anywhere
-  // inside a tagged region calls `startDragging`, and a double-click toggles
-  // maximize, matching native macOS behavior.
+  // Tauri drag region: with `titleBarStyle: "Overlay"` the OS no longer reserves
+  // a native titlebar, so dragging relies on the explicit drag region attribute
+  // plus a JS bridge into `startDragging`. Bind in the capture phase on the
+  // window so we run before React's synthetic-event handlers and before
+  // CodeMirror/WebKit can consume the mousedown for selection or focus.
   useEffect(() => {
-    if (!isTauriRuntime() || typeof document === "undefined") {
+    if (!isTauriRuntime() || typeof window === "undefined") {
       return;
     }
 
@@ -375,9 +374,8 @@ export function App() {
           if (!(target instanceof Element)) {
             return;
           }
-          // Skip if the user clicked an interactive control. Tauri's auto-
-          // detection does this too, but we duplicate it here so the explicit
-          // path is self-contained.
+          // Skip if the user clicked an interactive control. Mirrors Tauri's
+          // built-in auto-detection so the topbar buttons keep working.
           if (target.closest("button, a, input, select, textarea, [role=button]")) {
             return;
           }
@@ -389,6 +387,7 @@ export function App() {
           // the async IPC call into Rust. Suppressing the default selection
           // gesture lets `startDragging` capture the drag cleanly.
           event.preventDefault();
+          event.stopPropagation();
           if (event.detail === 2) {
             void appWindow.toggleMaximize();
           } else {
@@ -398,8 +397,10 @@ export function App() {
         if (disposed) {
           return;
         }
-        document.addEventListener("mousedown", onMouseDown);
-        cleanup = () => document.removeEventListener("mousedown", onMouseDown);
+        // Capture phase + window-level so we beat any inner mousedown handler
+        // (CodeMirror, React synthetic events) to the punch.
+        window.addEventListener("mousedown", onMouseDown, { capture: true });
+        cleanup = () => window.removeEventListener("mousedown", onMouseDown, { capture: true });
       } catch (error) {
         console.error("Failed to bind window drag handler", error);
       }
