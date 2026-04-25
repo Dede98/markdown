@@ -57,6 +57,35 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       linkPasteExtension,
       keymap.of([...defaultKeymap, ...historyKeymap]),
       EditorView.lineWrapping,
+      // Cmd/Ctrl + click on a rendered link opens it externally. Without the
+      // modifier, clicks fall through to position the caret so the URL stays
+      // editable. macOS uses Cmd, Linux/Windows use Ctrl.
+      EditorView.domEventHandlers({
+        click: (event, view) => {
+          if (!event.metaKey && !event.ctrlKey) {
+            return false;
+          }
+          const target = event.target as HTMLElement | null;
+          const linkEl = target?.closest(".cm-md-link");
+          if (!linkEl) {
+            return false;
+          }
+          const pos = view.posAtDOM(linkEl);
+          const line = view.state.doc.lineAt(pos);
+          const offset = pos - line.from;
+          for (const match of line.text.matchAll(/\[([^\]\n]+)\]\(([^)\n]+)\)/g)) {
+            const start = match.index!;
+            const end = start + match[0].length;
+            if (offset >= start && offset <= end) {
+              const url = match[2];
+              event.preventDefault();
+              void openExternalUrl(url);
+              return true;
+            }
+          }
+          return false;
+        },
+      }),
       EditorView.updateListener.of((update) => {
         if (update.docChanged) {
           onChangeRef.current(update.state.doc.toString());
@@ -144,6 +173,42 @@ function getWindowWithEditor() {
 
 function shouldExposeTestEditor() {
   return window.location.hostname === "127.0.0.1" && window.location.port === "5173";
+}
+
+type TauriRuntimeWindow = Window & {
+  __TAURI_INTERNALS__?: unknown;
+  __TAURI__?: unknown;
+};
+
+function isTauriRuntime(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  const win = window as TauriRuntimeWindow;
+  return Boolean(win.__TAURI_INTERNALS__ ?? win.__TAURI__);
+}
+
+// Open a URL in the user's default browser. In the Tauri shell this goes
+// through `tauri-plugin-shell` (capability-gated to http/https/mailto in
+// `capabilities/default.json`); on the web build we use `window.open` with
+// `noopener` so the new tab can't reach back into our origin.
+async function openExternalUrl(url: string) {
+  if (!url) {
+    return;
+  }
+  if (isTauriRuntime()) {
+    try {
+      const { open } = await import("@tauri-apps/plugin-shell");
+      await open(url);
+      return;
+    } catch (error) {
+      console.error("Failed to open URL via shell plugin", error);
+      // Fall through to window.open so the user is not silently dropped.
+    }
+  }
+  if (typeof window !== "undefined") {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 }
 
 function buildFormattingKeymap() {

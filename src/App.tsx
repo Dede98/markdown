@@ -8,6 +8,7 @@ import {
   FolderOpen,
   Heading1,
   Heading2,
+  Heading3,
   Italic,
   Link,
   List,
@@ -20,7 +21,9 @@ import {
   PanelTopOpen,
   Quote,
   Save,
+  Strikethrough,
   Sun,
+  Table as TableIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
@@ -671,8 +674,8 @@ export function App() {
                 value={activeFormat.heading ? String(activeFormat.heading) : ""}
                 onChange={(event) => {
                   const level = Number(event.currentTarget.value);
-                  if (level === 1 || level === 2 || level === 3) {
-                    withEditor((view) => setHeading(view, level));
+                  if (level >= 1 && level <= 6) {
+                    withEditor((view) => setHeading(view, level as 1 | 2 | 3 | 4 | 5 | 6));
                   }
                 }}
               >
@@ -682,6 +685,9 @@ export function App() {
                 <option value="1">Heading 1</option>
                 <option value="2">Heading 2</option>
                 <option value="3">Heading 3</option>
+                <option value="4">Heading 4</option>
+                <option value="5">Heading 5</option>
+                <option value="6">Heading 6</option>
               </select>
             </label>
             <span className="toolbarDivider" />
@@ -691,11 +697,17 @@ export function App() {
             <button className={activeFormat.heading === 2 ? "isActive" : undefined} aria-pressed={activeFormat.heading === 2} title="Heading 2" type="button" onClick={() => withEditor((view) => setHeading(view, 2))}>
               <Heading2 size={14} />
             </button>
+            <button className={activeFormat.heading === 3 ? "isActive" : undefined} aria-pressed={activeFormat.heading === 3} title="Heading 3" type="button" onClick={() => withEditor((view) => setHeading(view, 3))}>
+              <Heading3 size={14} />
+            </button>
             <button className={activeFormat.bold ? "isActive" : undefined} aria-pressed={activeFormat.bold} title="Bold" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "**", after: "**", placeholder: "bold" }))}>
               <Bold size={14} />
             </button>
             <button className={activeFormat.italic ? "isActive" : undefined} aria-pressed={activeFormat.italic} title="Italic" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "*", after: "*", placeholder: "italic" }))}>
               <Italic size={14} />
+            </button>
+            <button className={activeFormat.strike ? "isActive" : undefined} aria-pressed={activeFormat.strike} title="Strikethrough" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "~~", after: "~~", placeholder: "strike" }))}>
+              <Strikethrough size={14} />
             </button>
             <button className={activeFormat.inlineCode ? "isActive" : undefined} aria-pressed={activeFormat.inlineCode} title="Inline code" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "`", after: "`", placeholder: "code" }))}>
               <Code size={14} />
@@ -721,6 +733,9 @@ export function App() {
             </button>
             <button className={activeFormat.rule ? "isActive" : undefined} aria-pressed={activeFormat.rule} title="Horizontal rule" type="button" onClick={() => withEditor((view) => insertBlock(view, "---\n"))}>
               <Minus size={14} />
+            </button>
+            <button className={activeFormat.table ? "isActive" : undefined} aria-pressed={activeFormat.table} title="Table" type="button" onClick={() => withEditor((view) => insertBlock(view, "| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell     | Cell     |\n"))}>
+              <TableIcon size={14} />
             </button>
           </div>
 

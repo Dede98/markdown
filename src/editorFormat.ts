@@ -1,9 +1,12 @@
 import type { EditorState } from "@codemirror/state";
 
+export type HeadingLevel = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
 export type ActiveFormat = {
-  heading: 0 | 1 | 2 | 3;
+  heading: HeadingLevel;
   bold: boolean;
   italic: boolean;
+  strike: boolean;
   inlineCode: boolean;
   link: boolean;
   unorderedList: boolean;
@@ -12,12 +15,14 @@ export type ActiveFormat = {
   quote: boolean;
   codeBlock: boolean;
   rule: boolean;
+  table: boolean;
 };
 
 export const emptyFormat: ActiveFormat = {
   heading: 0,
   bold: false,
   italic: false,
+  strike: false,
   inlineCode: false,
   link: false,
   unorderedList: false,
@@ -26,6 +31,7 @@ export const emptyFormat: ActiveFormat = {
   quote: false,
   codeBlock: false,
   rule: false,
+  table: false,
 };
 
 export function getActiveFormat(state: EditorState): ActiveFormat {
@@ -33,16 +39,17 @@ export function getActiveFormat(state: EditorState): ActiveFormat {
   const line = state.doc.lineAt(cursor);
   const text = line.text;
   const offset = cursor - line.from;
-  const heading = text.match(/^(#{1,3})\s/);
+  const heading = text.match(/^(#{1,6})\s/);
   const format: ActiveFormat = {
     ...emptyFormat,
-    heading: heading ? (heading[1].length as 1 | 2 | 3) : 0,
+    heading: heading ? (heading[1].length as HeadingLevel) : 0,
     taskList: /^\s*[-*]\s+\[[ xX]\]\s+/.test(text),
     unorderedList: /^\s*[-*]\s+/.test(text) && !/^\s*[-*]\s+\[[ xX]\]\s+/.test(text),
     orderedList: /^\s*\d+[.)]\s+/.test(text),
     quote: /^\s*>\s+/.test(text),
     rule: /^---+$/.test(text.trim()),
     codeBlock: isInsideCodeBlock(state, cursor),
+    table: /^\|.*\|\s*$/.test(text),
   };
 
   for (const match of text.matchAll(/\*\*([^*\n]+)\*\*/g)) {
@@ -62,6 +69,12 @@ export function getActiveFormat(state: EditorState): ActiveFormat {
   for (const match of text.matchAll(/`([^`\n]+)`/g)) {
     if (isOffsetInsideMatch(offset, match.index!, match[0].length)) {
       format.inlineCode = true;
+    }
+  }
+
+  for (const match of text.matchAll(/~~([^~\n]+)~~/g)) {
+    if (isOffsetInsideMatch(offset, match.index!, match[0].length)) {
+      format.strike = true;
     }
   }
 

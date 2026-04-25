@@ -12,7 +12,9 @@ function buildDecorations(view: EditorView): DecorationSet {
     while (position <= to) {
       const line = view.state.doc.lineAt(position);
       const text = line.text;
-      const heading = text.match(/^(#{1,3})\s/);
+      const heading = text.match(/^(#{1,6})\s/);
+      const tableRow = /^\|.*\|\s*$/.test(text);
+      const tableSeparator = /^\|?\s*:?-{2,}:?(\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/.test(text);
       const taskList = text.match(/^(\s*)[-*]\s+\[([ xX])\]\s+/);
       const unorderedList = text.match(/^(\s*)[-*]\s+/);
       const orderedList = text.match(/^(\s*)\d+[.)]\s+/);
@@ -78,6 +80,14 @@ function buildDecorations(view: EditorView): DecorationSet {
         decorateSyntax(decorations, start + match[0].length - 1, start + match[0].length, activeSyntax);
       }
 
+      for (const match of text.matchAll(/~~([^~\n]+)~~/g)) {
+        const start = line.from + match.index!;
+        const activeSyntax = isRangeActive(view, start, start + match[0].length);
+        decorateSyntax(decorations, start, start + 2, activeSyntax);
+        addDecoration(decorations, start + 2, start + match[0].length - 2, Decoration.mark({ class: "cm-md-strike" }));
+        decorateSyntax(decorations, start + match[0].length - 2, start + match[0].length, activeSyntax);
+      }
+
       for (const match of text.matchAll(/\[([^\]\n]+)\]\(([^)\n]+)\)/g)) {
         const start = line.from + match.index!;
         const labelStart = start + 1;
@@ -107,6 +117,20 @@ function buildDecorations(view: EditorView): DecorationSet {
           addDecoration(decorations, line.from, line.to, Decoration.mark({ class: "cm-md-syntax" }));
         } else {
           addDecoration(decorations, line.from, line.to, Decoration.replace({ widget: new RuleWidget() }));
+        }
+      }
+
+      // GFM tables: decorate any pipe-bordered line. The separator row
+      // (`| --- | --- |`) gets its own class so we can hide it visually when
+      // the cursor is elsewhere; the pipe syntax itself fades out off-cursor.
+      if (tableRow || tableSeparator) {
+        const cls = tableSeparator ? "cm-md-table-row cm-md-table-separator" : "cm-md-table-row";
+        addDecoration(decorations, line.from, line.from, Decoration.line({ class: cls }));
+        if (!lineActive) {
+          for (const match of text.matchAll(/\|/g)) {
+            const start = line.from + match.index!;
+            addDecoration(decorations, start, start + 1, Decoration.mark({ class: "cm-md-syntax cm-md-table-pipe" }));
+          }
         }
       }
 

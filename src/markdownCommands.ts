@@ -60,7 +60,7 @@ export function wrapSelection(view: EditorView, pair: WrapPair) {
   view.focus();
 }
 
-export function setHeading(view: EditorView, level: 1 | 2 | 3) {
+export function setHeading(view: EditorView, level: 1 | 2 | 3 | 4 | 5 | 6) {
   const { state } = view;
   const prefix = `${"#".repeat(level)} `;
   const changes = state.changeByRange((range) => {
