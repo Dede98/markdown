@@ -116,3 +116,44 @@ Reason:
 Scope:
 
 - This is a spike decision, not yet a permanent product framework commitment.
+
+## 10. Plugin API Is Earned, Not Designed
+
+Decision: Do not build a generic plugin/extension system before there are real first-party consumers. Ship the next product features directly, extract decoupling seams as the work demands them, and let the plugin API shape itself around the third real consumer.
+
+Reason:
+
+- Plugin APIs designed in the abstract bind future feature work to early guesses. Comments, realtime collaboration, history, and MCP have very different shapes; a single API guessed up front will fit at most one.
+- Prior art (VS Code, Obsidian, Tiptap) waited until two or three real first-party consumers existed before formalizing the extension contract.
+- CodeMirror 6 is already an extension-based core. Wrapping it in a hand-rolled plugin layer without earned shape adds friction without value.
+- `AGENTS.md` already requires that AI/MCP edits go through the same mutation path as human edits. The contract that plugins must respect is therefore product-defined, not invented.
+
+Implications:
+
+- The next product milestone (Comments and annotations) is built directly, not through a speculative plugin API.
+- Three decoupling seams should be carved as the work demands them: a toolbar item registry, a `MarkdownCommand` interface, and an `EditorContribution` shape (see `ARCHITECTURE.md` § Decoupling Seams).
+- A formal third-party plugin API may follow once Comments + Realtime collaboration have both been built and the seams have been validated against two real consumers.
+
+Alternatives considered:
+
+- Build a generic plugin system before the next feature: rejected. The cost of designing for four imagined consumers exceeds the cost of refactoring once real shape is known.
+- Skip decoupling and build features monolithically: rejected. The toolbar/command/contribution seams are local, low-risk, and already pay off the first feature (Comments).
+
+## 11. Local MVP Is Feature-Complete
+
+Decision: Treat the local editor MVP (`PRODUCT_PLAN.md` § Local MVP) as feature-complete. Outstanding work before sealing v1 is polish only.
+
+Scope of v1:
+
+- Open / new / save `.md` files (web + Tauri).
+- WYSIWYM live-preview editor with raw-source toggle.
+- Zen and Normal modes with toolbar.
+- Common formatting (headings, bold, italic, links, blockquotes, lists, task lists, fenced code, horizontal rules).
+- Offline use without an account.
+
+Out of scope for v1: comments, realtime collaboration, history, MCP, third-party storage adapters. Those are subsequent milestones.
+
+Implications:
+
+- A short polish pass closes v1 (persist mode prefs, view-mode keyboard shortcuts, accessibility parity on the Zen toggle, and any other small gaps captured in the active handoff).
+- After v1 is sealed, the next active milestone is Comments and annotations, built directly using the seams in `ARCHITECTURE.md` § Decoupling Seams.

@@ -59,7 +59,75 @@ Expected layers:
 4. Toolbar commands that apply text transformations.
 5. Save/export pipeline that writes Markdown text.
 
-Raw Markdown syntax should be editable, especially when the cursor is inside formatted text.
+Raw Markdown syntax should be editable, especially when the cursor is inside formatted text. A "raw" view mode swaps the decoration pipeline out via a CodeMirror `Compartment` so the source is shown verbatim while the doc, selection, and history survive the toggle.
+
+## Decoupling Seams
+
+Per `DECISIONS.md` § 10 the project does not build a generic plugin API up front. Instead it carves three local decoupling seams as feature work demands them. Together they will absorb the next product milestones (Comments, Realtime collaboration, History, MCP) without locking the codebase into a guessed-at extension contract.
+
+### Toolbar Item Registry
+
+Goal: replace the hardcoded toolbar JSX in `App.tsx` with a registry of `ToolbarItem` records.
+
+Shape (sketch):
+
+```ts
+type ToolbarItem = {
+  id: string;
+  group: "headings" | "inline" | "blocks" | "lists" | string;
+  icon: LucideIcon;
+  label: string;
+  isActive?: (format: ActiveFormat) => boolean;
+  command: (view: EditorView) => void;
+};
+```
+
+Properties:
+
+- The current built-in buttons (bold, italic, headings, lists, code, link, quote, rule, table) become first-party entries.
+- New features (comment-button, history-snapshot-button, etc.) add entries instead of editing toolbar JSX.
+- Order and grouping are data, not layout code.
+
+### `MarkdownCommand` Interface
+
+Goal: formalize the shape that `wrapSelection` / `insertBlock` / `setHeading` / `toggleLinePrefix` / `insertLink` already implement.
+
+Shape (sketch):
+
+```ts
+type MarkdownCommand = (view: EditorView, args?: unknown) => void;
+```
+
+Properties:
+
+- Toolbar buttons, keymap entries, MCP tool calls, and (later) AI-agent edits all dispatch through the same `MarkdownCommand` surface.
+- Satisfies the `AGENTS.md` invariant that AI/MCP edits use the same document mutation path as human edits.
+- Commands stay pure functions over `EditorView`; no implicit React or app-state coupling.
+
+### `EditorContribution` Shape
+
+Goal: bundle the three things a feature can contribute to the editor — CodeMirror extensions, toolbar items, and key bindings — behind a single shape.
+
+Shape (sketch):
+
+```ts
+type EditorContribution = {
+  id: string;
+  extensions?: Extension[];
+  toolbar?: ToolbarItem[];
+  keymap?: KeyBinding[];
+};
+```
+
+Properties:
+
+- Built-in features (formatting, raw mode, file actions) are written as contributions.
+- Comments will be the first non-built-in contribution; its shape validates the contract.
+- A future formal plugin API can expose `EditorContribution` (or a vetted subset) once at least two real first-party features have been built against it.
+
+### Order Of Carving
+
+The seams are introduced in the order each feature first demands them — typically toolbar registry first (Comments needs a comment button), then `MarkdownCommand` (Comments needs an "insert comment anchor" command), then `EditorContribution` (Comments needs to register its CM extensions, toolbar item, and keymap together). No seam is carved before there is a concrete consumer for it.
 
 ## Realtime Collaboration
 
