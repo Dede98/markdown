@@ -1,5 +1,7 @@
+import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Line, type Range, StateField, type Text } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
+import type { SyntaxNodeRef } from "@lezer/common";
 
 type TableAlign = "left" | "center" | "right" | null;
 
@@ -228,38 +230,40 @@ function buildDecorations(view: EditorView): DecorationSet {
         addDecoration(decorations, line.from, line.from + orderedList[0].length, Decoration.mark({ class: "cm-md-syntax cm-md-list-marker" }));
       }
 
-      for (const match of text.matchAll(/\*\*([^*\n]+)\*\*/g)) {
-        const start = line.from + match.index!;
-        const activeSyntax = isRangeActive(view, start, start + match[0].length);
-        decorateSyntax(decorations, start, start + 2, activeSyntax);
-        addDecoration(decorations, start + 2, start + match[0].length - 2, Decoration.mark({ class: "cm-md-bold" }));
-        decorateSyntax(decorations, start + match[0].length - 2, start + match[0].length, activeSyntax);
-      }
-
-      for (const match of text.matchAll(/(^|[^*])\*([^*\n]+)\*/g)) {
-        const markerOffset = match[1].length;
-        const start = line.from + match.index! + markerOffset;
-        const activeSyntax = isRangeActive(view, start, start + match[0].length - markerOffset);
-        decorateSyntax(decorations, start, start + 1, activeSyntax);
-        addDecoration(decorations, start + 1, start + match[0].length - markerOffset - 1, Decoration.mark({ class: "cm-md-italic" }));
-        decorateSyntax(decorations, start + match[0].length - markerOffset - 1, start + match[0].length - markerOffset, activeSyntax);
-      }
-
-      for (const match of text.matchAll(/`([^`\n]+)`/g)) {
-        const start = line.from + match.index!;
-        const activeSyntax = isRangeActive(view, start, start + match[0].length);
-        decorateSyntax(decorations, start, start + 1, activeSyntax);
-        addDecoration(decorations, start + 1, start + match[0].length - 1, Decoration.mark({ class: "cm-md-inline-code" }));
-        decorateSyntax(decorations, start + match[0].length - 1, start + match[0].length, activeSyntax);
-      }
-
-      for (const match of text.matchAll(/~~([^~\n]+)~~/g)) {
-        const start = line.from + match.index!;
-        const activeSyntax = isRangeActive(view, start, start + match[0].length);
-        decorateSyntax(decorations, start, start + 2, activeSyntax);
-        addDecoration(decorations, start + 2, start + match[0].length - 2, Decoration.mark({ class: "cm-md-strike" }));
-        decorateSyntax(decorations, start + match[0].length - 2, start + match[0].length, activeSyntax);
-      }
+      // Inline markdown decorations (bold, italic, inline code, strikethrough,
+      // link) are driven from the Lezer syntax tree. Walking the tree per
+      // visible line is bounded by `[line.from, line.to]`; the parser only
+      // produces these inline nodes inside paragraph-like content, so fence
+      // bodies and HTML comment lines (which already early-continue above)
+      // never reach this branch. `<u>...</u>` has no Lezer node and is still
+      // matched by regex below.
+      syntaxTree(view.state).iterate({
+        from: line.from,
+        to: line.to,
+        enter: (node) => {
+          switch (node.name) {
+            case "StrongEmphasis":
+              decorateInlineSpan(decorations, view, node.from, node.to, 2, "cm-md-bold");
+              return;
+            case "Emphasis":
+              decorateInlineSpan(decorations, view, node.from, node.to, 1, "cm-md-italic");
+              return;
+            case "InlineCode":
+              decorateInlineSpan(decorations, view, node.from, node.to, 1, "cm-md-inline-code");
+              return;
+            case "Strikethrough":
+              decorateInlineSpan(decorations, view, node.from, node.to, 2, "cm-md-strike");
+              return;
+            case "Link":
+              decorateLinkNode(decorations, view, node);
+              // Link children (LinkMark / URL) are handled inside; skip the
+              // default child walk so we don't double-decorate the URL span.
+              return false;
+            default:
+              return;
+          }
+        },
+      });
 
       // HTML underline `<u>…</u>`. Markdown has no native underline syntax, so
       // the `<u>` tag is the de-facto convention. The opening tag is 3 chars
@@ -270,24 +274,6 @@ function buildDecorations(view: EditorView): DecorationSet {
         decorateSyntax(decorations, start, start + 3, activeSyntax);
         addDecoration(decorations, start + 3, start + match[0].length - 4, Decoration.mark({ class: "cm-md-underline" }));
         decorateSyntax(decorations, start + match[0].length - 4, start + match[0].length, activeSyntax);
-      }
-
-      for (const match of text.matchAll(/\[([^\]\n]+)\]\(([^)\n]+)\)/g)) {
-        const start = line.from + match.index!;
-        const labelStart = start + 1;
-        const labelEnd = labelStart + match[1].length;
-        const urlStart = labelEnd + 2;
-        const urlEnd = urlStart + match[2].length;
-        const activeSyntax = isRangeActive(view, start, urlEnd + 1);
-        decorateSyntax(decorations, start, labelStart, activeSyntax);
-        addDecoration(decorations, labelStart, labelEnd, Decoration.mark({ class: "cm-md-link" }));
-        if (activeSyntax) {
-          addDecoration(decorations, labelEnd, urlStart, Decoration.mark({ class: "cm-md-syntax" }));
-          addDecoration(decorations, urlStart, urlEnd, Decoration.mark({ class: "cm-md-link-url" }));
-          addDecoration(decorations, urlEnd, urlEnd + 1, Decoration.mark({ class: "cm-md-syntax" }));
-        } else {
-          addDecoration(decorations, labelEnd, urlEnd + 1, Decoration.replace({}));
-        }
       }
 
       if (/^>\s/.test(text)) {
@@ -381,6 +367,83 @@ function decorateSyntax(decorations: Range<Decoration>[], from: number, to: numb
 
 function addDecoration(decorations: Range<Decoration>[], from: number, to: number, decoration: Decoration) {
   decorations.push(decoration.range(from, to));
+}
+
+// Decorate an inline span whose marker characters (e.g. `**`, `*`, `` ` ``,
+// `~~`) sit symmetrically at both ends of the node range. Mirrors the
+// per-regex passes that came before this: opening marker → `cm-md-syntax`
+// (mark when active, replace when inactive), inner body → `bodyClass` mark,
+// closing marker → same as opening. The active toggle uses the same
+// `isRangeActive` semantics as the prior implementation so the marker
+// reveal-on-cursor behavior is unchanged.
+function decorateInlineSpan(
+  decorations: Range<Decoration>[],
+  view: EditorView,
+  from: number,
+  to: number,
+  markerLength: number,
+  bodyClass: string,
+) {
+  if (to - from <= markerLength * 2) {
+    return;
+  }
+  const activeSyntax = isRangeActive(view, from, to);
+  decorateSyntax(decorations, from, from + markerLength, activeSyntax);
+  addDecoration(decorations, from + markerLength, to - markerLength, Decoration.mark({ class: bodyClass }));
+  decorateSyntax(decorations, to - markerLength, to, activeSyntax);
+}
+
+// Decorate a Lezer `Link` node: `[label](url)` with optional title. Reads
+// the LinkMark and URL children to find the bracket boundaries instead of
+// re-parsing the line text. Active behavior matches the previous regex
+// pass: cursor inside reveals the `](` and `)` markers and shows the URL,
+// cursor outside collapses `](url)` to a hidden replace.
+function decorateLinkNode(
+  decorations: Range<Decoration>[],
+  view: EditorView,
+  ref: SyntaxNodeRef,
+) {
+  const start = ref.from;
+  const end = ref.to;
+
+  let labelEnd = -1;
+  let urlStart = -1;
+  let urlEnd = -1;
+  let linkMarkCount = 0;
+  let child = ref.node.firstChild;
+  while (child) {
+    if (child.name === "LinkMark") {
+      linkMarkCount += 1;
+      // The second LinkMark is the closing `]` (first is `[`, third `(`,
+      // fourth `)`); its `from` is the boundary between label and `](url)`.
+      if (linkMarkCount === 2) {
+        labelEnd = child.from;
+      }
+    } else if (child.name === "URL") {
+      urlStart = child.from;
+      urlEnd = child.to;
+    }
+    child = child.nextSibling;
+  }
+
+  // Defensive: malformed link with missing children — leave it as plain
+  // text rather than emitting partial decorations that could overlap.
+  if (labelEnd < 0 || urlStart < 0 || urlEnd < 0) {
+    return;
+  }
+
+  const labelStart = start + 1; // position right after the opening `[`
+  const activeSyntax = isRangeActive(view, start, end);
+
+  decorateSyntax(decorations, start, labelStart, activeSyntax);
+  addDecoration(decorations, labelStart, labelEnd, Decoration.mark({ class: "cm-md-link" }));
+  if (activeSyntax) {
+    addDecoration(decorations, labelEnd, urlStart, Decoration.mark({ class: "cm-md-syntax" }));
+    addDecoration(decorations, urlStart, urlEnd, Decoration.mark({ class: "cm-md-link-url" }));
+    addDecoration(decorations, urlEnd, end, Decoration.mark({ class: "cm-md-syntax" }));
+  } else {
+    addDecoration(decorations, labelEnd, end, Decoration.replace({}));
+  }
 }
 
 function decorateCodeLine(decorations: Range<Decoration>[], line: { from: number; text: string }, language: string | null) {
