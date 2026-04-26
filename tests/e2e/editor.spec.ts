@@ -1243,6 +1243,20 @@ test.describe("editor core", () => {
     await expectEditorSource(page, "# Picked");
     await expectEditorSource(page, "The winner.");
   });
+
+  test("web build does not show the auto-update affordance", async ({ page }) => {
+    await page.goto("/");
+
+    // The auto-update path is Tauri-only — the effect short-circuits via
+    // isTauriRuntime() so the web build never queries the manifest endpoint
+    // and never renders the update button. Guards a regression where the
+    // gate is dropped or inverted.
+    await expect(page.locator(".updateButton")).toHaveCount(0);
+    // Spot-check the topbar still renders the existing controls so the
+    // assertion above isn't passing because the topbar failed to mount.
+    await expect(page.getByRole("button", { name: "Raw" })).toBeVisible();
+    await expect(page.getByTitle("Zen Mode")).toBeVisible();
+  });
 });
 
 test("mobile layout keeps editor and mode toggle usable", async ({ page }, testInfo) => {

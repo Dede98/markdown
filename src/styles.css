@@ -790,6 +790,26 @@ button {
   height: 30px;
 }
 
+/* Update affordance: same shell as the theme toggle but tinted with the
+   accent so the user notices an update is waiting. The button is only
+   rendered while `pendingUpdate` is non-null in App.tsx. */
+.updateButton {
+  width: 30px;
+  height: 30px;
+  color: var(--accent, #2563eb);
+}
+
+.updateButton[data-installing="true"] {
+  /* Subtle pulse while the download is in flight; reverts when the
+     install completes (or relaunches the app). */
+  animation: updatePulse 1.4s ease-in-out infinite;
+}
+
+@keyframes updatePulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
+
 .topbarRight {
   display: inline-flex;
   align-items: center;

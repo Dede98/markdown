@@ -3,6 +3,7 @@ import {
   Bold,
   Code,
   Code2,
+  Download,
   Eye,
   FilePlus,
   FileText,
@@ -50,6 +51,7 @@ import {
   type ResolvedTheme,
   type ThemePref,
 } from "./theme";
+import { checkForUpdate, installAndRelaunch, type Update } from "./updater";
 import { getStoredRaw, getStoredZen, storeRaw, storeZen } from "./viewMode";
 import { webFileAdapter } from "./webFileAdapter";
 
@@ -160,6 +162,13 @@ export function App() {
   // truth even if `localStorage` throws on a later read.
   const [themePref, setThemePref] = useState<ThemePref>(() => getStoredTheme());
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedTheme>(() => resolveTheme(themePref));
+  // Auto-update state. The handle returned by `checkForUpdate` carries the
+  // signed-payload context Tauri needs to install — we keep it as-is rather
+  // than copying out the version, so the install path doesn't have to call
+  // `check()` a second time. `installing` gates the button while a download
+  // is in flight.
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const [installingUpdate, setInstallingUpdate] = useState(false);
   const editorRef = useRef<EditorView | null>(null);
   // Latest editor text. Saving from a keyboard shortcut runs in the same tick
   // as `setMarkdown`, so a closure-captured `markdown` would be stale; reading
@@ -478,6 +487,49 @@ export function App() {
     };
   }, [loadDroppedFile]);
 
+  // Auto-update probe: only the Tauri shell ships an updater plugin, so the
+  // web build short-circuits. A failure here (no network, manifest 404,
+  // signature mismatch, etc.) is logged and silently swallowed — the user
+  // simply does not see an update affordance, and the editor keeps working.
+  // The check runs once per launch; we deliberately do not poll, so an
+  // update that lands mid-session waits for the next app start.
+  useEffect(() => {
+    if (!isTauriRuntime()) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const update = await checkForUpdate();
+        if (!cancelled && update) {
+          setPendingUpdate(update);
+        }
+      } catch (error) {
+        console.error("Update check failed", error);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleInstallUpdate = useCallback(async () => {
+    if (!pendingUpdate || installingUpdate) {
+      return;
+    }
+    setInstallingUpdate(true);
+    try {
+      await installAndRelaunch(pendingUpdate);
+      // `installAndRelaunch` ends in `relaunch()`, so this line normally
+      // never executes — the process is replaced. Still clear the flag in
+      // case the relaunch call rejects without restarting.
+      setInstallingUpdate(false);
+    } catch (error) {
+      console.error("Update install failed", error);
+      setInstallingUpdate(false);
+    }
+  }, [pendingUpdate, installingUpdate]);
+
   // Tauri drag region: with `titleBarStyle: "Overlay"` the OS no longer reserves
   // a native titlebar, so dragging relies on the explicit drag region attribute
   // plus a JS bridge into `startDragging`. Bind in the capture phase on the
@@ -771,6 +823,27 @@ export function App() {
         </div>
 
         <div className="topbarRight">
+          {pendingUpdate && (
+            <button
+              className="iconButton updateButton"
+              type="button"
+              title={
+                installingUpdate
+                  ? `Installing v${pendingUpdate.version}…`
+                  : `Update available: v${pendingUpdate.version} — install and restart`
+              }
+              aria-label={
+                installingUpdate
+                  ? `Installing update v${pendingUpdate.version}`
+                  : `Update available: v${pendingUpdate.version}`
+              }
+              onClick={() => void handleInstallUpdate()}
+              disabled={installingUpdate}
+              data-installing={installingUpdate ? "true" : undefined}
+            >
+              <Download size={16} />
+            </button>
+          )}
           <button
             className="iconButton themeToggle"
             type="button"
