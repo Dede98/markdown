@@ -132,16 +132,17 @@ pub fn run() {
 fn build_app_menu<R: tauri::Runtime>(
     handle: &tauri::AppHandle<R>,
 ) -> tauri::Result<Menu<R>> {
-    // The About panel surfaces basic provenance for the spike build. Version is
-    // pulled from Cargo at compile time so the panel never drifts from the bundle.
+    // About panel provenance. Version is pulled from Cargo at compile time so
+    // it cannot drift from the bundle. Author / website / copyright point at
+    // the open-source project home; the project ships under MIT.
     let app_metadata = AboutMetadata {
         name: Some("Markdown".into()),
         version: Some(env!("CARGO_PKG_VERSION").into()),
-        authors: Some(vec!["ole.de".into()]),
-        comments: Some("Local-first Markdown editor (spike).".into()),
-        copyright: Some("© 2026 ole.de".into()),
-        website: Some("https://ole.de".into()),
-        website_label: Some("ole.de".into()),
+        authors: Some(vec!["Dejan Brinker".into()]),
+        comments: Some("Local-first Markdown editor.".into()),
+        copyright: Some("© 2026 Dejan Brinker. MIT licensed.".into()),
+        website: Some("https://github.com/Dede98/markdown".into()),
+        website_label: Some("github.com/Dede98/markdown".into()),
         ..Default::default()
     };
 

@@ -41,7 +41,7 @@
     ],
     "category": "Productivity",
     "shortDescription": "Local-first Markdown editor",
-    "longDescription": "Local-first Markdown editor for Mac and Web. .md files are the canonical document source.",
+    "longDescription": "Local-first Markdown editor for Mac and Web. .md files are the canonical source.",
     "fileAssociations": [
       {
         "ext": ["md", "markdown", "mdx", "mdown"],
