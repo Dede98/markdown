@@ -44,19 +44,23 @@ jobs:
     runs-on: ${{ matrix.platform.os }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Set up pnpm
-        uses: pnpm/action-setup@v4
+        uses: pnpm/action-setup@v5
         with:
           # Pin to the version used in development. Bump in lockstep with
           # `package.json#packageManager` if/when that field is added.
           version: 10
 
       - name: Set up Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: 20
+          # Node 22 (current active LTS). Node 20 is deprecated on the
+          # GitHub Actions runners as of mid-2026; the action versions
+          # above are the first ones that ship a Node 24 runtime so this
+          # workflow no longer prints the deprecation banner.
+          node-version: 22
           cache: pnpm
 
       - name: Install Rust toolchain
