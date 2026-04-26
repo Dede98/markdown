@@ -1146,6 +1146,103 @@ test.describe("editor core", () => {
     await page.keyboard.press("Control+.");
     await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
   });
+
+  test("dropping a .md file onto the window opens it", async ({ page }) => {
+    await page.goto("/");
+
+    // Build a real DataTransfer with a File payload, then dispatch the drop
+    // event onto body. The window-scoped capture-phase listener in App.tsx
+    // intercepts before CodeMirror's own drop handler can swallow the event
+    // and insert the file's bytes as text.
+    const dataTransfer = await page.evaluateHandle(() => {
+      const dt = new DataTransfer();
+      const file = new File(["# Dropped File\n\nFresh content from a drop."], "dropped.md", {
+        type: "text/markdown",
+      });
+      dt.items.add(file);
+      return dt;
+    });
+
+    await page.dispatchEvent("body", "drop", { dataTransfer });
+
+    // Document title and editor source both update — the drop routes through
+    // the same `replaceFile` funnel as the file-open dialog.
+    await expect(page.locator(".documentTitle")).toContainText("dropped.md");
+    await expectEditorSource(page, "# Dropped File");
+    await expectEditorSource(page, "Fresh content from a drop.");
+  });
+
+  test("dropping a non-markdown file is ignored", async ({ page }) => {
+    await page.goto("/");
+
+    // The drop handler reuses `isMarkdownPath` so non-`.md` extensions are
+    // silently dropped — same behaviour as the Tauri drag-drop handler.
+    const dataTransfer = await page.evaluateHandle(() => {
+      const dt = new DataTransfer();
+      const file = new File(["console.log('hi')"], "script.js", { type: "text/javascript" });
+      dt.items.add(file);
+      return dt;
+    });
+
+    await page.dispatchEvent("body", "drop", { dataTransfer });
+
+    // Title still shows the seeded untitled.md and the original content remains.
+    await expect(page.locator(".documentTitle")).toContainText("untitled.md");
+    await expect(page.locator(".cm-content")).toContainText("On the Quiet Hour");
+  });
+
+  test("dropping a .md file while dirty prompts before replacing", async ({ page }) => {
+    await page.goto("/");
+
+    // Dirty the buffer so guardDirty triggers the confirm prompt — same path
+    // taken by the file-open dialog when the user has unsaved changes.
+    await setEditorText(page, "user typed this and has not saved yet");
+    await expectEditorSource(page, "user typed this and has not saved yet");
+
+    // First drop: dismiss the confirm — the dropped file is discarded and
+    // the working buffer survives untouched.
+    page.once("dialog", (dialog) => void dialog.dismiss());
+    const firstDrop = await page.evaluateHandle(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(["# Replacement"], "incoming.md", { type: "text/markdown" }));
+      return dt;
+    });
+    await page.dispatchEvent("body", "drop", { dataTransfer: firstDrop });
+    await expect(page.locator(".documentTitle")).not.toContainText("incoming.md");
+    await expectEditorSource(page, "user typed this and has not saved yet");
+
+    // Second drop: accept the confirm — file replaces the buffer.
+    page.once("dialog", (dialog) => void dialog.accept());
+    const secondDrop = await page.evaluateHandle(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(["# Replacement\n\nbody"], "incoming.md", { type: "text/markdown" }));
+      return dt;
+    });
+    await page.dispatchEvent("body", "drop", { dataTransfer: secondDrop });
+    await expect(page.locator(".documentTitle")).toContainText("incoming.md");
+    await expectEditorSource(page, "# Replacement");
+  });
+
+  test("dropping multiple files picks the first markdown one", async ({ page }) => {
+    await page.goto("/");
+
+    // Pile a JS, a markdown, and a txt into one DataTransfer. The handler
+    // walks the list in order and stops at the first `.md` — mirrors the
+    // Tauri drag-drop policy ("first match wins, rest dropped silently").
+    const dataTransfer = await page.evaluateHandle(() => {
+      const dt = new DataTransfer();
+      dt.items.add(new File(["js noise"], "ignored.js", { type: "text/javascript" }));
+      dt.items.add(new File(["# Picked\n\nThe winner."], "winner.md", { type: "text/markdown" }));
+      dt.items.add(new File(["text noise"], "ignored.txt", { type: "text/plain" }));
+      return dt;
+    });
+
+    await page.dispatchEvent("body", "drop", { dataTransfer });
+
+    await expect(page.locator(".documentTitle")).toContainText("winner.md");
+    await expectEditorSource(page, "# Picked");
+    await expectEditorSource(page, "The winner.");
+  });
 });
 
 test("mobile layout keeps editor and mode toggle usable", async ({ page }, testInfo) => {

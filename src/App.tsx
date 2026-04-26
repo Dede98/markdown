@@ -334,6 +334,35 @@ export function App() {
     [guardDirty, replaceFile],
   );
 
+  // Web sibling of `loadPathFile`: read a `File` object dropped onto the
+  // window. The Tauri build receives an absolute path through the
+  // `tauri://drag-drop` IPC event; the browser receives the file's bytes
+  // directly via the HTML5 drop event. Both shells funnel through the same
+  // `replaceFile` so the dirty-guard prompt and downstream UI behave
+  // identically regardless of how the file arrived.
+  const loadDroppedFile = useCallback(
+    async (droppedFile: File) => {
+      if (!droppedFile || !isMarkdownPath(droppedFile.name)) {
+        return;
+      }
+      if (!guardDirty("open")) {
+        return;
+      }
+      try {
+        const contents = await droppedFile.text();
+        // `handle: null` because a DOM drop event does not surface a File
+        // System Access handle. Subsequent Save will route through Save-As,
+        // matching the input-fallback path in `webFileAdapter.openFile`.
+        replaceFile({ name: droppedFile.name, contents, handle: null });
+      } catch (error) {
+        console.error("Failed to read dropped file", droppedFile.name, error);
+        setSaveStatus("error");
+        setSaveError(error instanceof Error ? error.message : "Failed to open file");
+      }
+    },
+    [guardDirty, replaceFile],
+  );
+
   // Keyboard shortcuts at the window level so they catch Cmd/Ctrl-O/N
   // before the browser uses them, and so saving works even outside the editor.
   useEffect(() => {
@@ -391,6 +420,63 @@ export function App() {
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
   }, [handleNew, handleOpen, handleSave, handleSaveAs]);
+
+  // HTML5 drag-drop for the web build: a `.md` file dropped anywhere in the
+  // window opens it. Tauri ships its own native drag-drop (`tauri://drag-drop`
+  // listener below), so this effect is gated to the browser runtime to avoid
+  // double-handling the same drop.
+  //
+  // Capture phase + window scope lets us beat CodeMirror's content-area drop
+  // handler to the punch. We only swallow drops that carry files —
+  // `dataTransfer.types.includes("Files")` — so plain text drags into the
+  // editor still flow through CodeMirror untouched.
+  //
+  // The matching `dragover` listener is required: without `preventDefault()`
+  // on dragover, the browser refuses the drop and instead navigates the
+  // window to the dropped file's `file://` URL, which would unload the app.
+  useEffect(() => {
+    if (typeof window === "undefined" || isTauriRuntime()) {
+      return;
+    }
+
+    const isFileDrag = (event: DragEvent) =>
+      Boolean(event.dataTransfer?.types && Array.from(event.dataTransfer.types).includes("Files"));
+
+    const onDragOver = (event: DragEvent) => {
+      if (!isFileDrag(event)) {
+        return;
+      }
+      event.preventDefault();
+    };
+
+    const onDrop = (event: DragEvent) => {
+      if (!isFileDrag(event)) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      const files = event.dataTransfer?.files;
+      if (!files || files.length === 0) {
+        return;
+      }
+      // Single-window app: pick the first markdown file and ignore the rest.
+      // Mirrors the Tauri drag-drop handler's "first match wins" policy.
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        if (file && isMarkdownPath(file.name)) {
+          void loadDroppedFile(file);
+          return;
+        }
+      }
+    };
+
+    window.addEventListener("dragover", onDragOver, { capture: true });
+    window.addEventListener("drop", onDrop, { capture: true });
+    return () => {
+      window.removeEventListener("dragover", onDragOver, { capture: true });
+      window.removeEventListener("drop", onDrop, { capture: true });
+    };
+  }, [loadDroppedFile]);
 
   // Tauri drag region: with `titleBarStyle: "Overlay"` the OS no longer reserves
   // a native titlebar, so dragging relies on the explicit drag region attribute
