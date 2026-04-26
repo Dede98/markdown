@@ -1,6 +1,7 @@
 import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { GFM } from "@lezer/markdown";
 import { EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
@@ -39,7 +40,10 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       indentOnInput(),
       bracketMatching(),
       highlightActiveLine(),
-      markdown(),
+      // GFM extension adds Strikethrough, Table, TaskList, and Autolink nodes
+      // to the parsed Lezer tree. The decoration pipeline reads this tree
+      // (via `syntaxTree(state)`) instead of regex-scanning text.
+      markdown({ extensions: GFM }),
       // `lineContextField` precomputes per-line "is this position inside a
       // code fence / HTML comment" data over the full doc. It must be
       // registered before `markdownPreview` because the ViewPlugin reads
