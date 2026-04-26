@@ -987,6 +987,70 @@ test.describe("editor core", () => {
     expect(rawFont.toLowerCase()).toMatch(/mono|consolas/);
     expect(rawFont.toLowerCase()).not.toContain("charter");
   });
+
+  test("raw mode preference persists across reloads via localStorage", async ({ page }) => {
+    await page.goto("/");
+
+    // Enable raw mode and verify localStorage is written.
+    await page.getByRole("button", { name: "Raw" }).click();
+    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute("aria-pressed", "true");
+    const stored = await page.evaluate(() => window.localStorage.getItem("markdown.raw"));
+    expect(stored).toBe("1");
+
+    // Reload — app must hydrate from storage and stay in raw mode.
+    await page.reload();
+    await expect(page.getByRole("button", { name: "Rendered" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(".editorMountRaw")).toHaveCount(1);
+  });
+
+  test("zen mode preference persists across reloads via localStorage", async ({ page }) => {
+    await page.goto("/");
+
+    // Enable zen mode and verify localStorage is written.
+    await page.getByTitle("Zen Mode").click();
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeHidden();
+    const stored = await page.evaluate(() => window.localStorage.getItem("markdown.zen"));
+    expect(stored).toBe("1");
+
+    // Reload — app must hydrate from storage and stay in zen mode.
+    await page.reload();
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeHidden();
+    await expect(page.getByText("Zen mode")).toBeVisible();
+  });
+
+  test("raw and zen prefs round-trip independently across reloads", async ({ page }) => {
+    // The two flags are orthogonal (a user can be in raw + zen at once) and
+    // must be able to flip back to false across a reload — not just stick on.
+    await page.goto("/");
+
+    // Both on.
+    await page.getByRole("button", { name: "Raw" }).click();
+    await page.getByTitle("Zen Mode").click();
+    await expect(page.locator(".editorMountRaw")).toHaveCount(1);
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeHidden();
+
+    // Reload — both survive.
+    await page.reload();
+    await expect(page.locator(".editorMountRaw")).toHaveCount(1);
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeHidden();
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.raw"))).toBe("1");
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.zen"))).toBe("1");
+
+    // Toggle both off (zen toggle button is hidden by topbar restyle in zen
+    // mode but still present — its accessible name flips to "Normal Mode").
+    await page.getByTitle("Normal Mode").click();
+    await page.getByRole("button", { name: "Rendered" }).click();
+    await expect(page.locator(".editorMountRaw")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
+
+    // Reload — false also persists. A stuck-on writer would fail this.
+    await page.reload();
+    await expect(page.locator(".editorMountRaw")).toHaveCount(0);
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.raw"))).toBe("0");
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.zen"))).toBe("0");
+  });
 });
 
 test("mobile layout keeps editor and mode toggle usable", async ({ page }, testInfo) => {

@@ -50,6 +50,7 @@ import {
   type ResolvedTheme,
   type ThemePref,
 } from "./theme";
+import { getStoredRaw, getStoredZen, storeRaw, storeZen } from "./viewMode";
 import { webFileAdapter } from "./webFileAdapter";
 
 const initialMarkdown = `# On the Quiet Hour
@@ -134,10 +135,10 @@ export function App() {
   const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
-  const [zen, setZen] = useState(false);
+  const [zen, setZen] = useState(() => getStoredZen());
   // Raw mode renders the document as plain monospace text — every markdown
   // mark visible. Orthogonal to zen: a user can be in raw + zen at once.
-  const [raw, setRaw] = useState(false);
+  const [raw, setRaw] = useState(() => getStoredRaw());
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fileVersion, setFileVersion] = useState(0);
@@ -439,6 +440,10 @@ export function App() {
       setResolvedTheme(next);
     });
   }, [themePref]);
+
+  // Persist view mode prefs so they survive reload.
+  useEffect(() => { storeRaw(raw); }, [raw]);
+  useEffect(() => { storeZen(zen); }, [zen]);
 
   const cycleTheme = useCallback(() => {
     setThemePref((current) => {
