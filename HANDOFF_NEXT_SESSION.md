@@ -1,17 +1,37 @@
-# Handoff — Post Lezer-tree migration
+# Handoff — Lezer-tree migration polish complete
 
 Status: shipped. Every decoration in `src/markdownPreview.ts` now reads
 from `syntaxTree(state)` (the Lezer tree parsed by
 `@codemirror/lang-markdown` with the GFM extension) instead of regex
-over text. The `lineContextField` StateField is gone. Bundle is at
-0.0.15 with a built `.dmg`. Test baseline holds at 95 passed / 31
-skipped / 0 failed.
+over text. The `lineContextField` StateField is gone. The three
+migration-polish follow-ups flagged in the previous handoff are also
+done. Test baseline holds at 95 passed / 31 skipped / 0 failed.
 
-The next session has a choice between three lanes: small polish on
-the migration, the next product milestone, or unblocking work on the
-codebase that this migration enables.
+The next session picks the next product milestone from
+`PRODUCT_PLAN.md` or one of the unblocked codebase moves the
+migration enabled.
 
-## What landed this session
+## What landed in the polish session
+
+```
+4c6da72 Add doc-text fallback to isPositionInHtmlComment for inline multi-line comments
+4a0469e Migrate tableBlockState and htmlCommentBlockState fence detection to Lezer tree
+3829e40 Update fence-body test comment to reference Lezer-tree detection
+07afeb0 Reframe handoff: Lezer-tree migration shipped, surface next lane choices
+```
+
+`3829e40` closed prior item #2 (stale `lineContextField` test comment).
+`4a0469e` closed item #1 (`tableBlockState` + `htmlCommentBlockState`
+fence detection moved off `^\`\`\`` regex onto the new
+`isLineInsideFencedCode(state, line)` helper, which walks the Lezer
+tree for a `FencedCode` ancestor — same source the ViewPlugin path
+already used via `getFencedCodeContext`).
+`4c6da72` closed item #3 (inline-multiline `<!--` / `-->` comment seed
+gap — `isPositionInHtmlComment` now falls back to a bounded 4 KB
+doc-text scan when no Lezer `Comment` / `CommentBlock` ancestor covers
+the position).
+
+## What landed in the original migration session
 
 ```
 3009e9a Bump Tauri crate and app version to 0.0.15
@@ -27,8 +47,8 @@ independently revertable; the test baseline held at every step.
 
 Notable details:
 
-- `@lezer/markdown` and `@lezer/common` are now direct deps
-  (pnpm's strict resolver only hoists direct deps, so the `GFM` and
+- `@lezer/markdown` and `@lezer/common` are direct deps (pnpm's
+  strict resolver only hoists direct deps, so the `GFM` and
   `SyntaxNode` symbols had to be imported from a hoisted path).
 - `pnpm typecheck` was a silent no-op for composite projects until
   `c3d45ba`. The real check used to live only inside `pnpm build`
@@ -43,13 +63,15 @@ Notable details:
 ## Repo state
 
 - Branch: `spike/editor-core`
-- HEAD: `3009e9a`
+- HEAD: `4c6da72`
 - Working tree: clean
 - Test baseline: 95 passed, 31 skipped, 0 failed (`pnpm test:e2e`)
 - Typecheck: clean (`pnpm typecheck` runs `tsc -b --noEmit`)
-- Bundle: 0.0.15 (Tauri crate + app + `tauri.conf.json` aligned)
+- Bundle: 0.0.15 (Tauri crate + app + `tauri.conf.json` aligned —
+  unchanged since the migration session; rebuild before the next
+  release).
 
-## Architecture invariants now enforced by the tree
+## Architecture invariants enforced by the tree
 
 - Inline constructs (bold, italic, inline code, strikethrough, link)
   decorate from `StrongEmphasis` / `Emphasis` / `InlineCode` /
@@ -66,9 +88,17 @@ Notable details:
   + `CodeInfo` children. Body lines get `cm-md-code-line` and the
   JS/TS tokenizer in `decorateCodeLine`; opener and closer lines
   share `cm-md-code-fence` + replace-when-inactive.
+- Both block-decoration StateFields (`tableBlockState`,
+  `htmlCommentBlockState`) now share the same fence source via
+  `isLineInsideFencedCode(state, line)` — a thin helper that
+  short-circuits at the first `FencedCode` ancestor without
+  collecting `CodeMark` / `CodeInfo`.
 - HTML comment seeding at the start of each visible range comes
-  from `isPositionInHtmlComment(state, pos)` walking up to a
-  `Comment` / `CommentBlock` ancestor.
+  from `isPositionInHtmlComment(state, pos)`. Primary path walks up
+  to a `Comment` / `CommentBlock` ancestor; fallback path scans
+  ±4 KB of doc text for `<!--` / `-->` to handle inline-opened
+  multi-line comments (`prose <!-- a\nb --> tail`) which Lezer's
+  GFM grammar leaves untagged.
 
 ## Active-toggle semantics preserved
 
@@ -80,32 +110,38 @@ replace pattern survived the migration unchanged.
 
 ## Open follow-ups
 
-### Migration polish (small, ~half session)
+### Migration polish — closed
 
-1. **Migrate `tableBlockState` + `htmlCommentBlockState` to the
-   tree.** Both StateFields still scan `^\`\`\`` per line via regex
-   to avoid emitting their block decorations inside fenced code.
-   The ViewPlugin path no longer does this — the StateField path
-   should follow. `FencedCode` ranges are already in the tree;
-   walking them is cheaper than per-line regex. Reviewer flagged
-   the divergence as a smell.
+All three items from the prior handoff are landed:
 
-2. **Stale test comment.** `tests/e2e/editor.spec.ts:449-451`
-   still references the retired `lineContextField` precompute. The
-   test passes (the new tree-based fence detection is also
-   viewport-independent), but the comment misleads. Update to
-   reference `getFencedCodeContext` reading the `FencedCode` node.
+1. ~~`tableBlockState` + `htmlCommentBlockState` regex fence
+   toggle.~~ Closed by `4a0469e`.
+2. ~~Stale test comment referencing `lineContextField`.~~ Closed
+   by `3829e40`.
+3. ~~Inline-multi-line HTML comment seed gap.~~ Closed by
+   `4c6da72`.
 
-3. **Inline-multi-line HTML comment seed gap.** Lezer's `Comment`
-   and `CommentBlock` nodes only fire for top-level or single-line
-   `<!-- ... -->`. A comment opened inline in a paragraph that
-   spans newlines (` prose <!-- a\nb --> prose `) is not tagged,
-   so a visible range opening exactly mid-comment in that shape
-   would seed `inHtmlComment = false` instead of `true`. Documented
-   in `isPositionInHtmlComment`. Not exercised by the e2e suite.
-   Fix would be a forward-scan fallback when no Lezer comment node
-   covers the range start, or accept and add an e2e test that
-   pins current behaviour.
+Two reviewer notes carried forward as low-priority cleanups; both
+are style-only and not blocking:
+
+- `getFencedCodeContext` and `isLineInsideFencedCode` duplicate the
+  "walk parents to FencedCode" loop. A private
+  `findFencedCodeAncestor(state, pos): SyntaxNode | null` helper
+  could collapse the duplication. Skipped to keep the polish diff
+  minimal.
+- `SCAN_WINDOW = 4096` is locally scoped inside
+  `isPositionInHtmlComment`. If a second caller appears, lift to a
+  module constant.
+
+One acceptable edge case in the new fallback: when `SCAN_WINDOW`
+truncates a prior closer, `lastIndexOf("<!--")` can match an
+already-closed comment's opener and report `pos` as in-comment when
+it isn't. Bounded impact — only seeds the per-line scanner, which
+recovers as soon as visible-range text contains a real `<!--` /
+`-->` boundary. Documented inline at the call site. No e2e
+regression test was added: the inline-multiline scroll-mid-comment
+scenario is hard to pin deterministically and the test-coverage
+agent recommended shipping without one.
 
 ### Product milestones from `PRODUCT_PLAN.md`
 
@@ -140,31 +176,21 @@ milestone there, route through `gsd-explore` if scope is unclear.
 
 ## How to start
 
-If picking up migration polish:
-
-```bash
-git status                        # confirm clean working tree
-pnpm typecheck                    # baseline
-pnpm test:e2e                     # baseline 95 / 31
-```
-
-Then pick item 1, 2, or 3 from "Migration polish" above. Each is
-a single small commit.
-
 If picking up the next milestone, start in `PRODUCT_PLAN.md` and
 read `ARCHITECTURE.md` + `DECISIONS.md` before proposing a plan.
 The agent pipeline (explore → architect → implement → security +
 tests in parallel → review → commit) applies to every coding task,
 per the user's global instructions.
 
+If revisiting the optional polish suggestions above, they're a
+single small commit each — no need for the full pipeline.
+
 ## Pipeline reminders for next session
 
 - Spawn explorers per domain in parallel before touching code.
 - For cross-cutting changes, run `architect` agent and present the
   plan before implementing.
-- Run `code-reviewer` on the unstaged diff before each commit
-  (this session caught a missing `Text` import and a missing
-  `@lezer/common` direct dep that way).
+- Run `code-reviewer` on the unstaged diff before each commit.
 - Use `commit-writer`; never write commit messages inline.
 - The `gsd-*` skill family is available if a phase or milestone
   needs structured plan / verify / ship orchestration.
