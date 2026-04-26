@@ -446,9 +446,11 @@ test.describe("editor core", () => {
     // earlier ViewPlugin reset `inCodeFence = false` on every visible-
     // range rebuild, so the body got re-tokenized as plain prose: the
     // inline bold/italic regexes fired and the `**` markers disappeared
-    // from rendered output. The full-doc `lineContextField` precompute
-    // makes the visible loop seed `inCodeFence` from the precomputed
-    // line context so the body remains code regardless of scroll.
+    // from rendered output. Tree-driven fence detection
+    // (`getFencedCodeContext` reads the `FencedCode` Lezer node) is
+    // viewport-independent because Lezer parses the full doc, so each
+    // body line resolves to "inside FencedCode" regardless of where
+    // the opener sits relative to `view.visibleRanges`.
     const fenceBody = Array.from({ length: 80 }, (_, index) => `**not bold ${index + 1}**`).join("\n");
     const trailing = Array.from({ length: 60 }, (_, index) => `tail ${index + 1}`).join("\n");
     await setEditorText(page, `intro\n\n\`\`\`\n${fenceBody}\n\`\`\`\n\n${trailing}\n`);
