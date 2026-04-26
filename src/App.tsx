@@ -829,6 +829,7 @@ export function App() {
           </div>
           <div>
             <span>Markdown</span>
+            {raw && <span>{lineCount(markdown).toLocaleString()} lines</span>}
             <span>{markdown.length.toLocaleString()} chars</span>
           </div>
         </footer>
@@ -868,4 +869,14 @@ function wordCount(markdown: string) {
     .trim()
     .split(/\s+/)
     .filter(Boolean).length;
+}
+
+// Newline-delimited line count, matching what a source-view gutter renders
+// (including a phantom trailing line when the document ends in a newline).
+// "" -> 1, "a\nb" -> 2, "a\nb\n" -> 3. This is intentionally different from
+// CodeMirror's `EditorState.doc.lines`, which collapses the trailing-newline
+// phantom — the gutter-style count is the more useful one for users editing
+// raw markdown source. Used by the status bar in raw mode.
+function lineCount(markdown: string) {
+  return markdown.split("\n").length;
 }

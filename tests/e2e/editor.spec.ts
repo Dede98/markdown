@@ -1001,6 +1001,29 @@ test.describe("editor core", () => {
     expect(rawFont.toLowerCase()).not.toContain("charter");
   });
 
+  test("status bar shows line count only in raw mode", async ({ page }) => {
+    await page.goto("/");
+
+    const statusbar = page.locator(".statusbar");
+
+    // Normal mode: chars only, no line indicator. Use a regex anchored to
+    // the count word so a stray "lines" elsewhere can't sneak past.
+    await expect(statusbar).toContainText(/\d+ chars/);
+    await expect(statusbar).not.toContainText(/\d+ lines/);
+
+    // Flip into raw — line count appears alongside chars. Lines comes from
+    // the same `markdown` state, so it tracks edits live; the initial seeded
+    // document has multiple lines so the indicator is non-zero.
+    await page.getByRole("button", { name: "Raw" }).click();
+    await expect(statusbar).toContainText(/\d+ lines/);
+    await expect(statusbar).toContainText(/\d+ chars/);
+
+    // Back to rendered — line indicator disappears.
+    await page.getByRole("button", { name: "Rendered" }).click();
+    await expect(statusbar).not.toContainText(/\d+ lines/);
+    await expect(statusbar).toContainText(/\d+ chars/);
+  });
+
   test("raw mode preference persists across reloads via localStorage", async ({ page }) => {
     await page.goto("/");
 
