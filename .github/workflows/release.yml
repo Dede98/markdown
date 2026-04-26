@@ -1,0 +1,97 @@
+# Release workflow for the Tauri Mac build.
+#
+# Trigger: pushing a `v*` tag (e.g. `v0.0.16`, `v1.0.0`). Tauri-action
+# reads the tag, builds the bundle for both Mac architectures, signs
+# the update payload with the libsodium key in `TAURI_SIGNING_PRIVATE_KEY`,
+# generates `latest.json` (the updater manifest), and uploads everything
+# as assets on a *draft* GitHub release. Publishing the release is a
+# manual step in the GitHub UI so a stray tag never auto-ships.
+#
+# The matching public key is baked into `src-tauri/tauri.conf.json` and
+# the running app uses it to verify the signature before swapping the
+# binary.
+#
+# Apple Developer signing / notarization is intentionally out of scope
+# for this workflow. Without it, first-launch users see a Gatekeeper
+# warning and must right-click → Open. The auto-update path itself
+# works regardless. Notarization can land as a follow-up commit when
+# the team is ready to invest in the Apple Developer enrolment.
+
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  # Allow manually re-running the workflow without retagging.
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build and draft release (${{ matrix.platform.label }})
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          # Apple Silicon (M-series). The vast majority of new Macs.
+          - { os: macos-latest, target: aarch64-apple-darwin, label: macOS arm64 }
+          # Intel. Older Macs still ship updates.
+          - { os: macos-latest, target: x86_64-apple-darwin,  label: macOS x64   }
+
+    runs-on: ${{ matrix.platform.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          # Pin to the version used in development. Bump in lockstep with
+          # `package.json#packageManager` if/when that field is added.
+          version: 10
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          # Both Mac targets so a single workflow run can build either.
+          targets: aarch64-apple-darwin,x86_64-apple-darwin
+
+      - name: Cache cargo build artefacts
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: ./src-tauri -> target
+
+      - name: Install JS dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build, sign, and draft release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          # Signs the updater payload. tauri-action expands these env vars
+          # into the `--private-key` and `--private-key-password` flags it
+          # passes to the bundler.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # Required for the action to talk to the GitHub Releases API.
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__
+          releaseName: 'Markdown v__VERSION__'
+          releaseBody: |
+            See attached assets to install. The bundled `.app.tar.gz` and
+            `latest.json` together feed the in-app auto-update path on
+            machines already running v0.0.16 or later.
+          # Stay in draft until a human clicks Publish — guards against
+          # a stray tag turning into a public release.
+          releaseDraft: true
+          prerelease: false
+          args: --target ${{ matrix.platform.target }}
