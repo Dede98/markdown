@@ -4,6 +4,9 @@ version = "0.0.16"
 description = "Local-first Markdown editor"
 edition = "2021"
 rust-version = "1.77"
+license = "MIT"
+repository = "https://github.com/Dede98/markdown"
+authors = ["Dejan Brinker"]
 
 [lib]
 name = "markdown_editor_lib"

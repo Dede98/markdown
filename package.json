@@ -2,6 +2,17 @@
   "name": "markdown-editor",
   "version": "0.0.0",
   "private": true,
+  "description": "Local-first Markdown editor for Mac and Web.",
+  "license": "MIT",
+  "author": "Dejan Brinker",
+  "homepage": "https://github.com/Dede98/markdown",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Dede98/markdown.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Dede98/markdown/issues"
+  },
   "type": "module",
   "scripts": {
     "dev": "vite",
