@@ -259,6 +259,41 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-md-table")).toHaveCount(1);
   });
 
+  test("clicking a line below a rendered table positions the caret on that exact line", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    // Three distinct lines after the table so any one-line drift is
+    // visible in the assertion. The earlier bug rendered the widget root
+    // as a bare <table> with `margin: 0.6em 0`; CM6's height map measured
+    // `getBoundingClientRect().height` (margin-excluded), so clicks below
+    // the table mapped to the next source line down.
+    await setEditorText(
+      page,
+      "intro\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nfirst-after\nsecond-after\nthird-after\n",
+    );
+    await expect(page.locator(".cm-md-table")).toHaveCount(1);
+
+    await page.locator(".cm-line").filter({ hasText: "second-after" }).click();
+
+    const headLineText = await page.evaluate(() => {
+      const view = (
+        window as unknown as {
+          __markdownEditorView?: {
+            state: {
+              selection: { main: { head: number } };
+              doc: { lineAt: (pos: number) => { text: string } };
+            };
+          };
+        }
+      ).__markdownEditorView;
+      if (!view) {
+        throw new Error("CodeMirror editor view is not available");
+      }
+      return view.state.doc.lineAt(view.state.selection.main.head).text;
+    });
+    expect(headLineText).toBe("second-after");
+  });
+
   test("typing in a rendered table cell writes back to the markdown source", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
@@ -402,6 +437,41 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).toContainText("- not a list");
     await expect(page.locator(".cm-content")).toContainText("**not bold**");
     await expect(page.locator(".cm-content")).toContainText("after");
+  });
+
+  test("fence body stays styled as code after the opening ``` scrolls out of view", async ({ page }) => {
+    await page.goto("/");
+    // The fence opener sits near the top of a long doc. Once the user
+    // scrolls past it, only the fence body is in the viewport. The
+    // earlier ViewPlugin reset `inCodeFence = false` on every visible-
+    // range rebuild, so the body got re-tokenized as plain prose: the
+    // inline bold/italic regexes fired and the `**` markers disappeared
+    // from rendered output. The full-doc `lineContextField` precompute
+    // makes the visible loop seed `inCodeFence` from the precomputed
+    // line context so the body remains code regardless of scroll.
+    const fenceBody = Array.from({ length: 80 }, (_, index) => `**not bold ${index + 1}**`).join("\n");
+    const trailing = Array.from({ length: 60 }, (_, index) => `tail ${index + 1}`).join("\n");
+    await setEditorText(page, `intro\n\n\`\`\`\n${fenceBody}\n\`\`\`\n\n${trailing}\n`);
+
+    // Scroll the editor's content so the opening ``` sits above the
+    // visible viewport. The mid-body fence lines remain on screen.
+    await page.locator(".cm-scroller").evaluate((node) => {
+      const target = Math.max(0, node.scrollHeight / 2 - node.clientHeight / 2);
+      node.scrollTop = target;
+      node.dispatchEvent(new Event("scroll"));
+    });
+
+    // The fence body lines must keep the code-line class even though
+    // the opening fence is no longer in `view.visibleRanges`.
+    const visibleFenceLine = page
+      .locator(".cm-md-code-line")
+      .filter({ hasText: "not bold" })
+      .first();
+    await expect(visibleFenceLine).toBeVisible();
+    // No inline-bold decoration should have leaked onto a fence line.
+    await expect(visibleFenceLine.locator(".cm-md-bold")).toHaveCount(0);
+    // Raw `**` should still be rendered (not collapsed into a styled run).
+    await expect(visibleFenceLine).toContainText("**not bold");
   });
 
   test("code blocks highlight js syntax and horizontal rules span content width", async ({ page }) => {
