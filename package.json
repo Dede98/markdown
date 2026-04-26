@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "tsc -b --noEmit",
     "test:e2e": "playwright test",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
