@@ -1,7 +1,7 @@
 import { syntaxTree } from "@codemirror/language";
 import { type EditorState, type Line, type Range, StateField, type Text } from "@codemirror/state";
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from "@codemirror/view";
-import type { SyntaxNodeRef } from "@lezer/common";
+import type { SyntaxNode, SyntaxNodeRef } from "@lezer/common";
 
 type TableAlign = "left" | "center" | "right" | null;
 
@@ -13,115 +13,131 @@ type TableBlock = {
   alignments: TableAlign[];
 };
 
-// Per-line "what's open at the START of this line" snapshot for the entire
-// document. The decoration ViewPlugin only sees `view.visibleRanges`, so
-// without this, multi-line constructs (code fences, HTML comments) opened
-// above the viewport are invisible to the per-line scan — the inline
-// regexes then fire on what should be code, and the user sees raw markdown
-// flicker into view as they scroll. Computed once per doc change in a
-// StateField; the ViewPlugin reads it to seed its loop variables when it
-// enters a visible range.
-type LineContext = {
-  inFence: boolean;
-  fenceLanguage: string | null;
-  inHtmlComment: boolean;
-};
+// Look up `[line.from, line.to]` in the Lezer tree to determine whether
+// this source line sits inside a fenced code block, and if so, which
+// part. The opener (` ```js `) and closer (` ``` `) share the same
+// `cm-md-code-fence` line decoration; body lines get `cm-md-code-line`
+// plus the JS/TS tokenizer pass via `decorateCodeLine`. Returns `null`
+// for lines that are not inside any FencedCode node (the common case).
+//
+// Detection walks `tree.resolveInner(line.from, 1)` upward — the deepest
+// node at the line's start position is wrapped by FencedCode if and
+// only if the line is part of a fence. The `language` value is read
+// from the optional `CodeInfo` child of the same FencedCode node so
+// the JS tokenizer fires only for `js` / `ts` info strings.
+type FencedCodeContext = { role: "opener" | "closer" | "body"; language: string | null };
 
-function buildLineContextMap(doc: Text): LineContext[] {
-  const map: LineContext[] = new Array(doc.lines);
-  let inFence = false;
-  let fenceLanguage: string | null = null;
-  let inHtmlComment = false;
-
-  for (let n = 1; n <= doc.lines; n += 1) {
-    // Snapshot the state AS IT STANDS at the start of this line, then
-    // update it based on this line's content for the next iteration.
-    map[n - 1] = { inFence, fenceLanguage, inHtmlComment };
-
-    const text = doc.line(n).text;
-
-    const fence = text.match(/^```\s*([A-Za-z0-9_-]+)?\s*$/);
-    if (fence) {
-      if (inFence) {
-        inFence = false;
-        fenceLanguage = null;
-      } else {
-        inFence = true;
-        fenceLanguage = fence[1]?.toLowerCase() ?? null;
-      }
-      continue;
-    }
-
-    // HTML comments are suppressed inside code fences (the `<!--` is just
-    // text there), so only walk the comment state machine when not fenced.
-    if (!inFence) {
-      let scanPos = 0;
-      let openInProgress = inHtmlComment;
-      while (scanPos <= text.length) {
-        if (openInProgress) {
-          const closeIdx = text.indexOf("-->", scanPos);
-          if (closeIdx === -1) {
-            break;
-          }
-          scanPos = closeIdx + 3;
-          openInProgress = false;
-        } else {
-          const openIdx = text.indexOf("<!--", scanPos);
-          if (openIdx === -1) {
-            break;
-          }
-          scanPos = openIdx + 4;
-          openInProgress = true;
-        }
-      }
-      inHtmlComment = openInProgress;
-    }
+function getFencedCodeContext(state: EditorState, line: Line): FencedCodeContext | null {
+  const tree = syntaxTree(state);
+  let fence: SyntaxNode | null = tree.resolveInner(line.from, 1);
+  while (fence && fence.name !== "FencedCode") {
+    fence = fence.parent;
+  }
+  if (!fence) {
+    return null;
   }
 
-  return map;
+  // Collect the fence's CodeMark + CodeInfo children. The first CodeMark
+  // is the opener and the last is the closer; an unterminated fence has
+  // only one CodeMark and no closer.
+  let openerMark: SyntaxNode | null = null;
+  let closerMark: SyntaxNode | null = null;
+  let codeInfo: SyntaxNode | null = null;
+  let child = fence.firstChild;
+  while (child) {
+    if (child.name === "CodeMark") {
+      if (!openerMark) {
+        openerMark = child;
+      }
+      closerMark = child;
+    } else if (child.name === "CodeInfo") {
+      codeInfo = child;
+    }
+    child = child.nextSibling;
+  }
+
+  const language = codeInfo ? state.sliceDoc(codeInfo.from, codeInfo.to).toLowerCase() : null;
+
+  let role: "opener" | "closer" | "body" = "body";
+  if (openerMark && line.from <= openerMark.to) {
+    role = "opener";
+  } else if (closerMark && closerMark !== openerMark && line.from >= closerMark.from) {
+    role = "closer";
+  }
+
+  return { role, language };
 }
 
-export const lineContextField = StateField.define<LineContext[]>({
-  create: (state) => buildLineContextMap(state.doc),
-  update: (value, tr) => (tr.docChanged ? buildLineContextMap(tr.state.doc) : value),
-});
-
-function getLineContext(map: LineContext[], lineNumber: number): LineContext {
-  // 1-based line number → 0-based index. Defensive fallback for any edge
-  // where the field hasn't caught up with the doc yet (shouldn't happen
-  // because StateField updates run before ViewPlugin updates).
-  return (
-    map[lineNumber - 1] ?? { inFence: false, fenceLanguage: null, inHtmlComment: false }
-  );
+// Returns true when `pos` is inside a Lezer-recognised HTML comment node
+// (`Comment` or `CommentBlock`). Used to seed the per-line `<!--` / `-->`
+// scanner at the start of each visible range so an unterminated comment
+// that began above the viewport keeps hiding its body when the visible
+// range opens mid-comment.
+//
+// Known gap: Lezer's inline `Comment` node only matches single-line
+// `<!-- ... -->` runs, and `CommentBlock` only fires for top-level (not
+// paragraph-embedded) comments. A multi-line comment embedded inside a
+// paragraph (`prose <!-- a\nb --> prose`) is therefore not tagged, so a
+// visible range opening mid-comment in that exact shape would seed
+// false. The per-line indexOf scan still tracks open/close transitions
+// inside the visible range, so any comment that opens AND closes within
+// the viewport renders correctly. This is the only known regression
+// vs the prior `lineContextField` precompute and is not exercised by
+// the e2e suite.
+function isPositionInHtmlComment(state: EditorState, pos: number): boolean {
+  const tree = syntaxTree(state);
+  let node: SyntaxNode | null = tree.resolveInner(pos, 1);
+  while (node) {
+    if (node.name === "Comment" || node.name === "CommentBlock") {
+      return true;
+    }
+    node = node.parent;
+  }
+  return false;
 }
 
 function buildDecorations(view: EditorView): DecorationSet {
   const decorations: Range<Decoration>[] = [];
-  const contextMap = view.state.field(lineContextField);
 
   for (const { from, to } of view.visibleRanges) {
     let position = from;
-    // Seed the multi-line state from the precomputed map so the loop
-    // doesn't start with `inCodeFence = false` when the viewport opens
-    // mid-fence.
-    const startCtx = getLineContext(contextMap, view.state.doc.lineAt(position).number);
-    let inCodeFence = startCtx.inFence;
-    let codeFenceLanguage = startCtx.fenceLanguage;
-    let inHtmlComment = startCtx.inHtmlComment;
+    // The HTML comment scan is the only piece of multi-line state still
+    // tracked by this loop. Seed `inHtmlComment` from the Lezer tree: if
+    // the visible range opens inside a `Comment` / `CommentBlock` node,
+    // the per-line `<!--` / `-->` walker must start in the open state so
+    // an unterminated comment that began above the viewport is still
+    // hidden on the first visible line.
+    let inHtmlComment = isPositionInHtmlComment(view.state, from);
 
     while (position <= to) {
       const line = view.state.doc.lineAt(position);
       const text = line.text;
       const tableRow = /^\|.*\|\s*$/.test(text);
       const tableSeparator = /^\|?\s*:?-{2,}:?(\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/.test(text);
-      const fence = text.match(/^```\s*([A-Za-z0-9_-]+)?\s*$/);
+      const fenceCtx = getFencedCodeContext(view.state, line);
       const lineActive = isLineActive(view, line.from, line.to);
-      const codeLine = inCodeFence && !fence;
-      const blockKind: BlockLineKind = codeLine ? null : classifyBlockLine(view.state, line);
+      const blockKind: BlockLineKind = fenceCtx ? null : classifyBlockLine(view.state, line);
 
-      if (codeLine) {
+      if (fenceCtx && fenceCtx.role === "body") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-code-line" }));
-        decorateCodeLine(decorations, line, codeFenceLanguage);
+        decorateCodeLine(decorations, line, fenceCtx.language);
+        if (line.to + 1 > to) {
+          break;
+        }
+        position = line.to + 1;
+        continue;
+      }
+
+      if (fenceCtx) {
+        // Opener (` ```js `) and closer (` ``` `) lines share the same
+        // line decoration; the language is derived from the FencedCode
+        // node's CodeInfo child via `fenceCtx.language`. Off-cursor we
+        // collapse the entire fence line so only the rendered code body
+        // is visible.
+        addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-code-fence" }));
+        if (!lineActive) {
+          addDecoration(decorations, line.from, line.to, Decoration.replace({}));
+        }
         if (line.to + 1 > to) {
           break;
         }
@@ -306,20 +322,6 @@ function buildDecorations(view: EditorView): DecorationSet {
             const start = line.from + match.index!;
             addDecoration(decorations, start, start + 1, Decoration.mark({ class: "cm-md-syntax cm-md-table-pipe" }));
           }
-        }
-      }
-
-      if (fence) {
-        addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-code-fence" }));
-        if (!lineActive) {
-          addDecoration(decorations, line.from, line.to, Decoration.replace({}));
-        }
-        if (inCodeFence) {
-          inCodeFence = false;
-          codeFenceLanguage = null;
-        } else {
-          inCodeFence = true;
-          codeFenceLanguage = fence[1]?.toLowerCase() ?? null;
         }
       }
 

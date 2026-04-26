@@ -9,7 +9,7 @@ import { getActiveFormat, type ActiveFormat } from "./editorFormat";
 import { autoPairExtension, linkPasteExtension } from "./editorInputs";
 import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
 import { insertLink, wrapSelection } from "./markdownCommands";
-import { htmlCommentBlockState, lineContextField, markdownPreview, tableBlockState } from "./markdownPreview";
+import { htmlCommentBlockState, markdownPreview, tableBlockState } from "./markdownPreview";
 
 type MarkdownEditorProps = {
   value: string;
@@ -42,13 +42,10 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       highlightActiveLine(),
       // GFM extension adds Strikethrough, Table, TaskList, and Autolink nodes
       // to the parsed Lezer tree. The decoration pipeline reads this tree
-      // (via `syntaxTree(state)`) instead of regex-scanning text.
+      // (via `syntaxTree(state)`) for every fence / list / heading / inline
+      // construct, so a separate per-line context precompute is no longer
+      // needed.
       markdown({ extensions: GFM }),
-      // `lineContextField` precomputes per-line "is this position inside a
-      // code fence / HTML comment" data over the full doc. It must be
-      // registered before `markdownPreview` because the ViewPlugin reads
-      // it via `state.field()` to seed its visible-range loop.
-      lineContextField,
       markdownPreview,
       tableBlockState,
       htmlCommentBlockState,
