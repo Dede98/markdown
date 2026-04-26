@@ -85,22 +85,18 @@ function isLineInsideFencedCode(state: EditorState, line: Line): boolean {
   return false;
 }
 
-// Returns true when `pos` is inside a Lezer-recognised HTML comment node
-// (`Comment` or `CommentBlock`). Used to seed the per-line `<!--` / `-->`
-// scanner at the start of each visible range so an unterminated comment
-// that began above the viewport keeps hiding its body when the visible
-// range opens mid-comment.
+// Returns true when `pos` is inside an HTML comment. Primary path walks
+// the Lezer tree for a `Comment` / `CommentBlock` ancestor. Fallback path
+// scans the surrounding doc text for an unclosed `<!--` before `pos` with
+// a matching `-->` after, because Lezer's GFM markdown grammar does not
+// tag inline-opened multi-line comments — `prose <!-- a\nb --> prose`
+// inside a paragraph produces no `Comment` / `CommentBlock` node, so the
+// tree path alone would seed `inHtmlComment = false` when a visible range
+// opens mid-comment in that shape.
 //
-// Known gap: Lezer's inline `Comment` node only matches single-line
-// `<!-- ... -->` runs, and `CommentBlock` only fires for top-level (not
-// paragraph-embedded) comments. A multi-line comment embedded inside a
-// paragraph (`prose <!-- a\nb --> prose`) is therefore not tagged, so a
-// visible range opening mid-comment in that exact shape would seed
-// false. The per-line indexOf scan still tracks open/close transitions
-// inside the visible range, so any comment that opens AND closes within
-// the viewport renders correctly. This is the only known regression
-// vs the prior `lineContextField` precompute and is not exercised by
-// the e2e suite.
+// Used to seed the per-line `<!--` / `-->` scanner at the start of each
+// visible range so an unterminated comment that began above the viewport
+// keeps hiding its body when the visible range opens mid-comment.
 function isPositionInHtmlComment(state: EditorState, pos: number): boolean {
   const tree = syntaxTree(state);
   let node: SyntaxNode | null = tree.resolveInner(pos, 1);
@@ -110,7 +106,38 @@ function isPositionInHtmlComment(state: EditorState, pos: number): boolean {
     }
     node = node.parent;
   }
-  return false;
+
+  // Fallback for inline-opened multi-line comments inside a paragraph.
+  // Bounded window keeps this cheap on the visible-range hot path; in
+  // practice an inline comment spanning more than a few KB is degenerate
+  // input, and the per-line scan inside the visible range still recovers
+  // open/close transitions once `<!--` and `-->` enter view.
+  const SCAN_WINDOW = 4096;
+  const backFrom = Math.max(0, pos - SCAN_WINDOW);
+  const before = state.sliceDoc(backFrom, pos);
+  const lastOpen = before.lastIndexOf("<!--");
+  if (lastOpen === -1) {
+    return false;
+  }
+  const lastClose = before.lastIndexOf("-->");
+  // If a `-->` follows the most recent `<!--` within the back window, the
+  // prior comment is already closed before `pos`.
+  if (lastClose !== -1 && lastClose > lastOpen) {
+    return false;
+  }
+  const forwardTo = Math.min(state.doc.length, pos + SCAN_WINDOW);
+  const after = state.sliceDoc(pos, forwardTo);
+  const nextClose = after.indexOf("-->");
+  if (nextClose === -1) {
+    return false;
+  }
+  const nextOpen = after.indexOf("<!--");
+  // A `<!--` reopening before the next `-->` would mean `pos` sits between
+  // two adjacent comments rather than inside one.
+  if (nextOpen !== -1 && nextOpen < nextClose) {
+    return false;
+  }
+  return true;
 }
 
 function buildDecorations(view: EditorView): DecorationSet {
