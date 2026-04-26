@@ -909,6 +909,84 @@ test.describe("editor core", () => {
 
     await attachScreenshot(page, testInfo, "zen-mode");
   });
+
+  test("raw mode toggle button is visible in the topbar", async ({ page }) => {
+    await page.goto("/");
+
+    // Default state: button reads "Raw" with the FileCode icon and is not pressed.
+    const toggle = page.getByRole("button", { name: "Raw" });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(toggle).toHaveAttribute("title", "Switch to raw markdown view");
+  });
+
+  test("raw mode toggle flips label and pressed state when clicked", async ({ page }) => {
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Raw" }).click();
+
+    // After click: label changes to "Rendered", aria-pressed flips to true,
+    // and the title hint inverts.
+    const toggle = page.getByRole("button", { name: "Rendered" });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await expect(toggle).toHaveAttribute("title", "Switch to rendered view");
+
+    // Toggling again returns to the original label.
+    await toggle.click();
+    await expect(page.getByRole("button", { name: "Raw" })).toBeVisible();
+  });
+
+  test("raw mode reveals markdown marks that are hidden in normal mode", async ({ page }, testInfo) => {
+    await page.goto("/");
+
+    // Seed once. The Compartment-based toggle reconfigures the view in place
+    // — the doc, selection, and history survive the swap, so we don't need
+    // to re-seed after toggling.
+    await setEditorText(page, "# Title\n\n**bold** and *soft*\n\n<!-- secret -->\n\ntail");
+    await setCursorInsideText(page, "tail");
+
+    // Normal mode hides the marks (mirrors the existing
+    // "markdown syntax is hidden outside the active editing line" assertions).
+    await expect(page.locator(".cm-content")).not.toContainText("**bold**");
+    await expect(page.locator(".cm-content")).not.toContainText("# Title");
+    await expect(page.locator(".cm-content")).not.toContainText("<!--");
+    await expect(page.locator(".editorMountRaw")).toHaveCount(0);
+
+    // Flip into raw — same doc, every byte of the source is now visible.
+    await page.getByRole("button", { name: "Raw" }).click();
+    await expect(page.locator(".cm-content")).toContainText("# Title");
+    await expect(page.locator(".cm-content")).toContainText("**bold**");
+    await expect(page.locator(".cm-content")).toContainText("*soft*");
+    await expect(page.locator(".cm-content")).toContainText("<!-- secret -->");
+    await expect(page.locator(".cm-content")).toContainText("tail");
+    await expect(page.locator(".editorMountRaw")).toHaveCount(1);
+
+    await attachScreenshot(page, testInfo, "raw-mode");
+
+    // Flip back to rendered — marks hide again, "tail" still there.
+    await page.getByRole("button", { name: "Rendered" }).click();
+    await expect(page.locator(".cm-content")).not.toContainText("**bold**");
+    await expect(page.locator(".cm-content")).not.toContainText("# Title");
+    await expect(page.locator(".cm-content")).not.toContainText("<!--");
+    await expect(page.locator(".cm-content")).toContainText("tail");
+    await expect(page.locator(".editorMountRaw")).toHaveCount(0);
+  });
+
+  test("raw mode swaps the editor font to a monospace stack", async ({ page }) => {
+    await page.goto("/");
+
+    // Normal mode renders prose in the Charter serif stack.
+    const proseFont = await page.locator(".cm-scroller").evaluate((node) => getComputedStyle(node).fontFamily);
+    expect(proseFont.toLowerCase()).toContain("charter");
+
+    await page.getByRole("button", { name: "Raw" }).click();
+
+    // Raw mode swaps to a monospace stack (SFMono-Regular / Consolas / etc.).
+    const rawFont = await page.locator(".cm-scroller").evaluate((node) => getComputedStyle(node).fontFamily);
+    expect(rawFont.toLowerCase()).toMatch(/mono|consolas/);
+    expect(rawFont.toLowerCase()).not.toContain("charter");
+  });
 });
 
 test("mobile layout keeps editor and mode toggle usable", async ({ page }, testInfo) => {

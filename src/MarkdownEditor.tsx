@@ -2,7 +2,7 @@ import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@c
 import { markdown } from "@codemirror/lang-markdown";
 import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
-import { EditorState, Prec, type Extension } from "@codemirror/state";
+import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
@@ -14,25 +14,45 @@ import { htmlCommentBlockState, markdownPreview, tableBlockState } from "./markd
 type MarkdownEditorProps = {
   value: string;
   zen: boolean;
+  raw: boolean;
   onChange: (value: string) => void;
   onFormatChange: (format: ActiveFormat) => void;
   onReady: (view: EditorView) => void;
 };
 
-export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }: MarkdownEditorProps) {
+// The three preview-pipeline extensions live behind a `Compartment` so the
+// `raw` toggle can swap them in/out via `dispatch` without rebuilding the
+// `EditorView`. A view rebuild would re-seed the doc from `initialValueRef`
+// and discard the user's unsaved edits — losing live work on every toggle.
+const previewExtensions: Extension[] = [markdownPreview, tableBlockState, htmlCommentBlockState];
+
+export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onReady }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onFormatChangeRef = useRef(onFormatChange);
   const initialValueRef = useRef(value);
+  // Lazy-init the Compartment so we don't allocate a fresh one on every
+  // render. `useRef(new Compartment())` would call the constructor each render
+  // and immediately throw the result away — harmless but wasteful.
+  const previewCompartmentRef = useRef<Compartment | null>(null);
+  if (previewCompartmentRef.current === null) {
+    previewCompartmentRef.current = new Compartment();
+  }
+  const rawRef = useRef(raw);
 
   onChangeRef.current = onChange;
   onFormatChangeRef.current = onFormatChange;
+  rawRef.current = raw;
 
   useEffect(() => {
     if (!containerRef.current) {
       return;
     }
+
+    // Non-null: the lazy-init at the top of the component runs before any
+    // effect, so `.current` is always populated by the time we reach here.
+    const previewCompartment = previewCompartmentRef.current!;
 
     const extensions: Extension[] = [
       history(),
@@ -46,9 +66,11 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       // construct, so a separate per-line context precompute is no longer
       // needed.
       markdown({ extensions: GFM }),
-      markdownPreview,
-      tableBlockState,
-      htmlCommentBlockState,
+      // Preview pipeline (hidden marks, table widgets, HTML-comment hider)
+      // wrapped in a Compartment so it can be reconfigured live when the user
+      // toggles raw mode. Lezer parsing stays on either way so syntax
+      // highlighting and the toolbar `activeFormat` continue to work in raw.
+      previewCompartment.of(rawRef.current ? [] : previewExtensions),
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       Prec.highest(
         keymap.of([
@@ -112,6 +134,10 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
           fontSize: "18px",
         },
         ".cm-scroller": {
+          // Default prose stack. Raw mode overrides this to a monospace stack
+          // via `.editorMountRaw .cm-scroller` in `styles.css` — keeping the
+          // swap in CSS means the toggle doesn't have to touch the editor
+          // theme at all.
           fontFamily: 'Charter, "Iowan Old Style", "New York", Georgia, serif',
           lineHeight: "1.65",
           padding: "0",
@@ -172,7 +198,23 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
     };
   }, [onReady]);
 
-  return <div className={zen ? "editorMount editorMountZen" : "editorMount"} ref={containerRef} />;
+  // Reconfigure the preview compartment when raw mode toggles. Dispatching a
+  // reconfigure keeps the doc, selection, and history intact — only the
+  // decoration extensions are swapped.
+  useEffect(() => {
+    const view = viewRef.current;
+    if (!view) {
+      return;
+    }
+    view.dispatch({
+      effects: previewCompartmentRef.current!.reconfigure(raw ? [] : previewExtensions),
+    });
+  }, [raw]);
+
+  const classes = ["editorMount"];
+  if (zen) classes.push("editorMountZen");
+  if (raw) classes.push("editorMountRaw");
+  return <div className={classes.join(" ")} ref={containerRef} />;
 }
 
 function getWindowWithEditor() {

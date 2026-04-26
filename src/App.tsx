@@ -3,8 +3,10 @@ import {
   Bold,
   Code,
   Code2,
+  Eye,
   FilePlus,
   FileText,
+  FileCode,
   FolderOpen,
   Heading1,
   Heading2,
@@ -133,6 +135,9 @@ export function App() {
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
   const [zen, setZen] = useState(false);
+  // Raw mode renders the document as plain monospace text — every markdown
+  // mark visible. Orthogonal to zen: a user can be in raw + zen at once.
+  const [raw, setRaw] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fileVersion, setFileVersion] = useState(0);
@@ -657,6 +662,16 @@ export function App() {
               <Sun size={16} />
             )}
           </button>
+          <button
+            className="modeButton"
+            type="button"
+            onClick={() => setRaw((value) => !value)}
+            title={raw ? "Switch to rendered view" : "Switch to raw markdown view"}
+            aria-pressed={raw}
+          >
+            {raw ? <Eye size={18} /> : <FileCode size={18} />}
+            <span>{raw ? "Rendered" : "Raw"}</span>
+          </button>
           <button className="modeButton" type="button" onClick={() => setZen((value) => !value)} title={zen ? "Normal Mode" : "Zen Mode"}>
             {zen ? <PanelTopOpen size={18} /> : <PanelTopClose size={18} />}
             <span>{zen ? "Normal" : "Zen"}</span>
@@ -750,7 +765,7 @@ export function App() {
       )}
 
       <section className="editorShell" aria-label="Markdown editor">
-        <MarkdownEditor key={fileVersion} value={file.savedContents} zen={zen} onChange={setMarkdown} onFormatChange={setActiveFormat} onReady={handleReady} />
+        <MarkdownEditor key={fileVersion} value={file.savedContents} zen={zen} raw={raw} onChange={setMarkdown} onFormatChange={setActiveFormat} onReady={handleReady} />
       </section>
 
       {zen ? (

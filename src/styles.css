@@ -422,6 +422,15 @@ button {
   height: 100%;
 }
 
+/* Raw mode swaps the editor to a monospace stack so the .md file reads like a
+   plain text source view. Scoped via the editor mount class so the swap is a
+   pure CSS toggle — the editor theme doesn't have to be reconfigured. The
+   `.cm-editor` selector is included to outweigh CodeMirror's own injected
+   theme rule (which sits at `.cm-editor .cm-scroller` specificity). */
+.editorMountRaw .cm-editor .cm-scroller {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
 .statusbar {
   display: flex;
   align-items: center;
