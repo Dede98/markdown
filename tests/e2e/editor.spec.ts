@@ -901,11 +901,20 @@ test.describe("editor core", () => {
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
-    await page.getByTitle("Zen Mode").click();
+    // Default state: zen toggle reads "Zen Mode" and is not pressed. The
+    // aria-pressed attribute mirrors the Raw toggle so screen readers can
+    // announce the mode toggle the same way for both controls.
+    const zenToggle = page.getByTitle("Zen Mode");
+    await expect(zenToggle).toHaveAttribute("aria-pressed", "false");
+
+    await zenToggle.click();
 
     await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeHidden();
     await expect(page.locator(".cm-content")).toContainText("On the Quiet Hour");
     await expect(page.getByText("Zen mode")).toBeVisible();
+    // After toggling on, the same button now reads "Normal Mode" and the
+    // pressed state flips to true.
+    await expect(page.getByTitle("Normal Mode")).toHaveAttribute("aria-pressed", "true");
 
     await attachScreenshot(page, testInfo, "zen-mode");
   });

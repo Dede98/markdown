@@ -719,6 +719,7 @@ export function App() {
             type="button"
             onClick={() => setZen((value) => !value)}
             title={zen ? `Normal Mode (${SHORTCUT_LABELS.zen})` : `Zen Mode (${SHORTCUT_LABELS.zen})`}
+            aria-pressed={zen}
           >
             {zen ? <PanelTopOpen size={18} /> : <PanelTopClose size={18} />}
             <span>{zen ? "Normal" : "Zen"}</span>
