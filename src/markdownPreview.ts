@@ -68,6 +68,23 @@ function getFencedCodeContext(state: EditorState, line: Line): FencedCodeContext
   return { role, language };
 }
 
+// Lighter variant of `getFencedCodeContext` for callers that only need a
+// boolean "is this line inside a fence". Walks up from `line.from` and
+// short-circuits on the first `FencedCode` ancestor instead of collecting
+// `CodeMark` / `CodeInfo` children. Both `tableBlockState` and
+// `htmlCommentBlockState` use this to suppress their block decorations
+// inside fenced code without needing role / language metadata.
+function isLineInsideFencedCode(state: EditorState, line: Line): boolean {
+  let node: SyntaxNode | null = syntaxTree(state).resolveInner(line.from, 1);
+  while (node) {
+    if (node.name === "FencedCode") {
+      return true;
+    }
+    node = node.parent;
+  }
+  return false;
+}
+
 // Returns true when `pos` is inside a Lezer-recognised HTML comment node
 // (`Comment` or `CommentBlock`). Used to seed the per-line `<!--` / `-->`
 // scanner at the start of each visible range so an unterminated comment
@@ -1125,17 +1142,16 @@ function serializeTableSource(rows: string[][], alignments: TableAlign[]): strin
 function buildTableBlockDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const textBuf = state.doc;
-  let inCodeFence = false;
 
   for (let n = 1; n <= textBuf.lines; n += 1) {
     const line = textBuf.line(n);
     const lineText = line.text;
 
-    if (/^```/.test(lineText)) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence) {
+    // Skip lines covered by a `FencedCode` Lezer node so a `|`-shaped
+    // line inside fenced code never collapses into a table widget. The
+    // ViewPlugin path uses the same tree-driven detection via
+    // `getFencedCodeContext`; this StateField now matches it.
+    if (isLineInsideFencedCode(state, line)) {
       continue;
     }
 
@@ -1184,17 +1200,17 @@ function buildHtmlCommentBlockDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const textBuf = state.doc;
   let inHtmlComment = false;
-  let inCodeFence = false;
 
   for (let n = 1; n <= textBuf.lines; n += 1) {
     const line = textBuf.line(n);
     const text = line.text;
 
-    if (/^```/.test(text)) {
-      inCodeFence = !inCodeFence;
-      continue;
-    }
-    if (inCodeFence) {
+    // Lines inside a `FencedCode` node never collapse: `<!-- -->` inside
+    // fenced code is part of the code sample, not a hidden comment. The
+    // outer `inHtmlComment` accumulator is preserved across the skipped
+    // fence span — a comment that opens before a fence and closes after
+    // continues to hide its body lines around the fence.
+    if (isLineInsideFencedCode(state, line)) {
       continue;
     }
 
