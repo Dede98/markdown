@@ -8,7 +8,7 @@ import { getActiveFormat, type ActiveFormat } from "./editorFormat";
 import { autoPairExtension, linkPasteExtension } from "./editorInputs";
 import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
 import { insertLink, wrapSelection } from "./markdownCommands";
-import { htmlCommentBlockState, markdownPreview, tableBlockState } from "./markdownPreview";
+import { htmlCommentBlockState, lineContextField, markdownPreview, tableBlockState } from "./markdownPreview";
 
 type MarkdownEditorProps = {
   value: string;
@@ -40,6 +40,11 @@ export function MarkdownEditor({ value, zen, onChange, onFormatChange, onReady }
       bracketMatching(),
       highlightActiveLine(),
       markdown(),
+      // `lineContextField` precomputes per-line "is this position inside a
+      // code fence / HTML comment" data over the full doc. It must be
+      // registered before `markdownPreview` because the ViewPlugin reads
+      // it via `state.field()` to seed its visible-range loop.
+      lineContextField,
       markdownPreview,
       tableBlockState,
       htmlCommentBlockState,

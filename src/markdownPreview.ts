@@ -11,17 +11,101 @@ type TableBlock = {
   alignments: TableAlign[];
 };
 
+// Per-line "what's open at the START of this line" snapshot for the entire
+// document. The decoration ViewPlugin only sees `view.visibleRanges`, so
+// without this, multi-line constructs (code fences, HTML comments) opened
+// above the viewport are invisible to the per-line scan — the inline
+// regexes then fire on what should be code, and the user sees raw markdown
+// flicker into view as they scroll. Computed once per doc change in a
+// StateField; the ViewPlugin reads it to seed its loop variables when it
+// enters a visible range.
+type LineContext = {
+  inFence: boolean;
+  fenceLanguage: string | null;
+  inHtmlComment: boolean;
+};
+
+function buildLineContextMap(doc: Text): LineContext[] {
+  const map: LineContext[] = new Array(doc.lines);
+  let inFence = false;
+  let fenceLanguage: string | null = null;
+  let inHtmlComment = false;
+
+  for (let n = 1; n <= doc.lines; n += 1) {
+    // Snapshot the state AS IT STANDS at the start of this line, then
+    // update it based on this line's content for the next iteration.
+    map[n - 1] = { inFence, fenceLanguage, inHtmlComment };
+
+    const text = doc.line(n).text;
+
+    const fence = text.match(/^```\s*([A-Za-z0-9_-]+)?\s*$/);
+    if (fence) {
+      if (inFence) {
+        inFence = false;
+        fenceLanguage = null;
+      } else {
+        inFence = true;
+        fenceLanguage = fence[1]?.toLowerCase() ?? null;
+      }
+      continue;
+    }
+
+    // HTML comments are suppressed inside code fences (the `<!--` is just
+    // text there), so only walk the comment state machine when not fenced.
+    if (!inFence) {
+      let scanPos = 0;
+      let openInProgress = inHtmlComment;
+      while (scanPos <= text.length) {
+        if (openInProgress) {
+          const closeIdx = text.indexOf("-->", scanPos);
+          if (closeIdx === -1) {
+            break;
+          }
+          scanPos = closeIdx + 3;
+          openInProgress = false;
+        } else {
+          const openIdx = text.indexOf("<!--", scanPos);
+          if (openIdx === -1) {
+            break;
+          }
+          scanPos = openIdx + 4;
+          openInProgress = true;
+        }
+      }
+      inHtmlComment = openInProgress;
+    }
+  }
+
+  return map;
+}
+
+export const lineContextField = StateField.define<LineContext[]>({
+  create: (state) => buildLineContextMap(state.doc),
+  update: (value, tr) => (tr.docChanged ? buildLineContextMap(tr.state.doc) : value),
+});
+
+function getLineContext(map: LineContext[], lineNumber: number): LineContext {
+  // 1-based line number → 0-based index. Defensive fallback for any edge
+  // where the field hasn't caught up with the doc yet (shouldn't happen
+  // because StateField updates run before ViewPlugin updates).
+  return (
+    map[lineNumber - 1] ?? { inFence: false, fenceLanguage: null, inHtmlComment: false }
+  );
+}
+
 function buildDecorations(view: EditorView): DecorationSet {
   const decorations: Range<Decoration>[] = [];
-  let inCodeFence = false;
-  let codeFenceLanguage: string | null = null;
-  // Multi-line `<!--` … `-->` carries across lines like a fenced code block.
-  // Tracked at the visible-range scope so the loop can hide every line that
-  // sits between the open and close markers.
-  let inHtmlComment = false;
+  const contextMap = view.state.field(lineContextField);
 
   for (const { from, to } of view.visibleRanges) {
     let position = from;
+    // Seed the multi-line state from the precomputed map so the loop
+    // doesn't start with `inCodeFence = false` when the viewport opens
+    // mid-fence.
+    const startCtx = getLineContext(contextMap, view.state.doc.lineAt(position).number);
+    let inCodeFence = startCtx.inFence;
+    let codeFenceLanguage = startCtx.fenceLanguage;
+    let inHtmlComment = startCtx.inHtmlComment;
 
     while (position <= to) {
       const line = view.state.doc.lineAt(position);
@@ -512,8 +596,19 @@ class TableWidget extends WidgetType {
   }
 
   toDOM(view: EditorView): HTMLElement {
+    // Block widgets must present as `display: block` so CM6's height map
+    // can measure them with predictable box geometry. A bare `<table>` has
+    // intrinsic `display: table`, and any margin set on the widget root
+    // collapses outside the wrapper CM6 puts it in — the height map then
+    // disagrees with the rendered height by ~one line, and clicks below
+    // the table land one source line too low. Wrapping the table in a
+    // plain `<div>` lets the wrapper own the block-level margin and gives
+    // CM6 the box model it expects.
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-md-table-wrapper";
     const table = document.createElement("table");
     table.className = "cm-md-table";
+    wrapper.appendChild(table);
     const colCount = this.alignments.length;
     const rowCount = this.rows.length;
 
@@ -656,7 +751,7 @@ class TableWidget extends WidgetType {
     // every cursor calculation downstream.
     view.requestMeasure();
 
-    return table;
+    return wrapper;
   }
 
   // Help CM6's height map land on a value much closer to the rendered
@@ -675,10 +770,14 @@ class TableWidget extends WidgetType {
     // intentionally left alone so the user's caret and selection inside the
     // input are preserved across the dispatch round-trip that fires on
     // every keystroke.
-    if (!(dom instanceof HTMLTableElement)) {
+    if (!dom.classList.contains("cm-md-table-wrapper")) {
       return false;
     }
-    const cells = dom.querySelectorAll<HTMLTableCellElement>("th, td");
+    const table = dom.querySelector<HTMLTableElement>("table.cm-md-table");
+    if (!table) {
+      return false;
+    }
+    const cells = table.querySelectorAll<HTMLTableCellElement>("th, td");
     const colCount = this.alignments.length;
     const rowCount = this.rows.length;
     if (cells.length !== rowCount * colCount) {

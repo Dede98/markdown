@@ -590,10 +590,24 @@ button {
 
 /* Rendered <table> widget that always replaces a GFM table block. Cells are
  * directly editable via `contenteditable`; the widget reads them on `input`
- * and dispatches a markdown change covering the entire block. */
+ * and dispatches a markdown change covering the entire block.
+ *
+ * The wrapper exists to give CM6 a proper `display: block` widget root.
+ * Block-level vertical spacing must use PADDING, not margin: CM6's height
+ * map measures `getBoundingClientRect().height`, which excludes margin.
+ * Margin space exists in the rendered viewport but is invisible to the
+ * height map, so clicks below the widget map to a position one line too
+ * far into the doc. Padding is included in the bounding rect, so the
+ * height map and the rendered viewport agree on the widget's vertical
+ * footprint. */
+.cm-md-table-wrapper {
+  display: block;
+  padding: 0.6em 0;
+}
+
 .cm-md-table {
   border-collapse: collapse;
-  margin: 0.6em 0;
+  margin: 0;
   font-family: inherit;
   font-size: 0.95em;
 }
