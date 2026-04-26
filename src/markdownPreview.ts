@@ -112,15 +112,12 @@ function buildDecorations(view: EditorView): DecorationSet {
     while (position <= to) {
       const line = view.state.doc.lineAt(position);
       const text = line.text;
-      const heading = text.match(/^(#{1,6})\s/);
       const tableRow = /^\|.*\|\s*$/.test(text);
       const tableSeparator = /^\|?\s*:?-{2,}:?(\s*\|\s*:?-{2,}:?)+\s*\|?\s*$/.test(text);
-      const taskList = text.match(/^(\s*)[-*]\s+\[([ xX])\]\s+/);
-      const unorderedList = text.match(/^(\s*)[-*]\s+/);
-      const orderedList = text.match(/^(\s*)\d+[.)]\s+/);
       const fence = text.match(/^```\s*([A-Za-z0-9_-]+)?\s*$/);
       const lineActive = isLineActive(view, line.from, line.to);
       const codeLine = inCodeFence && !fence;
+      const blockKind: BlockLineKind = codeLine ? null : classifyBlockLine(view.state, line);
 
       if (codeLine) {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-code-line" }));
@@ -207,27 +204,31 @@ function buildDecorations(view: EditorView): DecorationSet {
         continue;
       }
 
-      if (heading) {
-        addDecoration(decorations, line.from, line.from, Decoration.line({ class: `cm-md-heading cm-md-heading-${heading[1].length}` }));
-        decorateSyntax(decorations, line.from, line.from + heading[0].length, lineActive);
-      }
-
-      if (taskList) {
+      // Line-level block decorations (heading, list bullet, task marker,
+      // ordered marker, blockquote prefix, horizontal rule) come from the
+      // Lezer tree. `classifyBlockLine` resolves once per line by looking
+      // at marker children (HeaderMark, ListMark, TaskMarker, QuoteMark)
+      // and the HorizontalRule node. The result drives a single switch
+      // here, replacing the prior chain of regex matches.
+      if (blockKind && blockKind.kind === "heading") {
+        addDecoration(decorations, line.from, line.from, Decoration.line({ class: `cm-md-heading cm-md-heading-${blockKind.level}` }));
+        decorateSyntax(decorations, line.from, blockKind.markerEnd, lineActive);
+      } else if (blockKind && blockKind.kind === "task") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list cm-md-task-list" }));
         decorateSyntax(
           decorations,
           line.from,
-          line.from + taskList[0].length,
+          blockKind.markerEnd,
           lineActive,
           "cm-md-syntax cm-md-task-marker",
-          new TaskMarkerWidget(taskList[2].toLowerCase() === "x", line.from, line.from + taskList[0].length),
+          new TaskMarkerWidget(blockKind.checked, line.from, blockKind.markerEnd),
         );
-      } else if (unorderedList) {
+      } else if (blockKind && blockKind.kind === "bullet") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list" }));
-        decorateSyntax(decorations, line.from, line.from + unorderedList[0].length, lineActive, "cm-md-syntax cm-md-list-marker", new BulletMarkerWidget());
-      } else if (orderedList) {
+        decorateSyntax(decorations, line.from, blockKind.markerEnd, lineActive, "cm-md-syntax cm-md-list-marker", new BulletMarkerWidget());
+      } else if (blockKind && blockKind.kind === "ordered") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list" }));
-        addDecoration(decorations, line.from, line.from + orderedList[0].length, Decoration.mark({ class: "cm-md-syntax cm-md-list-marker" }));
+        addDecoration(decorations, line.from, blockKind.markerEnd, Decoration.mark({ class: "cm-md-syntax cm-md-list-marker" }));
       }
 
       // Inline markdown decorations (bold, italic, inline code, strikethrough,
@@ -276,12 +277,12 @@ function buildDecorations(view: EditorView): DecorationSet {
         decorateSyntax(decorations, start + match[0].length - 4, start + match[0].length, activeSyntax);
       }
 
-      if (/^>\s/.test(text)) {
+      if (blockKind && blockKind.kind === "quote") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-quote" }));
-        decorateSyntax(decorations, line.from, line.from + 2, lineActive);
+        decorateSyntax(decorations, line.from, blockKind.markerEnd, lineActive);
       }
 
-      if (/^---+$/.test(text.trim())) {
+      if (blockKind && blockKind.kind === "rule") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-rule" }));
         if (lineActive) {
           addDecoration(decorations, line.from, line.to, Decoration.mark({ class: "cm-md-syntax" }));
@@ -350,6 +351,101 @@ function isLineActive(view: EditorView, from: number, to: number) {
 
     return range.from <= to && range.to >= from;
   });
+}
+
+// Classification result for a single source line, derived from the Lezer
+// tree. Each kind drives one branch of `buildDecorations`'s line-level
+// switch. `markerEnd` is the absolute position right after the construct's
+// leading marker (e.g. just past the `## ` of an H2, the `> ` of a
+// blockquote, or the `[ ] ` of a task list item) so the caller can apply
+// the existing `decorateSyntax` reveal-on-cursor pattern unchanged.
+type BlockLineKind =
+  | { kind: "heading"; level: number; markerEnd: number }
+  | { kind: "task"; markerEnd: number; checked: boolean }
+  | { kind: "bullet"; markerEnd: number }
+  | { kind: "ordered"; markerEnd: number }
+  | { kind: "quote"; markerEnd: number }
+  | { kind: "rule" }
+  | null;
+
+// Resolve the line's block-level kind by scanning the Lezer tree for the
+// first marker child whose start sits on this line. Priority mirrors the
+// regex chain that came before this: task takes precedence over a plain
+// bullet, list marker takes precedence over blockquote (a list item
+// containing a blockquote child still classifies as a list line). Each
+// branch falls through to the next when its marker is absent.
+function classifyBlockLine(state: EditorState, line: Line): BlockLineKind {
+  const tree = syntaxTree(state);
+
+  let headingLevel = 0;
+  let headerMarkEnd = -1;
+  let listMarkEnd = -1;
+  let isOrdered = false;
+  let taskMarkerFrom = -1;
+  let taskMarkerEnd = -1;
+  let quoteMarkEnd = -1;
+  let hrSeen = false;
+
+  tree.iterate({
+    from: line.from,
+    to: line.to,
+    enter: (node) => {
+      const name = node.name;
+      // ATX heading: only treat as heading when the node literally starts
+      // at column 0. Indented `#` lines aren't headings (they'd be code or
+      // paragraph text), matching the prior `^(#{1,6})\s` behavior.
+      if (name.startsWith("ATXHeading") && node.from === line.from && headingLevel === 0) {
+        const lvl = Number(name.slice("ATXHeading".length));
+        if (Number.isFinite(lvl) && lvl >= 1 && lvl <= 6) {
+          headingLevel = lvl;
+        }
+      } else if (name === "HorizontalRule" && node.from === line.from) {
+        hrSeen = true;
+      } else if (name === "HeaderMark" && headerMarkEnd < 0) {
+        headerMarkEnd = node.to;
+      } else if (name === "ListMark" && listMarkEnd < 0) {
+        listMarkEnd = node.to;
+        // Walk up: ListMark.parent is ListItem, ListItem.parent is the
+        // enclosing BulletList or OrderedList. The list type tells us
+        // which marker class / widget to use.
+        const listItem = node.node.parent;
+        const list = listItem?.parent;
+        isOrdered = list?.name === "OrderedList";
+      } else if (name === "TaskMarker" && taskMarkerEnd < 0) {
+        taskMarkerFrom = node.from;
+        taskMarkerEnd = node.to;
+      } else if (name === "QuoteMark" && quoteMarkEnd < 0) {
+        quoteMarkEnd = node.to;
+      }
+    },
+  });
+
+  // Resolve to the highest-priority kind we found. The `+ 1` on marker
+  // ends includes the single space that follows the marker character(s)
+  // in the source (e.g. `## `, `> `, `- `, `1. `, `[ ] `). Clamp to
+  // `line.to` so we never produce a range that crosses into the next
+  // line if the marker is at end-of-line with no trailing content.
+  if (taskMarkerEnd >= 0) {
+    const text = state.sliceDoc(taskMarkerFrom, taskMarkerEnd);
+    const checked = /x/i.test(text);
+    return { kind: "task", markerEnd: Math.min(taskMarkerEnd + 1, line.to), checked };
+  }
+  if (listMarkEnd >= 0) {
+    return {
+      kind: isOrdered ? "ordered" : "bullet",
+      markerEnd: Math.min(listMarkEnd + 1, line.to),
+    };
+  }
+  if (headingLevel > 0 && headerMarkEnd >= 0) {
+    return { kind: "heading", level: headingLevel, markerEnd: Math.min(headerMarkEnd + 1, line.to) };
+  }
+  if (quoteMarkEnd >= 0) {
+    return { kind: "quote", markerEnd: Math.min(quoteMarkEnd + 1, line.to) };
+  }
+  if (hrSeen) {
+    return { kind: "rule" };
+  }
+  return null;
 }
 
 function decorateSyntax(decorations: Range<Decoration>[], from: number, to: number, activeSyntax: boolean, className = "cm-md-syntax", widget?: WidgetType) {
