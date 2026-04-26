@@ -109,26 +109,60 @@ also points at the noreply address; global git config is untouched.
 
 Per `PRODUCT_PLAN.md` § Milestones, the next active milestone.
 
-Direction (from `ARCHITECTURE.md` § Comments And Annotations and
-`DECISIONS.md` § 6):
+Storage contract is locked this session. See revised
+`DECISIONS.md` § 6 and `ARCHITECTURE.md` § Comments And Annotations
+for the binding spec. Summary:
 
-- Comment body and thread metadata live outside the Markdown body.
-  Local: sidecar metadata files (e.g. `<filename>.md.meta.json`).
-  Cloud (later): database records.
-- Optional hidden HTML comment anchors
-  (`<!-- mdx-comment-anchor:id=c_abc123 -->`) may be inserted into the
-  `.md` for robust reattachment. The current `htmlCommentBlockState`
-  extension already hides `<!-- ... -->` blocks from the rendered
-  view, so anchors stay invisible to readers.
-- Pencil frames in `markdown.pen` show right-side thread panel and
-  margin markers — both light and dark variants.
-- Anchors should target Lezer node ranges (the Lezer-tree migration
-  was explicitly done to enable tree-stable anchoring).
+- Comments are stored inline in the same `.md` file. No sidecar.
+  A user mailing a `.md` carries the comments with it.
+- Each thread anchors via a paired HTML comment range
+  `<!--c:ULID-->...<!--/c:ULID-->`. IDs are ULIDs for cross-file
+  uniqueness under copy-paste.
+- Thread bodies, authors, timestamps, and resolved state live in a
+  single trailing HTML comment block tagged `markdown-comments-v1`,
+  carrying escaped JSON. After `JSON.stringify`, a single sweep
+  rewrites every `<` to `\u003c` and every `--` to `-\u002d` so the
+  body can never close the surrounding HTML comment. `JSON.parse`
+  decodes both natively on read.
+- The file stores materialized current state, not an edit log. Cloud
+  retains audit history server-side.
+- Resolved threads stay in the file by default. A later "export
+  clean Markdown" command can strip them on demand.
+- Local author identity = editable display name + stable local UUID.
+  No email default. Hidden is not private.
+- Format versioning is strict — unknown versions load read-only.
+- Runtime anchoring uses `Y.RelativePosition` pairs once Yjs lands;
+  CodeMirror range trackers serve until then. Inline markers are
+  read at load and written at save, not walked per keystroke.
+- Marker atomicity: opening and closing tokens are written as single
+  transactions so no CRDT op ever observes half a marker.
+- Orphan handling: a broken anchor pair (e.g. user deleted one half
+  in raw mode) flags the thread as orphaned in the sidebar. Body is
+  preserved; user can re-anchor or delete. Never silently drop.
+- Sidecar mode is deferred — opt-in only, not the first milestone.
 
-Open design question from `DESIGN_BRIEF.md` § Open Design Questions:
-"Should comments be visible as margin markers by default or only when
-the comments panel is open?" Resolve before implementation; route
-through `gsd-explore` if scope is unclear.
+Cloud mapping (later, when collab milestone lands):
+
+- Body in `Y.Text`. Inline anchors travel as ordinary text inside it.
+- Threads in `Y.Map<ULID, Thread>`. Replies in a `Y.Array` of plain
+  records (`{id, author, ts, body}`) as append-only events. Reply
+  bodies are not `Y.Text` — concurrent typing inside a single comment
+  is not a workflow worth the cost.
+- Awareness CRDT for presence (cursor, "user replying in thread X").
+- Save to disk snapshots back to the inline + trailing format.
+
+The existing `htmlCommentBlockState` extension already hides
+`<!-- ... -->` blocks from the rendered view, so both inline anchors
+and the trailing metadata block stay invisible to readers without
+extra work. Pencil frames in `markdown.pen` show right-side thread
+panel and margin markers — both light and dark variants.
+
+Open UX question (still unresolved, from `DESIGN_BRIEF.md` § Open
+Design Questions): "Should comments be visible as margin markers by
+default or only when the comments panel is open?" Storage is locked;
+this is a purely visual default. Resolve during the architect pass
+or the first implementation slice — it does not block plan
+structure.
 
 The Comments milestone is the first feature that should drive out the
 seams in `ARCHITECTURE.md` § Decoupling Seams:
@@ -206,12 +240,17 @@ refine the seams when they are built.
 
 ## How to start
 
-If picking up the Comments milestone, start in `PRODUCT_PLAN.md`
-§ Comments And Annotations and `ARCHITECTURE.md` § Comments And
-Annotations, then route through `gsd-explore` to settle the open
-design question (margin markers default-on or default-off) before
-moving to `architect` for the implementation plan.
+If picking up the Comments milestone, start in `DECISIONS.md` § 6
+and `ARCHITECTURE.md` § Comments And Annotations for the storage
+contract (locked this session — inline `<!--c:ULID-->...<!--/c:ULID-->`
+anchors plus a trailing `markdown-comments-v1` HTML comment block with
+escaped JSON; no sidecar). Then route directly through `architect`
+for the implementation plan and seam-carving order: toolbar registry
+→ `MarkdownCommand` → `EditorContribution`. The remaining open UX
+question (margin markers default-on or default-off) does not block
+plan structure and can be resolved during the architect pass or the
+first implementation slice.
 
 If picking up an unrelated lane (e.g. notarization with an Apple
-Developer ID, a web deploy, or a CHANGELOG file), it does not block
-Comments and can land in parallel.
+Developer ID or a web deploy), it does not block Comments and can
+land in parallel. The CHANGELOG already shipped in v0.0.18.

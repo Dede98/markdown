@@ -70,13 +70,25 @@ Reason:
 
 ## 6. Comments Are Metadata Anchored To Markdown
 
-Decision: Comments should not be stored as normal visible Markdown content.
+Decision: Comments are stored as metadata embedded in the same `.md` file, not as normal visible Markdown content. Default storage is inline within the file. Sidecar files are not used by default.
 
 Reason:
 
-- Inline comments would pollute the document.
-- Sidecar/cloud metadata keeps `.md` readable.
-- Optional hidden HTML comment anchors can improve reattachment while staying invisible in common renderers.
+- A user can mail or share a single `.md` file and the recipient receives the comments with it. No server, no companion file, no account.
+- HTML comments are invisible in every common Markdown renderer (GitHub, VS Code preview, Obsidian, pandoc, iA Writer), so prose stays clean for non-collaborators.
+- A sidecar file gets lost the moment the `.md` is copied alone. A local-first product cannot rely on two-file portability.
+
+Implications:
+
+- Each thread is anchored by a paired inline HTML comment range: `<!--c:ID-->...<!--/c:ID-->`. IDs are ULIDs so anchors stay unique under copy-paste between files.
+- Thread bodies, authors, timestamps, and resolved state live in a single trailing HTML comment block at end of file, tagged `markdown-comments-v1`, carrying escaped JSON. After `JSON.stringify`, a single sweep rewrites two byte sequences so the JSON body can never close the surrounding HTML comment: every `<` becomes the JSON unicode escape for U+003C, and every `--` becomes a `-` followed by the JSON unicode escape for U+002D. `JSON.parse` decodes both escapes natively on read; no custom decoder is needed. The exact escape sequences are specified in `ARCHITECTURE.md` § Comments And Annotations.
+- The file always stores materialized current state, not an edit log. Cloud retains audit history server-side (Yjs + persistence) and snapshots state on `.md` save.
+- Resolved threads stay in the file by default. A later "export clean Markdown" command strips them on demand.
+- Local author identity is an editable display name plus a stable local UUID. No email default — hidden is not private.
+- Format versioning is strict. Unknown versions load read-only with a banner; the editor does not attempt to mutate metadata it does not understand.
+- Sidecar files may be added later as an opt-in "clean `.md`" mode for users who want zero in-band metadata. They are not the default.
+
+Supersedes: the prior version of this decision specified sidecar files for local and database records for cloud. Single-file portability is the binding constraint.
 
 ## 7. MCP Agents Are Visible Participants
 

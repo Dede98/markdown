@@ -170,20 +170,74 @@ History should be built from:
 
 ## Comments And Annotations
 
-Preferred direction:
+Comment metadata lives inside the `.md` file. The file is the unit of portability — mailing or copying a `.md` carries its comments with it. No sidecar, no server requirement for local use. See `DECISIONS.md` § 6 for the binding rationale.
 
-- Comment body and thread metadata live outside the Markdown body.
-- Local comments use sidecar metadata files.
-- Cloud comments use database records.
-- Hidden HTML comment anchors may be inserted into Markdown when useful.
+### Storage Format
 
-Example hidden anchor:
+Two pieces in the same file.
+
+**1. Inline range anchors.** Each commented span is wrapped by a paired HTML comment:
 
 ```md
-<!-- mdx-comment-anchor:id=c_abc123 -->
+Some text with <!--c:01HXYZ12345678901234567890-->a commented phrase<!--/c:01HXYZ12345678901234567890--> in it.
 ```
 
-Anchors are optional metadata, not the comment content itself.
+IDs are ULIDs so anchors stay unique under copy-paste between files. The markers are plain text in the buffer; they move with the text they wrap under any edit, including future CRDT merges.
+
+**2. Trailing metadata block.** A single HTML comment at end of file carries thread bodies, authors, timestamps, and resolved state as JSON:
+
+```md
+<!--
+markdown-comments-v1
+{"threads":{"01HXYZ12345678901234567890":{"createdAt":"2026-04-26T20:30:00Z","resolved":false,"replies":[{"id":"r_1","author":{"name":"Local User","uuid":"..."},"ts":"2026-04-26T20:30:00Z","body":"Reword?"}]}}}
+-->
+```
+
+JSON is post-processed before write. After `JSON.stringify`, a single sweep performs two replacements so the JSON body can never contain a sequence that closes the surrounding HTML comment:
+
+- Every `<` becomes the JSON unicode escape `\u003c`.
+- Every `--` becomes `-\u002d`. The pass is iterative — runs of three or more dashes are resolved left-to-right until no `--` remains.
+
+Both escapes are valid JSON and decode natively under `JSON.parse`. No custom decoder is needed on read.
+
+The file stores materialized current state, not an edit log. Audit history, when needed, lives cloud-side.
+
+### Format Versioning
+
+The `markdown-comments-v1` tag is strict. An unknown version makes the file load read-only with a banner in the sidebar; the editor never attempts to mutate metadata it does not understand. A v2 spec gets its own tag and parser.
+
+### Runtime Anchors
+
+Inside the editor session, comment ranges are tracked as `Y.RelativePosition` pairs (start + end) once the Yjs binding is in place. Until Yjs lands, CodeMirror range trackers play the same role. Inline markers are read at load and written at save; they are not walked on every keystroke.
+
+Marker atomicity: any command that writes a marker writes the entire opening or closing token as a single transaction. No edit ever lands between `<!--c:` and `-->`, and no concurrent CRDT op observes half a marker.
+
+### Orphan Handling
+
+If a user raw-edits the file and breaks an anchor pair (deletes one half, splits it across a paste boundary), the parse pass flags the affected thread as orphaned. The thread body stays in the file, the sidebar surfaces it as detached, and the user can re-anchor or delete. Comment data is never silently dropped on parse failure.
+
+### Cloud Mapping
+
+When the cloud milestone lands:
+
+- The Markdown body lives in `Y.Text`. Inline anchors travel as ordinary text inside it.
+- Threads live in a `Y.Map` keyed by ULID. Replies are appended to a `Y.Array` of plain reply records (`{id, author, ts, body}`). Replies are append-only events; `reply.edit` and `thread.resolve` are additional event types if and when needed. Comment bodies are not `Y.Text` — concurrent typing into a single comment body is not a workflow worth the cost.
+- Awareness CRDT carries presence (cursor, "user is replying in thread X") and is not persisted.
+- On save to disk the cloud snapshot serializes back to the inline + trailing format above. The file remains the single source of portability.
+
+### Identity
+
+Local: editable display name plus a stable local UUID. No email default. The local UUID is the durable identity for offline-only authors.
+
+Cloud: at first sign-in, an account can claim the local UUID so prior local comments retain authorship continuity instead of orphaning to "Local User".
+
+### Privacy
+
+HTML comments are invisible in renderers, not private. Anything stored in the metadata block is recoverable from the raw file. The comment metadata path must not hold secrets, must not default to email addresses, and must not include content the user would not paste into the visible body.
+
+### Sidecar Mode (Deferred)
+
+A later opt-in "clean `.md`" mode may write a `<filename>.md.meta.json` sidecar instead of the inline format, for users who want zero in-band metadata. This is not the default and is not required for the first Comments milestone.
 
 ## MCP
 
