@@ -1,183 +1,192 @@
-# Handoff — Editor Feature Pack v2
+# Handoff — Lezer-driven decorations
 
-Status: paused after a botched rendering attempt. Branch was reverted to a
-known-good state (`34a8021`). The bundle ships as **v0.0.5** with the
-post-revert tree.
+Status: ready to start. Two CM6 decoration bugs were fixed and locked in
+with regression tests in this session. The next session migrates
+`buildDecorations` from regex-over-text to the Lezer syntax tree
+already parsed by `@codemirror/lang-markdown`.
 
-## Context
+## Why this is the next move
 
-A previous session shipped the Mac MVP polish + Dark Mode work plus an
-editor feature pack (H4-H6, strikethrough, GFM table source styling,
-Cmd+Click links). That pack landed in commit `41cf97d`. The follow-up
-attempt to (a) render tables as real `<table>` widgets, (b) hide HTML
-comments, and (c) add `<u>` underline broke mid-file rendering and only
-partially handled comments. That commit (`c9be05e`) was reverted in
-`34a8021`.
+`ARCHITECTURE.md` Layer 2 of the editor model is "Markdown
+parser/syntax tree". Current code violates this: `markdown()` is loaded
+in `MarkdownEditor.tsx` only for the default highlighter. All inline
+decorations come from line-bounded regex passes inside `buildDecorations`
+(`src/markdownPreview.ts`). Two bugs this session both came from this
+architecture:
 
-The user's reported failure modes from the broken build:
+1. **Margin-on-table-widget click drift** (`161a53a`) — solved with a
+   `<div>` wrapper + padding, but the underlying class of "widget root
+   geometry must agree with CM6 height map" is recurring.
+2. **Viewport-only `inCodeFence` reset** (`161a53a`) — solved with a
+   `lineContextField` StateField that snapshots fence/comment state
+   per line over the full doc; `buildDecorations` seeds its loop from
+   the field. Tree-driven decorations would never have been able to
+   produce this bug because Lezer parses the whole doc.
 
-1. _"Rendering breaks mid file"_ — likely caused by the block-level
-   `Decoration.replace` for tables: ranges or ordering were almost
-   certainly wrong, and on some documents the decoration set got
-   rejected silently. The follow-up code adds a `Decoration.line`
-   marker for every line of the active block during the first
-   iteration, which probably collides with subsequent per-line
-   handling.
-2. _"I still see html comments"_ — the regex was single-line only
-   (`<!--[\s\S]*?-->` matched against `text` of one line). Multi-line
-   HTML comments stay visible.
-3. _Underline rolled back along with the rest_ — `<u>...</u>` regex
-   itself worked, but the surrounding feature pack had to come out
-   wholesale because the changes were intermixed in the same commit.
+Long-term, every milestone in `PRODUCT_PLAN.md` (Comments, Yjs cloud
+collab, History/snapshots, MCP) wants tree-shaped knowledge of the
+document. Migrating now means each future feature gets the tree for
+free instead of growing its own ad-hoc parser.
 
-## Repo State
+## What landed this session
+
+- `161a53a` Fix CM6 decoration drift on long and scrolled docs
+  - `TableWidget.toDOM` wraps `<table>` in
+    `<div class="cm-md-table-wrapper">` (display:block, padding for
+    spacing instead of margin so `getBoundingClientRect` reports the
+    full widget height)
+  - `lineContextField` StateField precomputes per-line
+    `{ inFence, fenceLanguage, inHtmlComment }` over the full doc;
+    `buildDecorations` reads it via `state.field()` to seed loop
+    variables when entering each visible range
+  - Field registered in `MarkdownEditor.tsx` extensions list
+- `b742a1b` Add regression tests for table height-map drift and fence
+  body styling
+  - "clicking a line below a rendered table positions the caret on
+    that exact line" — locks in the height-map fix
+  - "fence body stays styled as code after the opening ``` scrolls
+    out of view" — locks in the lineContextField behavior
+
+## Repo state
 
 - Branch: `spike/editor-core`
-- HEAD: `34a8021` (revert) → version bump to 0.0.5 staged in working tree
-  but not yet committed at the time of this writeup
-- Last good behavior commit: `41cf97d` (Add H4-H6, strikethrough,
-  tables, and Cmd+Click links)
-- Tauri bundle: produced at
-  `src-tauri/target/release/bundle/macos/Markdown.app` and
-  `src-tauri/target/release/bundle/dmg/Markdown_0.0.5_aarch64.dmg`
+- HEAD: `b742a1b`
+- Last bundle bump: `9cc004e` v0.0.14 (predates this session's fixes —
+  next bundle bump should cover both `161a53a` and `b742a1b` plus the
+  Lezer refactor that follows)
+- Working tree clean
+- Test baseline: 95 passed, 31 skipped (mobile keyboard skips), 0 failed
+- Tauri Mac dev tested live and confirmed by user
 
-## What works (do NOT regress)
+## Next session task — Lezer refactor
 
-- Dark mode (theme toggle, `data-theme` attribute, prefers-color-scheme,
-  no FOUC)
-- Mod+S save without closure-capture race (`markdownRef` + `fileVersionRef`)
-- Adapter exposure gated to dev origin
-- `bundle.fileAssociations` for `.md/.markdown/.mdx/.mdown`
-- `RunEvent::Opened` handler with cold-start queue + live emit
-- `tauri://drag-drop` listener
-- `titleBarStyle: Overlay` with explicit JS drag handler in capture phase
-- Real macOS app icon set (icon.icns, icon.ico, sized PNGs)
-- About panel populated, baseline CSP
-- Tauri shell plugin enabled with `shell:allow-open` permission for
-  http/https/mailto
-- `Cmd+Click` on rendered links opens externally
-- Heading dropdown 1–6, dedicated H3 button alongside H1/H2
-- Strikethrough rendering (`~~text~~`) + toolbar button + format
-  detection
-- Source-mode table rendering: pipe-bordered lines render in monospace
-  with separator-row class — note this is NOT a real `<table>`,
-  just lined-up source
+Goal: drive every decoration in `src/markdownPreview.ts` from
+`syntaxTree(state)` instead of regex-over-text. Preserve every
+visible behavior (active-cursor marker toggle, all CSS classes, all
+widgets, all StateFields).
 
-## What's missing — the next session's task
+### Constraints — do not regress
 
-1. **HTML comments hidden in preview.** Both single-line `<!-- foo -->`
-   and multi-line variants. Multi-line needs a state flag in the loop
-   similar to `inCodeFence` so a line that opens a comment but doesn't
-   close it enters `inHtmlComment = true`, and following lines stay in
-   that mode until a `-->` is seen. When a line is entirely inside the
-   comment AND not active, replace the whole line range; when active,
-   mark with `cm-md-syntax`.
+These behaviors are explicitly tested or visually relied on:
 
-2. **Real `<table>` widget for GFM tables.** When the cursor is outside
-   the block, render a real `<table>` element via `Decoration.replace`
-   with `block: true`. When inside, fall back to source view.
-   Lessons from the failed attempt:
-   - The first iteration of the block must NOT add per-line
-     `Decoration.line` for every block line. That collides with
-     subsequent loop iterations on the same lines, which CodeMirror
-     either rejects or silently breaks.
-   - Use a single advance: detect block start, decide active vs
-     widget, set `position = block.lastLine.to + 1` regardless, and
-     `continue`. Only the FIRST iteration of the block does any work
-     for the block; subsequent iterations skip it because position
-     jumps over them.
-   - Block-level `Decoration.replace` ranges must span complete
-     lines. `from = firstLine.from`, `to = lastLine.to`. Don't include
-     the trailing newline.
-   - `Decoration.set(decorations, true)` already sorts. Order added
-     doesn't matter in the array, but RANGES must not overlap with
-     other line decorations on the same lines if they were already
-     added by some earlier iteration. Skipping subsequent iterations
-     fully prevents double-decoration.
-   - For active blocks, don't add anything block-wide on the first
-     iteration; let each row iteration add its own line class. Move
-     position forward by one line only when active.
-   - The `TableWidget.eq` from the failed attempt is correct. Keep it.
+- Active-cursor marker toggle: `isLineActive` for line-level
+  constructs (heading prefix, task/bullet markers, blockquote `> `,
+  HR, fence opener); `isRangeActive` for inline constructs
+  (bold/italic/code/strike/underline/link)
+- Custom `<u>...</u>` underline (no Lezer node — keep regex)
+- JS/TS syntax highlighting inside fenced code blocks (custom
+  `decorateCodeLine` regex pile — keep as is, but feed it from the
+  tree's `FencedCode` body range instead of `lineContextField`)
+- Block-level TableWidget StateField (`tableBlockState`) — keep
+- Block-level HTML comment hide StateField (`htmlCommentBlockState`) — keep
+- TaskMarkerWidget click-to-toggle, BulletMarkerWidget, RuleWidget —
+  keep
+- Every CSS class in the catalog (see prior session research; all
+  `.cm-md-*` classes used by tests are listed)
 
-3. **HTML underline `<u>...</u>`.** Single-line is fine; multi-line is
-   not a goal. Add as inline regex similar to `~~strike~~`. Wire up:
-   - regex in `markdownPreview.ts` after the strike block
-   - `underline` field on `ActiveFormat` + `emptyFormat`
-   - getter in `editorFormat.getActiveFormat`
-   - toolbar button using lucide `Underline` icon
-   - CSS rule `.cm-md-underline { text-decoration: underline; }`
+### Implementation order — four commits, each independently revertable
 
-4. **(Optional)** Tighten link UX: add a hover/focus indicator that
-   hints at Cmd+Click. Today the link looks the same regardless of
-   modifier. Could be a discrete "open" cursor when meta is held.
+1. **Enable GFM extension on `markdown()`**
+   - Use `markdown({ extensions: [GFM] })` from
+     `@lezer/markdown`. This adds Strikethrough, Task, Table,
+     Autolink, TaskList nodes to the parsed tree.
+   - No behavior change yet — `buildDecorations` still uses regex.
+   - Verify: `pnpm typecheck` + `pnpm test:e2e` baseline holds.
 
-## Implementation order suggestion
+2. **Migrate inline syntax to tree**
+   - In `buildDecorations`, replace these regex passes with a
+     `syntaxTree(view.state).iterate({ from, to, enter })` walk
+     inside each visible range:
+     - `StrongEmphasis` → mark inner `cm-md-bold`, toggle markers
+     - `Emphasis` → mark inner `cm-md-italic`, toggle markers
+     - `InlineCode` → mark inner `cm-md-inline-code`, toggle markers
+     - `Strikethrough` (GFM node) → mark inner `cm-md-strike`,
+       toggle markers
+     - `Link` → label `cm-md-link`; active vs inactive collapse rules
+       per current code
+   - Keep `<u>...</u>` regex pass (no Lezer node).
+   - Walk markers via child node iteration: `EmphasisMark`,
+     `CodeMark`, `StrikethroughMark`, `LinkMark`, `URL`.
+   - Verify after each construct: rerun the inline tests in
+     `tests/e2e/editor.spec.ts`.
 
-Do all four in separate commits so any one can be reverted cleanly:
+3. **Migrate line-level block constructs to tree**
+   - Replace these regex passes with tree visits:
+     - `ATXHeading1..6` → `Decoration.line` for `cm-md-heading`
+       + `cm-md-heading-{N}`; `decorateSyntax` for `HeaderMark` child
+     - `BulletList` / `ListItem` → `cm-md-list` + bullet marker
+       widget
+     - `OrderedList` / `ListItem` → `cm-md-list` + ordered marker
+       mark
+     - `Task` (GFM) → `cm-md-task-list` + `TaskMarkerWidget`
+     - `Blockquote` → `cm-md-quote` + `> ` marker toggle
+     - `HorizontalRule` → `cm-md-rule` + `RuleWidget`
+   - Keep table row decoration logic for now (interacts with
+     `tableBlockState`).
+   - Verify line-level e2e tests.
 
-1. Multi-line + single-line HTML comments — small surface, easiest to
-   verify by hand.
-2. `<u>` underline — small inline regex pattern, low risk.
-3. Real `<table>` widget — biggest risk. Build it incrementally:
-   first only widget mode (always replace; ignore the
-   active-stays-source path) to validate the decoration math; THEN
-   add the active-stays-source branch.
-4. Optional link cursor polish.
+4. **Migrate fence to tree, retire `lineContextField`**
+   - `FencedCode` (with `CodeText` child for body) gives exact body
+     range. Apply `cm-md-code-line` line decoration to every line in
+     the body range. Apply `cm-md-code-fence` line + active-toggled
+     fence-line replace to opener/closer.
+   - `decorateCodeLine` (JS/TS highlighting) still runs, but its
+     line iteration is driven by the tree's `CodeText` range, not
+     by the per-line `inCodeFence` flag.
+   - Once `buildDecorations` no longer reads
+     `view.state.field(lineContextField)`, delete the field, its
+     export, the `LineContext` type, `buildLineContextMap`, and the
+     extension registration in `MarkdownEditor.tsx`.
+   - HTML comment block detection in `htmlCommentBlockState` still
+     runs over full doc — keep it.
+   - Verify: full suite + manual scroll-past-fence test.
 
-## Verification
+After all four commits, optionally bump bundle version (e.g. v0.0.15)
+and produce the .dmg.
 
-Run for every commit:
+### Implementation notes
+
+- `syntaxTree` is imported from `@codemirror/language`.
+- `tree.iterate({ from, to, enter })` visits every node whose range
+  overlaps `[from, to]`. Return `false` from `enter` to skip children.
+- Node names are stable strings (e.g. `"StrongEmphasis"`,
+  `"FencedCode"`). Compare via `node.type.name`.
+- For GFM nodes (`Strikethrough`, `Task`, `Table*`,
+  `TaskList`, `Autolink`), the GFM extension must be passed to
+  `markdown()`. Without it, those nodes don't exist in the tree.
+- For each construct, child nodes carry the markers
+  (`EmphasisMark`, `CodeMark`, `LinkMark`, `URL`, `HeaderMark`).
+  Use `node.firstChild` / `node.lastChild` / `cursor.iterate` over
+  the parent's children to find them.
+- The `enter` callback signature: `(type: NodeType, from: number,
+  to: number, get: () => SyntaxNode) => boolean | void`. Use
+  `get()` to grab a `SyntaxNode` for parent/child traversal.
+- The `lang-markdown` package version in `package.json` is
+  `^6.3.4`. Confirm node names against that version — Lezer node
+  names occasionally rename across major versions.
+- The active-cursor toggle behavior is independent of the tree — it
+  reads `view.state.selection`. Keep `isRangeActive` and
+  `isLineActive` helpers as-is.
+
+### Verification per commit
 
 ```bash
 pnpm typecheck
-pnpm build
-pnpm test:e2e          # baseline must stay at 67 passed, 25 skipped
-cd src-tauri && cargo check
-pnpm tauri:build       # produces .app + .dmg
+pnpm test:e2e          # baseline 95 passed, 31 skipped
 ```
 
-For tables specifically: write a fixture file like the one below and
-scroll past it to confirm rendering doesn't fall apart anywhere
-mid-file. The previous attempt failed somewhere AFTER the table
-block, which suggests the issue is downstream decoration ranges.
+For commit 4 specifically: also run a manual scroll test in
+`pnpm tauri:dev` with a doc containing a long fenced code block, to
+confirm the tree-driven fence detection holds when the opener
+scrolls out of view.
 
-```md
-# Heading
+### Files most relevant
 
-Paragraph before the table.
-
-| Col A | Col B | Col C |
-| ----- | :---: | ----: |
-| 1     | 2     | 3     |
-| 4     | 5     | 6     |
-
-Paragraph after the table.
-
-<!-- single-line comment that should disappear -->
-
-<!--
-multi-line
-comment
--->
-
-Some text with <u>underlined run</u> in the middle.
-```
-
-After loading: the comments should be invisible, the table should
-read as a styled grid, the underline should appear underlined, AND
-all paragraphs around them should still render correctly.
-
-## Files most relevant
-
-- `src/markdownPreview.ts` — main decoration loop. All three features
-  live here.
-- `src/editorFormat.ts` — adds `underline` (and confirm `table`
-  already exists) to `ActiveFormat`.
-- `src/App.tsx` — toolbar button wiring, lucide icon imports.
-- `src/styles.css` — visual rules. Tables and underline.
-- `src/MarkdownEditor.tsx` — Cmd+Click handler is here. No changes
-  needed for the missing features unless the table widget grows
-  interactive cells.
+- `src/markdownPreview.ts` — entire decoration pipeline
+- `src/MarkdownEditor.tsx` — `markdown()` extension registration,
+  StateField imports
+- `src/styles.css` — visual rules (no changes expected, but verify)
+- `tests/e2e/editor.spec.ts` — full regression baseline
 
 ## Naming rule reminder
 
@@ -189,4 +198,14 @@ messages.
 
 Per the user's global agents instructions: every coding task runs
 the explore → architect (if cross-cutting) → implement → security +
-tests in parallel → code review → commit pipeline. Never skip steps.
+tests in parallel → code review → commit pipeline. For this refactor:
+
+- Explore: confirm Lezer node names against the installed
+  `@lezer/markdown` version, and verify GFM extension API surface
+  (`@codemirror/lang-markdown` exports `GFM` or accepts an
+  extensions list — read the actual package.json + types from
+  `node_modules`)
+- Architect: write the per-commit decoration → tree-node mapping
+  table before touching code; sanity-check active-toggle behavior is
+  preserved
+- Implement, test, commit one piece at a time
