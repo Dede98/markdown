@@ -1,150 +1,113 @@
-# Handoff — v1 sealed, next up: auto-update + Comments milestone
+# Handoff — auto-update + OSS release shipped, next up: Comments
 
-Status: the local editor MVP is feature-complete and the v1 polish pass is
-done. `DECISIONS.md` § 11 already declared the local MVP feature-complete;
-the polish punch list closed in the session that produced this handoff.
+Status: v0.0.17 is live on GitHub Releases under the `Dede98/markdown`
+project, MIT-licensed, with end-to-end auto-update wired through the
+Tauri updater plugin. The local editor MVP is feature-complete
+(`DECISIONS.md` § 11) and now the distribution loop is too.
 
-The next two lanes are:
+The next active lane is the **Comments and annotations milestone** —
+the first non-built-in feature that drives out the seams in
+`ARCHITECTURE.md` § Decoupling Seams.
 
-1. **Auto-update for the Tauri Mac build** (gating before the v1 release
-   announcement so users on v1 can pull v1.0.x and v1.1 without manual
-   downloads). See § Auto-update lane below.
-2. **Comments and annotations milestone** — the first non-built-in feature
-   that drives out the seams in `ARCHITECTURE.md` § Decoupling Seams.
+## What landed in the auto-update + OSS session
 
-The user asked for the auto-update lane to land before the Comments
-milestone starts. Treat that as the load-bearing ordering.
-
-## What landed in the polish session
-
-Five commits closed every item on the polish punch list and raised the
-e2e baseline from 99 to 122 passing tests across the chrome-desktop /
-chrome-mobile project pair:
+### Auto-update lane (5 commits, v0.0.16)
 
 ```
-2d8956d Add HTML5 drag-and-drop to open .md files in the web build
-1b31c8a Show line count in status bar only when raw mode is active
-1009c09 Add aria-pressed to Zen toggle for accessibility parity with Raw toggle
-9fccb30 Bind Cmd/Ctrl-Shift-R and Cmd/Ctrl-. to raw and zen mode toggles
-ad954ee Persist raw and zen view-mode prefs to localStorage across reload
+ae82d9a Surface auto-update affordance in the topbar (Tauri build)
+659c9fc Add Release workflow that drafts a signed Mac release on a v* tag
+3df8c2e Install and initialize the Tauri updater and process plugins
+01a29b1 Configure Tauri updater plugin with GitHub releases endpoint
+a85e0b1 Bump bundle to 0.0.16 ahead of first auto-update release
 ```
 
-Closed punch-list items:
+- **Tauri updater plugin** wired in Rust (`tauri-plugin-updater` +
+  `tauri-plugin-process`) and JS (`@tauri-apps/plugin-updater` +
+  `@tauri-apps/plugin-process`). Capabilities at
+  `src-tauri/capabilities/default.json` grant `updater:default` and
+  `process:allow-restart`.
+- **Updater config** in `src-tauri/tauri.conf.json`:
+  `bundle.createUpdaterArtifacts: true`, `plugins.updater.pubkey`
+  (libsodium public key), and a single static endpoint
+  `https://github.com/Dede98/markdown/releases/latest/download/latest.json`.
+- **Signing keypair** generated via `pnpm tauri signer generate`.
+  Public key baked into the config; private key + password live in
+  the user's 1Password and as GitHub Actions secrets
+  `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
+- **Release workflow** at `.github/workflows/release.yml` —
+  Mac matrix (aarch64 + x86_64), uses `tauri-apps/tauri-action@v0`,
+  drafts the release on a `v*` tag push so a stray push never
+  auto-publishes.
+- **In-app UI** — `src/updater.ts` wraps `check()` and
+  `downloadAndInstall()`; both use `await import(...)` so the heavy
+  plugin chunks only load on the Tauri shell. `App.tsx` runs a
+  one-shot probe on mount (gated on `isTauriRuntime()`), holds the
+  `Update` handle in state, and renders a Lucide `Download` button in
+  the topbar-right cluster when an update is available. `.updateButton`
+  CSS pulses while installing.
 
-1. **Mode-pref persistence** — `src/viewMode.ts` mirrors `src/theme.ts`:
-   SSR-safe `getStoredRaw`/`storeRaw`/`getStoredZen`/`storeZen` helpers
-   keyed `markdown.raw` / `markdown.zen`. Lazy `useState` init plus a
-   write-through `useEffect` in `App.tsx`. Defense-in-depth boolean check
-   on the write side parallels `isThemePref` in theme.ts.
-2. **View-mode keyboard shortcuts** — Cmd/Ctrl-Shift-R toggles raw,
-   Cmd/Ctrl-. toggles zen. Wired into the existing window keydown handler
-   that already handled Cmd-S/O/N. Module-level `SHORTCUT_LABELS` IIFE
-   reads `navigator.platform` once and renders ⌘⇧R / ⌘. on Mac, Ctrl+
-   variants elsewhere; both toggle button titles embed the hint. A
-   negative regression test asserts bare Cmd-R does not flip raw.
-3. **Zen `aria-pressed`** — two-line a11y parity fix; existing zen test
-   extended to assert both pressed states.
-4. **Status-bar line count in raw mode** — `lineCount(markdown)` helper
-   sits next to `wordCount`, conditional render between the "Markdown"
-   label and the existing char count, only when `raw` is true. Comment
-   notes the deliberate divergence from `EditorState.doc.lines`
-   (gutter-style count includes a phantom trailing line).
-5. **Web HTML5 drag-and-drop** — `loadDroppedFile` callback mirrors
-   `loadPathFile`. Window-scoped capture-phase `dragover`/`drop`
-   listeners gated on `!isTauriRuntime()` (Tauri keeps its
-   `tauri://drag-drop` IPC path). Filter on
-   `dataTransfer.types.includes("Files")` so plain text drags fall
-   through to CodeMirror untouched. Four Playwright tests using real
-   `DataTransfer` payloads cover happy path, non-`.md` rejection, dirty
-   prompt (dismiss + accept), and multi-file "first markdown wins".
+### Workflow follow-up (1 commit)
+
+```
+4e3188c Bump release workflow actions off the deprecated Node 20 runtime
+```
+
+- Bumped `actions/checkout@v4 → v6`, `actions/setup-node@v4 → v6`,
+  `pnpm/action-setup@v4 → v5`. Runtime Node version moved 20 → 22.
+  GitHub's Node 20 deprecation banner is gone.
+
+### Open-source rebrand (4 commits, v0.0.17)
+
+```
+bab1be7 Rewrite README for the open-source release
+c07bf6e Bump bundle to 0.0.17
+840d855 Rename bundle identifier to io.github.dede98.markdown
+5ec5e9e Add MIT license and project metadata for open-source release
+b49821b Rebrand About panel and bundle copy as personal open-source project
+```
+
+- **About panel** strips the `ole.de` placeholder. Now reads
+  `Dejan Brinker` / `© 2026 Dejan Brinker. MIT licensed.` /
+  `github.com/Dede98/markdown`.
+- **MIT license** at repo root. License fields in `Cargo.toml`
+  (`license = "MIT"`, `repository`, `authors`) and `package.json`
+  (`license`, `author`, `homepage`, `repository`, `bugs`). GitHub now
+  recognises the repo as MIT-licensed.
+- **Bundle identifier** moved from the placeholder
+  `de.ole.markdown.spike` to `io.github.dede98.markdown`. macOS treats
+  different bundle IDs as different apps, so the v0.0.16 → v0.0.17
+  upgrade required a one-time manual reinstall. From v0.0.17 onward
+  the auto-update path runs end-to-end with no manual steps.
+- **README** rewritten around the install path (DMG download +
+  Gatekeeper bypass + auto-update overview + dev setup).
+
+### Git history rewrite
+
+All 211 commits in the repo were rewritten via `git filter-repo` to
+use `11380762+Dede98@users.noreply.github.com` (GitHub-noreply
+identity) instead of the prior work-email author. Display name
+"Dejan Brinker" stayed unchanged. Local repo `user.email` config
+also points at the noreply address; global git config is untouched.
 
 ## Repo state
 
-- Branch: `spike/editor-core`.
-- HEAD: `2d8956d` plus any uncommitted handoff edits in this session.
-- Working tree: see `git status`.
-- Test baseline: 122 passed / 34 skipped / 0 failed (`pnpm test:e2e`).
-- Typecheck: clean (`pnpm typecheck` runs `tsc -b --noEmit`).
-- Bundle: still pinned at 0.0.15 (Tauri crate + `tauri.conf.json`
-  unchanged since the migration session). The auto-update lane below
-  needs a 0.0.16 (or higher) version bump before the first published
-  release; do not bump speculatively.
+- Branch: `main` (renamed from `spike/editor-core` during the
+  auto-update session; the old `spike/editor-core` and the
+  pre-rewrite `main` are gone).
+- HEAD: `bab1be7` (the README rewrite that ships in v0.0.17).
+- Remote: `git@github.com:Dede98/markdown.git`. Repo is **public**
+  and MIT-licensed.
+- Working tree: clean.
+- Test baseline: 124 passed / 34 skipped / 0 failed (`pnpm test:e2e`).
+- Typecheck: clean (`tsc -b --noEmit`).
+- Cargo: clean (`cargo check` from `src-tauri/`).
+- Latest published release: v0.0.17 with both Mac architectures, the
+  updater manifest, and signed payloads.
+- App identifier: `io.github.dede98.markdown` (current).
 
-## Auto-update lane
+## Comments and annotations milestone (next)
 
-Goal: when the team publishes a GitHub Release, the Mac app on a user's
-machine surfaces an in-app "update available" affordance and installs
-the new version without the user touching a download page.
-
-This is a planning lane until the user signs off on the design. The
-research below documents the Tauri-blessed path; choose a release-source
-and signing-key custodian before writing code.
-
-### Moving parts
-
-- **Tauri updater plugin** (`@tauri-apps/plugin-updater` plus the
-  `tauri-plugin-updater` Rust crate). Tauri 2's official auto-update
-  surface. Provides `check()` / `downloadAndInstall()` from the
-  frontend; Rust side handles the signed-payload verification.
-- **Update endpoint** (one of):
-  - **GitHub Releases as the endpoint** — the simplest path. The plugin
-    can be pointed at a static JSON URL (e.g.
-    `https://github.com/<org>/<repo>/releases/latest/download/latest.json`).
-    The release workflow uploads `latest.json` plus the signed
-    `.app.tar.gz` / `.dmg` artefacts as release assets.
-  - Self-hosted JSON endpoint — only worth it if we ever need
-    differential updates or staged rollouts.
-- **Signing keys** — Tauri requires a separate updater keypair (NOT the
-  Apple Developer ID cert; a libsodium signature over the bundle). The
-  public key is baked into `tauri.conf.json`; the private key signs
-  release artefacts in CI. Decide where the private key lives (1Password
-  secret, GitHub Actions encrypted secret, etc.) before generating it
-  via `pnpm tauri signer generate`.
-- **GitHub Actions release workflow** — `tauri-apps/tauri-action` is
-  the canonical action. It runs `tauri build`, signs the bundle with
-  the updater key, generates `latest.json`, attaches everything to the
-  release, and (optionally) drafts the release as published.
-- **App-side UI** — minimal: a non-intrusive "Update available" badge
-  in the status bar or theme menu, with a "Restart and install" button.
-  The download progress can show in the same affordance.
-
-### Deciding before implementation
-
-- Release cadence and tag pattern (e.g. `v0.0.16`, `v1.0.0`) — gates the
-  GH Actions trigger and the version bump in `tauri.conf.json` /
-  `package.json` / `src-tauri/Cargo.toml`. The current three-version
-  drift (package.json 0.0.0, tauri.conf 0.0.15, Cargo crate?) needs
-  reconciling before the first signed release.
-- Signing key custodian and rotation policy.
-- Whether updates should be opt-in (user clicks check) or auto-checked
-  on launch with a notification — Tauri supports both; pick one before
-  wiring the UI.
-- Apple notarization strategy — the updater handles signing the
-  *update payload*, but the bundle itself still needs an Apple Developer
-  ID + notarization to avoid Gatekeeper warnings. If the project is
-  shipping unsigned today, that needs to land in the same release pass.
-- Channel strategy (stable only vs stable + beta). Default to stable
-  only for v1; add a beta channel later if needed.
-
-### Suggested first slice
-
-1. **Plan agent** to design the full lane: version reconciliation,
-   signing key generation, GH Actions release workflow, Tauri updater
-   plugin wiring, in-app UI, and a test/staging path. Surface every
-   open question above before touching code.
-2. **One commit per concern** (mirrors the polish session pattern):
-   version bump + reconcile, updater plugin install + config,
-   `latest.json` shape, GH Actions workflow, UI affordance.
-3. **Test the loop end-to-end** by publishing a 0.0.16 → 0.0.17 release
-   on a draft tag before announcing v1.
-
-Route through `gsd-explore` if any of the open questions need a deeper
-look before planning.
-
-## Comments and annotations milestone (next, after auto-update)
-
-Per `PRODUCT_PLAN.md` § Milestones, the next active milestone is
-Comments and annotations.
+Per `PRODUCT_PLAN.md` § Milestones, the next active milestone.
 
 Direction (from `ARCHITECTURE.md` § Comments And Annotations and
 `DECISIONS.md` § 6):
@@ -184,6 +147,21 @@ The seams are tools, not goals. Carve only what Comments forces out.
 Do not pre-design for collaboration / history / MCP — those will
 refine the seams when they are built.
 
+## Release process (carry forward)
+
+1. Make the change(s).
+2. Bump version in `src-tauri/tauri.conf.json` and
+   `src-tauri/Cargo.toml`. Run `cargo generate-lockfile` from
+   `src-tauri/` so `Cargo.lock` reflects the new crate version.
+3. Commit the version bump (or fold it into the last feature commit
+   if the lane is small).
+4. Tag and push: `git tag v<version> && git push origin v<version>`.
+5. Wait for the release workflow to draft. Cache hits make subsequent
+   runs ~5 min; no-cache cold runs ~12–15 min.
+6. Open the draft on GitHub, check the assets, click **Publish**.
+7. Existing v0.0.17+ installs see the badge on next launch and pull
+   the update.
+
 ## Architecture invariants (carry forward)
 
 - `.md` text is the canonical document source.
@@ -210,12 +188,17 @@ refine the seams when they are built.
 - Web drag-drop `.md` and Tauri `tauri://drag-drop` both funnel through
   `replaceFile` so the dirty-guard prompt and downstream UI behave
   identically regardless of the shell.
+- Auto-update is Tauri-only — the web build short-circuits on
+  `!isTauriRuntime()` and never imports the updater plugin.
+- The updater public key in `src-tauri/tauri.conf.json` MUST stay in
+  sync with the private key in the GitHub Actions secret. Rotating
+  the keypair means existing installs can never auto-update again.
 
 ## Pipeline reminders
 
 - Spawn explorers per domain in parallel before touching code.
-- For cross-cutting changes (auto-update is one), run the `architect`
-  agent and present the plan before implementing.
+- For cross-cutting changes (Comments will be one), run the
+  `architect` agent and present the plan before implementing.
 - Run `code-reviewer` on the unstaged diff before each commit.
 - Use `commit-writer`; never write commit messages inline.
 - The `gsd-*` skill family is available if a phase or milestone needs
@@ -223,13 +206,12 @@ refine the seams when they are built.
 
 ## How to start
 
-If picking up the auto-update lane, start by reconciling the version
-strings (`package.json` 0.0.0 vs `tauri.conf.json` 0.0.15 vs the Cargo
-crate) and surface the open questions in § Auto-update lane to the user.
-Do not generate signing keys or wire the GH Actions workflow until the
-release-source / custodian / cadence questions are answered.
+If picking up the Comments milestone, start in `PRODUCT_PLAN.md`
+§ Comments And Annotations and `ARCHITECTURE.md` § Comments And
+Annotations, then route through `gsd-explore` to settle the open
+design question (margin markers default-on or default-off) before
+moving to `architect` for the implementation plan.
 
-If picking up the Comments milestone after auto-update is done, start
-in `PRODUCT_PLAN.md` § Comments And Annotations and `ARCHITECTURE.md`
-§ Comments And Annotations, then route through `gsd-explore` or
-`architect` for the design before implementation.
+If picking up an unrelated lane (e.g. notarization with an Apple
+Developer ID, a web deploy, or a CHANGELOG file), it does not block
+Comments and can land in parallel.
