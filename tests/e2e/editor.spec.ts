@@ -917,7 +917,10 @@ test.describe("editor core", () => {
     const toggle = page.getByRole("button", { name: "Raw" });
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-pressed", "false");
-    await expect(toggle).toHaveAttribute("title", "Switch to raw markdown view");
+    // Title leads with the action and ends with a parenthesised shortcut hint
+    // (⌘⇧R on Mac, Ctrl+Shift+R elsewhere) — match the prefix so the
+    // assertion is platform-agnostic.
+    await expect(toggle).toHaveAttribute("title", /^Switch to raw markdown view \(/);
   });
 
   test("raw mode toggle flips label and pressed state when clicked", async ({ page }) => {
@@ -926,11 +929,12 @@ test.describe("editor core", () => {
     await page.getByRole("button", { name: "Raw" }).click();
 
     // After click: label changes to "Rendered", aria-pressed flips to true,
-    // and the title hint inverts.
+    // and the title hint inverts. Title still ends with the parenthesised
+    // shortcut hint, so match the prefix only.
     const toggle = page.getByRole("button", { name: "Rendered" });
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
-    await expect(toggle).toHaveAttribute("title", "Switch to rendered view");
+    await expect(toggle).toHaveAttribute("title", /^Switch to rendered view \(/);
 
     // Toggling again returns to the original label.
     await toggle.click();
@@ -1050,6 +1054,65 @@ test.describe("editor core", () => {
     await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
     expect(await page.evaluate(() => window.localStorage.getItem("markdown.raw"))).toBe("0");
     expect(await page.evaluate(() => window.localStorage.getItem("markdown.zen"))).toBe("0");
+  });
+
+  test("Mod-Shift-R toggles raw mode from anywhere in the app", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+
+    // Default: not in raw mode.
+    await expect(page.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "false");
+
+    // Fire the shortcut while the editor is focused — the shortcut is wired at
+    // the window level, so a CodeMirror keymap binding cannot swallow it.
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Control+Shift+R");
+    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await expect(page.locator(".editorMountRaw")).toHaveCount(1);
+
+    // Press again — flip back.
+    await page.keyboard.press("Control+Shift+R");
+    await expect(page.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator(".editorMountRaw")).toHaveCount(0);
+  });
+
+  test("Mod-R alone does not toggle raw mode (shift is required)", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    // Guards a regression where the shiftKey check is dropped: bare Mod-R is
+    // the browser's reload chord and must not silently flip view state. Raw
+    // toggle is bound to Mod-Shift-R only.
+    await page.goto("/");
+
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Control+R");
+
+    // Toggle stays in default state — still labelled "Raw", not pressed.
+    const toggle = page.getByRole("button", { name: "Raw" });
+    await expect(toggle).toBeVisible();
+    await expect(toggle).toHaveAttribute("aria-pressed", "false");
+    await expect(page.locator(".editorMountRaw")).toHaveCount(0);
+  });
+
+  test("Mod-. toggles zen mode from anywhere in the app", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+
+    // Default: toolbar visible (not zen).
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
+
+    // Fire the shortcut from inside the editor — must reach the window listener
+    // before CodeMirror processes the keystroke.
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Control+.");
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeHidden();
+    await expect(page.getByText("Zen mode")).toBeVisible();
+
+    // Press again — flip back.
+    await page.keyboard.press("Control+.");
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
   });
 });
 

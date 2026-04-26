@@ -131,6 +131,20 @@ const initialFile: FileState = {
   savedContents: initialMarkdown,
 };
 
+// Render the modifier key the way the host platform writes it. Mac uses ⌘ +
+// composed glyphs; everywhere else falls back to "Ctrl+". Resolved once at
+// module load — there is no SSR in this project, but the `typeof navigator`
+// guard keeps the file safe for any future Vite SSR / test harness use.
+const SHORTCUT_LABELS: { raw: string; zen: string } = (() => {
+  const platform =
+    typeof navigator !== "undefined" ? navigator.platform || navigator.userAgent || "" : "";
+  const isMac = /mac|iphone|ipad/i.test(platform);
+  if (isMac) {
+    return { raw: "⌘⇧R", zen: "⌘." };
+  }
+  return { raw: "Ctrl+Shift+R", zen: "Ctrl+." };
+})();
+
 export function App() {
   const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
@@ -352,6 +366,25 @@ export function App() {
         event.preventDefault();
         event.stopPropagation();
         handleNew();
+        return;
+      }
+
+      // Cmd/Ctrl-Shift-R toggles raw view. preventDefault also suppresses the
+      // browser's hard-reload default so the shortcut works in the web build.
+      if (key === "r" && event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        setRaw((value) => !value);
+        return;
+      }
+
+      // Cmd/Ctrl-. toggles zen mode. Captured at the window so it works while
+      // CodeMirror has focus — the editor keymap does not bind this combo.
+      if (key === "." && !event.shiftKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        setZen((value) => !value);
+        return;
       }
     };
 
@@ -671,13 +704,22 @@ export function App() {
             className="modeButton"
             type="button"
             onClick={() => setRaw((value) => !value)}
-            title={raw ? "Switch to rendered view" : "Switch to raw markdown view"}
+            title={
+              raw
+                ? `Switch to rendered view (${SHORTCUT_LABELS.raw})`
+                : `Switch to raw markdown view (${SHORTCUT_LABELS.raw})`
+            }
             aria-pressed={raw}
           >
             {raw ? <Eye size={18} /> : <FileCode size={18} />}
             <span>{raw ? "Rendered" : "Raw"}</span>
           </button>
-          <button className="modeButton" type="button" onClick={() => setZen((value) => !value)} title={zen ? "Normal Mode" : "Zen Mode"}>
+          <button
+            className="modeButton"
+            type="button"
+            onClick={() => setZen((value) => !value)}
+            title={zen ? `Normal Mode (${SHORTCUT_LABELS.zen})` : `Zen Mode (${SHORTCUT_LABELS.zen})`}
+          >
             {zen ? <PanelTopOpen size={18} /> : <PanelTopClose size={18} />}
             <span>{zen ? "Normal" : "Zen"}</span>
           </button>
