@@ -66,6 +66,13 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_shell::init())
+        // `process` powers the post-install relaunch the updater needs;
+        // `updater` itself reads the manifest, verifies the signature, and
+        // swaps the binary. Both are gated behind capability permissions in
+        // `capabilities/default.json` so the JS side cannot invoke them
+        // outside the main editor window.
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(PendingOpenPaths::default())
         .invoke_handler(tauri::generate_handler![drain_pending_open_paths])
         .setup(|app| {
