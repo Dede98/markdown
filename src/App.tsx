@@ -3,6 +3,7 @@ import {
   BookOpenText,
   Download,
   Eye,
+  FileDown,
   FilePlus,
   FileText,
   FileCode,
@@ -17,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { flushSync } from "react-dom";
 import {
   AUTOSAVE_AFTER_EDIT_DELAY_MS,
   AUTOSAVE_INTERVAL_OPTIONS,
@@ -172,6 +174,11 @@ function formatAutoSaveInterval(seconds: AutoSaveInterval): string {
   return minutes === 1 ? "1 minute" : `${minutes} minutes`;
 }
 
+function toPdfTitle(name: string): string {
+  const trimmed = name.trim() || DEFAULT_NEW_FILE_NAME;
+  return `${trimmed.replace(/\.(md|markdown|mdx|mdown|txt)$/i, "")}.pdf`;
+}
+
 export function App() {
   const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
@@ -188,6 +195,7 @@ export function App() {
   // Raw mode renders the document as plain monospace text — every markdown
   // mark visible. Orthogonal to zen: a user can be in raw + zen at once.
   const [raw, setRaw] = useState(() => getStoredRaw());
+  const [printExporting, setPrintExporting] = useState(false);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle");
   const [saveError, setSaveError] = useState<string | null>(null);
   const [fileVersion, setFileVersion] = useState(0);
@@ -216,6 +224,7 @@ export function App() {
   saveStatusRef.current = saveStatus;
   const commentAuthorRef = useRef(commentAuthor);
   commentAuthorRef.current = commentAuthor;
+  const printRestoreRawRef = useRef(false);
   // Mirror `fileVersion` so async save callbacks can detect that the user
   // switched files mid-save (replaceFile bumps fileVersion). Without this an
   // in-flight save would clobber the freshly-opened file's name/handle/savedContents.
@@ -505,6 +514,65 @@ export function App() {
     await performSave("autosave");
   }, [performSave]);
 
+  const finishPrintExport = useCallback((previousTitle: string) => {
+    document.title = previousTitle;
+    flushSync(() => {
+      setPrintExporting(false);
+      if (printRestoreRawRef.current) {
+        setRaw(true);
+        printRestoreRawRef.current = false;
+      }
+    });
+  }, []);
+
+  const handleExportPdf = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const previousTitle = document.title;
+    document.title = toPdfTitle(file.name || DEFAULT_NEW_FILE_NAME);
+    printRestoreRawRef.current = raw;
+
+    let finished = false;
+    let fallbackTimer: number | undefined;
+    const preparePrint = () => {
+      flushSync(() => {
+        setPrintExporting(true);
+        if (raw) {
+          setRaw(false);
+        }
+      });
+      editorRef.current?.requestMeasure();
+    };
+    const finish = () => {
+      if (finished) {
+        return;
+      }
+      finished = true;
+      if (fallbackTimer !== undefined) {
+        window.clearTimeout(fallbackTimer);
+      }
+      window.removeEventListener("beforeprint", preparePrint);
+      window.removeEventListener("afterprint", finish);
+      finishPrintExport(previousTitle);
+    };
+
+    window.addEventListener("beforeprint", preparePrint);
+    window.addEventListener("afterprint", finish);
+    try {
+      window.print();
+      // Some webviews do not reliably fire `afterprint` when the user
+      // cancels. By this point the print snapshot has already been handed to
+      // the system dialog, so restore the live editor quickly if no event
+      // arrives.
+      fallbackTimer = window.setTimeout(finish, 250);
+    } catch (error) {
+      console.error("PDF export print failed", error);
+      finish();
+    }
+  }, [file.name, finishPrintExport, raw]);
+
   // Load a file by absolute path. Shared by the OS file-open path (Finder
   // double-click, "Open With", drag onto the dock icon) and the in-window
   // drag-drop handler. Non-markdown paths are silently ignored so a stray
@@ -595,6 +663,13 @@ export function App() {
         return;
       }
 
+      if (key === "p" && !event.shiftKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        handleExportPdf();
+        return;
+      }
+
       // Cmd/Ctrl-Shift-R toggles raw view. preventDefault also suppresses the
       // browser's hard-reload default so the shortcut works in the web build.
       if (key === "r" && event.shiftKey && !event.altKey) {
@@ -616,7 +691,7 @@ export function App() {
 
     window.addEventListener("keydown", onKeyDown, { capture: true });
     return () => window.removeEventListener("keydown", onKeyDown, { capture: true });
-  }, [handleNew, handleOpen, handleSave, handleSaveAs]);
+  }, [handleExportPdf, handleNew, handleOpen, handleSave, handleSaveAs]);
 
   // HTML5 drag-drop for the web build: a `.md` file dropped anywhere in the
   // window opens it. Tauri ships its own native drag-drop (`tauri://drag-drop`
@@ -986,9 +1061,9 @@ export function App() {
     };
   }, [loadPathFile]);
 
-  // Native menu bridge: when running inside Tauri, the File menu (New/Open/
-  // Save/Save As) emits `menu:*` events from Rust. Forward them to the same
-  // handlers used by toolbar buttons and Cmd-shortcuts so there is one path.
+  // Native menu bridge: when running inside Tauri, the File menu emits
+  // `menu:*` events from Rust. Forward them to the same handlers used by
+  // toolbar buttons and Cmd-shortcuts so there is one path.
   useEffect(() => {
     if (!isTauriRuntime()) {
       return;
@@ -1005,6 +1080,7 @@ export function App() {
           ["menu:open", () => void handleOpen()],
           ["menu:save", () => void handleSave()],
           ["menu:save-as", () => void handleSaveAs()],
+          ["menu:export-pdf", () => handleExportPdf()],
         ];
         for (const [event, run] of bindings) {
           const unlisten = await listen(event, run);
@@ -1027,7 +1103,7 @@ export function App() {
         unlisten();
       }
     };
-  }, [handleNew, handleOpen, handleSave, handleSaveAs]);
+  }, [handleExportPdf, handleNew, handleOpen, handleSave, handleSaveAs]);
 
   const updateProgressPercent =
     updateProgress?.contentLength && updateProgress.contentLength > 0
@@ -1039,7 +1115,11 @@ export function App() {
       : undefined;
 
   return (
-    <main className={zen ? "app appZen" : "app"}>
+    <main
+      className={[zen ? "app appZen" : "app", printExporting ? "appPrintExporting" : ""]
+        .filter(Boolean)
+        .join(" ")}
+    >
       <header className="topbar" data-tauri-drag-region>
         {!zen ? (
           <div className="fileActions" role="toolbar" aria-label="File actions">
@@ -1058,6 +1138,15 @@ export function App() {
               disabled={saveStatus === "saving"}
             >
               <Save size={16} />
+            </button>
+            <button
+              className="iconButton"
+              type="button"
+              title="Export rendered PDF"
+              aria-label="Export rendered PDF"
+              onClick={handleExportPdf}
+            >
+              <FileDown size={16} />
             </button>
           </div>
         ) : (

@@ -89,6 +89,7 @@ Not deployed yet. You can run the web build locally with `pnpm dev` (see
   horizontal rules — all toolbar-driven.
 - Editable GFM table widgets and rendered Mermaid diagrams that save back to
   normal Markdown source.
+- Export the rendered Markdown view to PDF through the system print dialog.
 - Inline comments with right-side thread sidebar, replies, resolved state,
   detached-thread repair, and Raw view access to the underlying metadata.
 - Light, dark, and system theme.

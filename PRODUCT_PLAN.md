@@ -87,10 +87,12 @@ Current QoL direction:
   default, can save after edits or on a chosen interval, and only writes
   files that already have a writable handle/path. New untitled files
   still need an explicit Save once.
-- PDF export: next candidate. Start with a pragmatic v1 that exports
-  the rendered Markdown surface through print-quality CSS and the
-  browser/Tauri print pipeline before considering custom pagination,
-  templates, headers, or publishing controls.
+- PDF export: implemented as a pragmatic v1 that exports the rendered
+  Markdown surface through print-quality CSS and the browser/Tauri
+  print pipeline. Raw mode stays a source-editing mode; the export
+  command temporarily prints the rendered view without changing the
+  Markdown source. Custom pagination, templates, headers, and
+  publishing controls remain deferred.
 
 ## Cloud Collaboration
 

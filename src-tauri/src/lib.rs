@@ -4,8 +4,8 @@
 // 1. Wire the `fs` and `dialog` plugins so the TauriFileAdapter can read/write
 //    `.md` files and prompt the user for paths via native pickers.
 // 2. Build a native macOS-style menu (App / File / Edit) with File > New /
-//    Open / Save / Save As, and forward those clicks to the frontend as
-//    `menu:new` / `menu:open` / `menu:save` / `menu:save-as` events.
+//    Open / Save / Save As / Export PDF, and forward those clicks to the
+//    frontend as `menu:*` events.
 // 3. Carry OS-supplied file paths into the webview when the app is launched
 //    via Finder double-click or "Open With" — `RunEvent::Opened` fires before
 //    JS can mount listeners, so paths are queued and the frontend drains them
@@ -24,11 +24,13 @@ const MENU_NEW: &str = "menu_new";
 const MENU_OPEN: &str = "menu_open";
 const MENU_SAVE: &str = "menu_save";
 const MENU_SAVE_AS: &str = "menu_save_as";
+const MENU_EXPORT_PDF: &str = "menu_export_pdf";
 
 const EVENT_NEW: &str = "menu:new";
 const EVENT_OPEN: &str = "menu:open";
 const EVENT_SAVE: &str = "menu:save";
 const EVENT_SAVE_AS: &str = "menu:save-as";
+const EVENT_EXPORT_PDF: &str = "menu:export-pdf";
 
 const EVENT_OPEN_PATH: &str = "file:open-path";
 
@@ -86,6 +88,7 @@ pub fn run() {
                     MENU_OPEN => Some(EVENT_OPEN),
                     MENU_SAVE => Some(EVENT_SAVE),
                     MENU_SAVE_AS => Some(EVENT_SAVE_AS),
+                    MENU_EXPORT_PDF => Some(EVENT_EXPORT_PDF),
                     _ => None,
                 };
                 if let Some(name) = event_name {
@@ -173,6 +176,13 @@ fn build_app_menu<R: tauri::Runtime>(
         true,
         Some("CmdOrCtrl+Shift+S"),
     )?;
+    let export_pdf_item = MenuItem::with_id(
+        handle,
+        MENU_EXPORT_PDF,
+        "Export PDF…",
+        true,
+        Some("CmdOrCtrl+P"),
+    )?;
 
     let file_submenu = Submenu::with_items(
         handle,
@@ -184,6 +194,8 @@ fn build_app_menu<R: tauri::Runtime>(
             &PredefinedMenuItem::separator(handle)?,
             &save_item,
             &save_as_item,
+            &PredefinedMenuItem::separator(handle)?,
+            &export_pdf_item,
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::close_window(handle, None)?,
         ],

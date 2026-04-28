@@ -4,7 +4,7 @@ import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighti
 import { GFM } from "@lezer/markdown";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import type { ContentWidth } from "./contentWidth";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
 import type { EditorContribution } from "./editorContributions";
@@ -216,7 +216,7 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
   // Reconfigure the preview compartment when raw mode toggles. Dispatching a
   // reconfigure keeps the doc, selection, and history intact — only the
   // decoration extensions are swapped.
-  useEffect(() => {
+  useLayoutEffect(() => {
     const view = viewRef.current;
     if (!view) {
       return;

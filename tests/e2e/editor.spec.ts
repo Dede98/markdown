@@ -1048,6 +1048,81 @@ test.describe("editor core", () => {
     await expect(page.getByRole("button", { name: "New file" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Open file" })).toBeVisible();
     await expect(page.getByRole("button", { name: "Save file" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Export rendered PDF" })).toBeVisible();
+  });
+
+  test("pdf export prints the rendered view without changing markdown source", async ({ page }) => {
+    await page.addInitScript(() => {
+      const win = window as unknown as {
+        __printCalls: number;
+        __printSnapshot?: {
+          appPrintExporting: boolean;
+          hasRenderedTable: boolean;
+          hasRawTableSource: boolean;
+          title: string;
+        };
+      };
+      win.__printCalls = 0;
+      window.print = () => {
+        window.dispatchEvent(new Event("beforeprint"));
+        const content = document.querySelector(".cm-content")?.textContent ?? "";
+        win.__printCalls += 1;
+        win.__printSnapshot = {
+          appPrintExporting: Boolean(document.querySelector(".appPrintExporting")),
+          hasRenderedTable: Boolean(document.querySelector(".cm-md-table")),
+          hasRawTableSource: content.includes("| A | B |"),
+          title: document.title,
+        };
+        window.dispatchEvent(new Event("afterprint"));
+      };
+    });
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "lead\n\n| A | B |\n| --- | --- |\n| **bold** | `code` |\n\ntail",
+    );
+    const sourceBeforeExport = await getEditorSource(page);
+
+    await page.getByRole("button", { name: "Raw" }).click();
+    await expect(page.locator(".cm-content")).toContainText("| A | B |");
+    await page.getByRole("button", { name: "Export rendered PDF" }).click();
+
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __printCalls: number }).__printCalls)).toBe(1);
+    const snapshot = await page.evaluate(() => (
+      window as unknown as {
+        __printSnapshot?: {
+          appPrintExporting: boolean;
+          hasRenderedTable: boolean;
+          hasRawTableSource: boolean;
+          title: string;
+        };
+      }
+    ).__printSnapshot);
+    expect(snapshot).toEqual({
+      appPrintExporting: true,
+      hasRenderedTable: true,
+      hasRawTableSource: false,
+      title: "untitled.pdf",
+    });
+    await expect.poll(() => getEditorSource(page)).toBe(sourceBeforeExport);
+    await expect(page.getByRole("button", { name: "Rendered", exact: true })).toBeVisible();
+  });
+
+  test("pdf export restores the editor if afterprint does not fire", async ({ page }) => {
+    await page.addInitScript(() => {
+      const win = window as unknown as { __printCalls: number };
+      win.__printCalls = 0;
+      window.print = () => {
+        win.__printCalls += 1;
+        window.dispatchEvent(new Event("beforeprint"));
+      };
+    });
+    await page.goto("/");
+
+    await page.getByRole("button", { name: "Export rendered PDF" }).click();
+
+    await expect.poll(() => page.evaluate(() => (window as unknown as { __printCalls: number }).__printCalls)).toBe(1);
+    await expect(page.locator(".appPrintExporting")).toHaveCount(0);
   });
 
   test("status badge tracks editor dirtiness", async ({ page }, testInfo) => {
@@ -1306,7 +1381,7 @@ test.describe("editor core", () => {
 
     const settingsDialog = page.getByRole("dialog", { name: "Settings" });
     await expect(settingsDialog.getByText("Version")).toBeVisible();
-    await expect(settingsDialog.getByText("v0.0.20")).toBeVisible();
+    await expect(settingsDialog.getByText("v0.0.21")).toBeVisible();
     await expect(settingsDialog.getByRole("button", { name: "Check for updates" })).toBeDisabled();
     await expect(settingsDialog.getByText("Manual update checks are available in the Mac app.")).toBeVisible();
   });
@@ -1353,7 +1428,7 @@ test.describe("editor core", () => {
     // After click: label changes to "Rendered", aria-pressed flips to true,
     // and the title hint inverts. Title still ends with the parenthesised
     // shortcut hint, so match the prefix only.
-    const toggle = page.getByRole("button", { name: "Rendered" });
+    const toggle = page.getByRole("button", { name: "Rendered", exact: true });
     await expect(toggle).toBeVisible();
     await expect(toggle).toHaveAttribute("aria-pressed", "true");
     await expect(toggle).toHaveAttribute("title", /^Switch to rendered view \(/);
@@ -1391,7 +1466,7 @@ test.describe("editor core", () => {
     await attachScreenshot(page, testInfo, "raw-mode");
 
     // Flip back to rendered — marks hide again, "tail" still there.
-    await page.getByRole("button", { name: "Rendered" }).click();
+    await page.getByRole("button", { name: "Rendered", exact: true }).click();
     await expect(page.locator(".cm-content")).not.toContainText("**bold**");
     await expect(page.locator(".cm-content")).not.toContainText("# Title");
     await expect(page.locator(".cm-content")).not.toContainText("<!--");
@@ -1432,7 +1507,7 @@ test.describe("editor core", () => {
     await expect(statusbar).toContainText(/\d+ chars/);
 
     // Back to rendered — line indicator disappears.
-    await page.getByRole("button", { name: "Rendered" }).click();
+    await page.getByRole("button", { name: "Rendered", exact: true }).click();
     await expect(statusbar).not.toContainText(/\d+ lines/);
     await expect(statusbar).toContainText(/\d+ chars/);
   });
@@ -1442,14 +1517,14 @@ test.describe("editor core", () => {
 
     // Enable raw mode and verify localStorage is written.
     await page.getByRole("button", { name: "Raw" }).click();
-    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Rendered", exact: true })).toHaveAttribute("aria-pressed", "true");
     const stored = await page.evaluate(() => window.localStorage.getItem("markdown.raw"));
     expect(stored).toBe("1");
 
     // Reload — app must hydrate from storage and stay in raw mode.
     await page.reload();
-    await expect(page.getByRole("button", { name: "Rendered" })).toBeVisible();
-    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute("aria-pressed", "true");
+    await expect(page.getByRole("button", { name: "Rendered", exact: true })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Rendered", exact: true })).toHaveAttribute("aria-pressed", "true");
     await expect(page.locator(".editorMountRaw")).toHaveCount(1);
   });
 
@@ -1489,7 +1564,7 @@ test.describe("editor core", () => {
     // Toggle both off (zen toggle button is hidden by topbar restyle in zen
     // mode but still present — its accessible name flips to "Normal Mode").
     await page.getByTitle("Normal Mode").click();
-    await page.getByRole("button", { name: "Rendered" }).click();
+    await page.getByRole("button", { name: "Rendered", exact: true }).click();
     await expect(page.locator(".editorMountRaw")).toHaveCount(0);
     await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeVisible();
 
@@ -1512,7 +1587,7 @@ test.describe("editor core", () => {
     // the window level, so a CodeMirror keymap binding cannot swallow it.
     await page.locator(".cm-content").click();
     await page.keyboard.press("Control+Shift+R");
-    await expect(page.getByRole("button", { name: "Rendered" })).toHaveAttribute(
+    await expect(page.getByRole("button", { name: "Rendered", exact: true })).toHaveAttribute(
       "aria-pressed",
       "true",
     );

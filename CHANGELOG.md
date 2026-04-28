@@ -6,11 +6,21 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.21] - 2026-04-28
+
 ### Added
 
 - Autosave preference in Settings with Off, After edits, and Every
   interval modes. Autosave is disabled by default and only writes
   existing file-backed documents.
+- PDF export v1 through the rendered Markdown surface and the
+  browser/Tauri print dialog.
+
+### Fixed
+
+- PDF export now invokes print synchronously, grants the Tauri webview
+  print permission, and restores the editor immediately when the print
+  dialog closes or is cancelled.
 
 ## [0.0.20] - 2026-04-28
 
@@ -132,6 +142,7 @@ record):
   table / HTML-comment block detection, replacing earlier regex
   heuristics.
 
+[0.0.21]: https://github.com/Dede98/markdown/releases/tag/v0.0.21
 [0.0.20]: https://github.com/Dede98/markdown/releases/tag/v0.0.20
 [0.0.19]: https://github.com/Dede98/markdown/releases/tag/v0.0.19
 [0.0.18]: https://github.com/Dede98/markdown/releases/tag/v0.0.18

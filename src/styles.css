@@ -930,6 +930,162 @@ button {
   background: var(--accent);
 }
 
+.appPrintExporting,
+.appPrintExporting .workspace,
+.appPrintExporting .editorShell,
+.appPrintExporting .editorMount,
+.appPrintExporting .cm-editor,
+.appPrintExporting .cm-scroller {
+  height: auto !important;
+  min-height: 0 !important;
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.appPrintExporting {
+  display: block;
+}
+
+.appPrintExporting .topbar,
+.appPrintExporting .toolbar,
+.appPrintExporting .statusbar,
+.appPrintExporting .commentsSidebar,
+.appPrintExporting .settingsOverlay,
+.appPrintExporting .zenIndicator,
+.appPrintExporting .cm-gutters,
+.appPrintExporting .cm-cursorLayer,
+.appPrintExporting .cm-selectionLayer,
+.appPrintExporting .cm-md-mermaid-controls {
+  display: none !important;
+}
+
+.appPrintExporting .workspace,
+.appPrintExporting .workspaceWithComments {
+  display: block;
+  overflow: visible;
+}
+
+.appPrintExporting .editorShell,
+.appPrintExporting.appZen .editorShell {
+  padding: 0;
+}
+
+@media print {
+  @page {
+    margin: 18mm 16mm;
+  }
+
+  :root,
+  :root[data-theme="dark"] {
+    --bg-app: #ffffff;
+    --bg-chrome: #ffffff;
+    --bg-surface: #ffffff;
+    --bg-surface-hover: #ffffff;
+    --bg-active: #ffffff;
+    --fg-strong: #111111;
+    --fg-body: #1f1f1f;
+    --fg-muted: #555555;
+    --fg-faint: #777777;
+    --rule: #d7d7d7;
+    --rule-soft: #bdbdbd;
+    --accent: #1f4f82;
+    --accent-bg: #e8eef5;
+    --accent-fg: #1f4f82;
+    --accent-underline: rgba(31, 79, 130, 0.32);
+    --code-bg-inline: #f3f3f3;
+    --code-border-inline: #d7d7d7;
+    --code-fg: #1f1f1f;
+    --code-bg-block: #f6f6f6;
+    --code-fence: #555555;
+    color-scheme: light;
+  }
+
+  html,
+  body,
+  #root,
+  .app,
+  .workspace,
+  .editorShell,
+  .editorMount,
+  .cm-editor,
+  .cm-scroller {
+    height: auto !important;
+    min-height: 0 !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+  }
+
+  body {
+    min-width: 0;
+  }
+
+  .app {
+    display: block;
+  }
+
+  .topbar,
+  .toolbar,
+  .statusbar,
+  .commentsSidebar,
+  .settingsOverlay,
+  .zenIndicator,
+  .cm-gutters,
+  .cm-cursorLayer,
+  .cm-selectionLayer,
+  .cm-md-mermaid-controls {
+    display: none !important;
+  }
+
+  .workspace,
+  .workspaceWithComments {
+    display: block;
+    overflow: visible;
+  }
+
+  .editorShell,
+  .appZen .editorShell {
+    padding: 0;
+  }
+
+  .cm-content {
+    max-width: 720px !important;
+    width: 100% !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+  }
+
+  .cm-line,
+  .cm-md-table-wrapper,
+  .cm-md-mermaid,
+  .cm-md-code-line,
+  .cm-md-rule-widget {
+    break-inside: avoid;
+  }
+
+  .cm-md-table th,
+  .cm-md-table td {
+    border-color: #cfcfcf;
+  }
+
+  .cm-md-mermaid,
+  :root[data-theme="dark"] .cm-md-mermaid,
+  :root[data-theme="dark"] .cm-md-mermaid svg {
+    border-color: #d7d7d7;
+    background: #ffffff !important;
+  }
+
+  .cm-md-mermaid {
+    min-height: 220px;
+    page-break-inside: avoid;
+  }
+
+  * {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
+
 .cm-editor {
   height: 100%;
 }
