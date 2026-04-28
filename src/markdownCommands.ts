@@ -1,13 +1,17 @@
 import { EditorSelection, type SelectionRange } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
 
+export type MarkdownCommand<Args = void> = Args extends void
+  ? (view: EditorView) => boolean
+  : (view: EditorView, args: Args) => boolean;
+
 type WrapPair = {
   before: string;
   after: string;
   placeholder: string;
 };
 
-export function wrapSelection(view: EditorView, pair: WrapPair) {
+export function wrapSelection(view: EditorView, pair: WrapPair): boolean {
   const { state } = view;
   const changes = state.changeByRange((range) => {
     if (range.empty) {
@@ -58,9 +62,10 @@ export function wrapSelection(view: EditorView, pair: WrapPair) {
 
   view.dispatch(changes);
   view.focus();
+  return true;
 }
 
-export function setHeading(view: EditorView, level: 1 | 2 | 3 | 4 | 5 | 6) {
+export function setHeading(view: EditorView, level: 1 | 2 | 3 | 4 | 5 | 6): boolean {
   const { state } = view;
   const prefix = `${"#".repeat(level)} `;
   const changes = state.changeByRange((range) => {
@@ -78,9 +83,10 @@ export function setHeading(view: EditorView, level: 1 | 2 | 3 | 4 | 5 | 6) {
 
   view.dispatch(changes);
   view.focus();
+  return true;
 }
 
-export function toggleLinePrefix(view: EditorView, prefix: string) {
+export function toggleLinePrefix(view: EditorView, prefix: string): boolean {
   const { state } = view;
   const changes = state.changeByRange((range) => {
     const startLine = state.doc.lineAt(range.from);
@@ -112,9 +118,10 @@ export function toggleLinePrefix(view: EditorView, prefix: string) {
 
   view.dispatch(changes);
   view.focus();
+  return true;
 }
 
-export function insertBlock(view: EditorView, markdown: string) {
+export function insertBlock(view: EditorView, markdown: string): boolean {
   const { state } = view;
   const selection = state.selection.main;
   const line = state.doc.lineAt(selection.from);
@@ -127,9 +134,10 @@ export function insertBlock(view: EditorView, markdown: string) {
     selection: { anchor: cursor },
   });
   view.focus();
+  return true;
 }
 
-export function insertLink(view: EditorView) {
+export function insertLink(view: EditorView): boolean {
   const { state } = view;
   const selection = state.selection.main;
   const selected = state.sliceDoc(selection.from, selection.to) || "link";
@@ -143,6 +151,7 @@ export function insertLink(view: EditorView) {
     selection: { anchor: from, head: to },
   });
   view.focus();
+  return true;
 }
 
 function getSelectionEnd(state: EditorView["state"], range: SelectionRange) {

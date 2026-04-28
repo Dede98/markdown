@@ -166,6 +166,154 @@ test.describe("editor core", () => {
     expect(renderedLines).toBeLessThan(5);
   });
 
+  test("add comment writes inline anchors and trailing metadata", async ({ page }) => {
+    await seedCommentAuthor(page, "Local User");
+    await page.goto("/");
+    await replaceEditorText(page, "review this phrase");
+
+    await expect(page.getByTitle("Add comment")).toBeEnabled();
+    await page.getByTitle("Add comment").click();
+
+    const source = await getEditorSource(page);
+    const match = source.match(/<!--c:([0-9A-HJKMNP-TV-Z]{26})-->review this phrase<!--\/c:\1-->/);
+    expect(match).not.toBeNull();
+    expect(source).toContain("markdown-comments-v1");
+    expect(source).toContain(`"id":"${match?.[1]}`);
+    await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
+    await expect(page.locator(".cm-content")).not.toContainText("markdown-comments-v1");
+    await expect(page.locator(".cm-commentRange")).toContainText("review this phrase");
+  });
+
+  test("comment button is disabled without a selection", async ({ page }) => {
+    await page.goto("/");
+    await page.locator(".cm-content").click();
+
+    await expect(page.getByTitle("Add comment")).toBeDisabled();
+  });
+
+  test("first comment asks for a display name and general settings can edit it later", async ({ page }) => {
+    await page.goto("/");
+    await replaceEditorText(page, "review this phrase");
+
+    page.once("dialog", async (dialog) => {
+      expect(dialog.message()).toContain("Display name");
+      await dialog.accept("Dejan");
+    });
+    await page.getByTitle("Add comment").click();
+
+    await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
+    await expect(page.getByLabel("Display name")).toHaveCount(0);
+
+    await page.getByRole("button", { name: "Settings" }).click();
+    const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+    await expect(settingsDialog).toBeVisible();
+    await expect(settingsDialog.getByRole("heading", { name: "Comments" })).toBeVisible();
+    await expect(page.getByLabel("Display name")).toHaveValue("Dejan");
+  });
+
+  test("comment replies and resolved state update the metadata block", async ({ page }) => {
+    await seedCommentAuthor(page, "Local User");
+    await page.goto("/");
+    await replaceEditorText(page, "review this phrase");
+    await page.getByTitle("Add comment").click();
+
+    await page.getByPlaceholder("Reply...").fill("First note in the thread.");
+    await page.getByRole("button", { name: "Reply" }).click();
+    await page.getByPlaceholder("Reply...").fill("Needs a softer verb -- and <less> jargon.");
+    await page.getByRole("button", { name: "Reply" }).click();
+    await page.getByLabel("Resolve thread").click();
+
+    await expect(page.getByText("First note in the thread.")).toBeVisible();
+    await expect(page.getByText("Needs a softer verb")).toBeVisible();
+    await expect(page.getByText("earlier reply")).toHaveCount(0);
+
+    const source = await getEditorSource(page);
+    expect(source).toContain("\\u003cless>");
+    expect(source).toContain("-\\u002d and");
+    expect(source).toContain('"resolved":true');
+    expect(source).toContain("Needs a softer verb");
+  });
+
+  test("comments topbar button opens the sidebar list", async ({ page }) => {
+    await seedCommentAuthor(page, "Local User");
+    await page.goto("/");
+    await replaceEditorText(page, "review this phrase");
+    await page.getByTitle("Add comment").click();
+    await page.getByLabel("Close comments").click();
+
+    await page.getByLabel("Comments").click();
+
+    await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Open thread" })).toBeVisible();
+  });
+
+  test("clicking a highlighted comment opens its thread", async ({ page }) => {
+    await seedCommentAuthor(page, "Local User");
+    await page.goto("/");
+    await replaceEditorText(page, "review this phrase");
+    await page.getByTitle("Add comment").click();
+    await page.getByPlaceholder("Reply...").fill("Follow up here");
+    await page.getByRole("button", { name: "Reply" }).click();
+    await page.getByLabel("Close comments").click();
+
+    await page.locator(".cm-commentRange").click();
+
+    await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
+    await expect(page.getByText("Follow up here")).toBeVisible();
+    await expect(page.locator(".commentThread.isSelected")).toBeVisible();
+  });
+
+  test("raw mode exposes comment anchors and metadata", async ({ page }) => {
+    await seedCommentAuthor(page, "Local User");
+    await page.goto("/");
+    await replaceEditorText(page, "review this phrase");
+    await page.getByTitle("Add comment").click();
+
+    await page.getByTitle(/raw markdown view/i).click();
+
+    await expect(page.locator(".cm-content")).toContainText("<!--c:");
+    await expect(page.locator(".cm-content")).toContainText("markdown-comments-v1");
+    await expect(page.getByText("Raw mode exposes comment anchors")).toBeVisible();
+  });
+
+  test("unknown comment metadata version opens read-only in the sidebar", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "before\n\n<!--\nmarkdown-comments-v9\n{\"threads\":{}}\n-->");
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Control+Shift+C");
+
+    await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
+    await expect(page.getByText("Unsupported comments format: markdown-comments-v9")).toBeVisible();
+  });
+
+  test("broken comment anchors surface as detached threads", async ({ page }) => {
+    const id = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    await page.goto("/");
+    await setEditorText(
+      page,
+      `before <!--c:${id}-->detached\n\n<!--\nmarkdown-comments-v1\n{"threads":{"${id}":{"id":"${id}","createdAt":"2026-04-26T20:30:00Z","resolved":false,"replies":[]}}}\n-->`,
+    );
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Control+Shift+C");
+
+    await expect(page.locator(".commentBadge", { hasText: "Detached" })).toBeVisible();
+    await expect(page.getByText("No replies yet.")).toBeVisible();
+  });
+
+  test("comment margin markers are visible in normal mode and hidden in quiet zen", async ({ page }) => {
+    await seedCommentAuthor(page, "Local User");
+    await page.goto("/");
+    await replaceEditorText(page, "review this phrase");
+    await page.getByTitle("Add comment").click();
+
+    await expect(page.locator(".cm-commentMarker")).toBeVisible();
+    await page.getByLabel("Close comments").click();
+    await expect(page.getByRole("complementary", { name: "Comments" })).toBeHidden();
+    await page.getByRole("button", { name: "Zen" }).click();
+
+    await expect(page.locator(".cm-commentMarker")).not.toBeVisible();
+  });
+
   test("underline toolbar wraps selection in <u>...</u> and renders with underline", async ({ page }) => {
     await page.goto("/");
     await replaceEditorText(page, "underscore");
@@ -898,6 +1046,20 @@ test.describe("editor core", () => {
     await expect(page.getByRole("button", { name: /theme/i })).toHaveAccessibleName(/dark theme/i);
   });
 
+  test("content width setting supports full width and persists", async ({ page }) => {
+    await page.goto("/");
+
+    await expect.poll(() => getEditorContentMaxWidth(page)).toBe("700px");
+    await page.getByRole("button", { name: "Settings" }).click();
+    await page.getByLabel("Content width").selectOption("full");
+
+    await expect.poll(() => getEditorContentMaxWidth(page)).toBe("none");
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.contentWidth"))).toBe("full");
+
+    await page.reload();
+    await expect.poll(() => getEditorContentMaxWidth(page)).toBe("none");
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 
@@ -1403,6 +1565,16 @@ async function getEditorSource(page: Page) {
   });
 }
 
+async function getEditorContentMaxWidth(page: Page) {
+  return page.evaluate(() => {
+    const content = document.querySelector<HTMLElement>(".cm-content");
+    if (!content) {
+      throw new Error("CodeMirror content element is not available");
+    }
+    return getComputedStyle(content).maxWidth;
+  });
+}
+
 type FakeAdapterOptions = {
   openFile?: { name: string; contents: string };
   saveAsResult?: { name: string; handleId: string };
@@ -1418,6 +1590,17 @@ async function seedTheme(page: Page, pref: "light" | "dark" | "system") {
       // Storage may be unavailable; tests will still exercise default-system path.
     }
   }, pref);
+}
+
+async function seedCommentAuthor(page: Page, name: string) {
+  await page.addInitScript((value) => {
+    try {
+      window.localStorage.setItem("markdown.comments.authorName", value);
+      window.localStorage.setItem("markdown.comments.authorUuid", "test-comment-author");
+    } catch {
+      // Storage may be unavailable; first-use prompt coverage exercises fallback.
+    }
+  }, name);
 }
 
 async function installFakeFileAdapter(page: Page, options: FakeAdapterOptions = {}) {

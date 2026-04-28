@@ -1,43 +1,36 @@
 import type { EditorView } from "@codemirror/view";
 import {
-  Bold,
-  Code,
-  Code2,
   Download,
   Eye,
   FilePlus,
   FileText,
   FileCode,
   FolderOpen,
-  Heading1,
-  Heading2,
-  Heading3,
-  Italic,
-  Link,
-  List,
-  ListChecks,
-  ListOrdered,
-  Minus,
+  MessageSquare,
   Monitor,
   Moon,
   PanelTopClose,
   PanelTopOpen,
-  Quote,
   Save,
-  Strikethrough,
+  Settings,
   Sun,
-  Table as TableIcon,
-  Underline,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { addCommentReply, createThreadId, insertCommentAnchor, resolveCommentThread } from "./comments/commands";
+import { CommentsSidebar } from "./comments/CommentsSidebar";
+import { createCommentsContribution } from "./comments/contribution";
+import { getStoredCommentAuthor, storeCommentAuthorName } from "./comments/identity";
+import { parseComments } from "./comments/storage";
+import type { CommentAuthor } from "./comments/types";
+import { getStoredContentWidth, storeContentWidth, type ContentWidth } from "./contentWidth";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
+import type { EditorContribution } from "./editorContributions";
 import {
   DEFAULT_NEW_FILE_NAME,
   type FileAdapter,
   type FileHandle,
   type LocalFile,
 } from "./fileAdapter";
-import { insertBlock, insertLink, setHeading, toggleLinePrefix, wrapSelection } from "./markdownCommands";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { isMarkdownPath, openMarkdownFromPath, tauriFileAdapter } from "./tauriFileAdapter";
 import {
@@ -51,6 +44,7 @@ import {
   type ResolvedTheme,
   type ThemePref,
 } from "./theme";
+import { markdownToolbarItems, type ToolbarContext, type ToolbarItem } from "./toolbarRegistry";
 import { checkForUpdate, installAndRelaunch, type Update } from "./updater";
 import { getStoredRaw, getStoredZen, storeRaw, storeZen } from "./viewMode";
 import { webFileAdapter } from "./webFileAdapter";
@@ -151,6 +145,12 @@ export function App() {
   const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
+  const [hasEditorSelection, setHasEditorSelection] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
+  const [commentAuthor, setCommentAuthor] = useState<CommentAuthor>(() => getStoredCommentAuthor());
+  const [contentWidth, setContentWidth] = useState<ContentWidth>(() => getStoredContentWidth());
   const [zen, setZen] = useState(() => getStoredZen());
   // Raw mode renders the document as plain monospace text — every markdown
   // mark visible. Orthogonal to zen: a user can be in raw + zen at once.
@@ -175,6 +175,8 @@ export function App() {
   // through the ref guarantees the on-disk content matches what the user sees.
   const markdownRef = useRef(markdown);
   markdownRef.current = markdown;
+  const commentAuthorRef = useRef(commentAuthor);
+  commentAuthorRef.current = commentAuthor;
   // Mirror `fileVersion` so async save callbacks can detect that the user
   // switched files mid-save (replaceFile bumps fileVersion). Without this an
   // in-flight save would clobber the freshly-opened file's name/handle/savedContents.
@@ -182,6 +184,7 @@ export function App() {
   fileVersionRef.current = fileVersion;
 
   const dirty = markdown !== file.savedContents;
+  const commentsParse = useMemo(() => parseComments(markdown), [markdown]);
   const badge = useMemo(
     () => describeStatus({ saveStatus, dirty, hasHandle: file.handle !== null }),
     [saveStatus, dirty, file.handle],
@@ -197,11 +200,125 @@ export function App() {
     editorRef.current = view;
   }, []);
 
+  const handleAuthorNameChange = useCallback((name: string) => {
+    setCommentAuthor(storeCommentAuthorName(name));
+  }, []);
+
+  const handleContentWidthChange = useCallback((value: ContentWidth) => {
+    setContentWidth(value);
+    storeContentWidth(value);
+  }, []);
+
+  const ensureCommentAuthor = useCallback(() => {
+    const current = commentAuthorRef.current;
+    if (current.name.trim()) {
+      return current;
+    }
+    if (typeof window === "undefined") {
+      return null;
+    }
+    const name = window.prompt("Display name for comments");
+    if (!name?.trim()) {
+      return null;
+    }
+    const next = storeCommentAuthorName(name);
+    setCommentAuthor(next);
+    return next;
+  }, []);
+
+  const handleAddComment = useCallback(() => {
+    if (!editorRef.current) {
+      return false;
+    }
+    const author = ensureCommentAuthor();
+    if (!author) {
+      return false;
+    }
+    const threadId = createThreadId();
+    const inserted = insertCommentAnchor(editorRef.current, {
+      threadId,
+      author,
+      now: new Date().toISOString(),
+    });
+    if (inserted) {
+      setSelectedCommentId(threadId);
+      setCommentsOpen(true);
+    }
+    return inserted;
+  }, [ensureCommentAuthor]);
+
+  const handleAddCommentReply = useCallback((threadId: string, body: string) => {
+    if (!editorRef.current) {
+      return;
+    }
+    const author = ensureCommentAuthor();
+    if (!author) {
+      return;
+    }
+    addCommentReply(editorRef.current, {
+      threadId,
+      author,
+      body,
+      now: new Date().toISOString(),
+    });
+  }, [ensureCommentAuthor]);
+
+  const handleResolveCommentThread = useCallback((threadId: string, resolved: boolean) => {
+    if (!editorRef.current) {
+      return;
+    }
+    resolveCommentThread(editorRef.current, { threadId, resolved });
+  }, []);
+
+  const handleSelectCommentThread = useCallback((threadId: string) => {
+    const view = editorRef.current;
+    setSelectedCommentId(threadId);
+    setCommentsOpen(true);
+    if (!view) {
+      return;
+    }
+    const parsed = parseComments(view.state.doc.toString());
+    const anchor = parsed.anchors.find((candidate) => candidate.id === threadId);
+    if (!anchor) {
+      return;
+    }
+    view.dispatch({
+      selection: { anchor: anchor.from, head: anchor.to },
+      scrollIntoView: true,
+    });
+    view.focus();
+  }, []);
+
+  const commentsContribution = useMemo<EditorContribution>(
+    () => createCommentsContribution({
+      onAddComment: handleAddComment,
+      onOpenComments: () => setCommentsOpen(true),
+      onSelectComment: handleSelectCommentThread,
+    }),
+    [handleAddComment, handleSelectCommentThread],
+  );
+
+  const editorContributions = useMemo(() => [commentsContribution], [commentsContribution]);
+  const toolbarItems = useMemo(
+    () => [...markdownToolbarItems, ...editorContributions.flatMap((contribution) => contribution.toolbarItems ?? [])],
+    [editorContributions],
+  );
+  const toolbarContext = useMemo<ToolbarContext>(
+    () => ({
+      activeFormat,
+      hasSelection: hasEditorSelection,
+      readOnly: Boolean(commentsParse.readOnlyReason),
+    }),
+    [activeFormat, hasEditorSelection, commentsParse.readOnlyReason],
+  );
+
   const replaceFile = useCallback((next: LocalFile) => {
     setFile({ name: next.name, handle: next.handle, savedContents: next.contents });
     setMarkdown(next.contents);
     setSaveStatus("idle");
     setSaveError(null);
+    setSelectedCommentId(null);
+    setCommentsOpen(false);
     setFileVersion((value) => value + 1);
   }, []);
 
@@ -845,6 +962,26 @@ export function App() {
             </button>
           )}
           <button
+            className={commentsOpen ? "iconButton isActive" : "iconButton"}
+            type="button"
+            title="Comments"
+            aria-label="Comments"
+            aria-pressed={commentsOpen}
+            onClick={() => setCommentsOpen((value) => !value)}
+          >
+            <MessageSquare size={16} />
+          </button>
+          <button
+            className={settingsOpen ? "iconButton isActive" : "iconButton"}
+            type="button"
+            title="Settings"
+            aria-label="Settings"
+            aria-pressed={settingsOpen}
+            onClick={() => setSettingsOpen((value) => !value)}
+          >
+            <Settings size={16} />
+          </button>
+          <button
             className="iconButton themeToggle"
             type="button"
             title={describeTheme(themePref, resolvedTheme).hint}
@@ -891,78 +1028,7 @@ export function App() {
           <div className="toolbarSide toolbarSideLeft" aria-hidden="true" />
 
           <div className="toolbarCenter">
-            <label className={activeFormat.heading ? "headingMenu isActive" : "headingMenu"}>
-              <span className="srOnly">Heading level</span>
-              <select
-                value={activeFormat.heading ? String(activeFormat.heading) : ""}
-                onChange={(event) => {
-                  const level = Number(event.currentTarget.value);
-                  if (level >= 1 && level <= 6) {
-                    withEditor((view) => setHeading(view, level as 1 | 2 | 3 | 4 | 5 | 6));
-                  }
-                }}
-              >
-                <option value="" disabled>
-                  Heading
-                </option>
-                <option value="1">Heading 1</option>
-                <option value="2">Heading 2</option>
-                <option value="3">Heading 3</option>
-                <option value="4">Heading 4</option>
-                <option value="5">Heading 5</option>
-                <option value="6">Heading 6</option>
-              </select>
-            </label>
-            <span className="toolbarDivider" />
-            <button className={activeFormat.heading === 1 ? "isActive" : undefined} aria-pressed={activeFormat.heading === 1} title="Heading 1" type="button" onClick={() => withEditor((view) => setHeading(view, 1))}>
-              <Heading1 size={14} />
-            </button>
-            <button className={activeFormat.heading === 2 ? "isActive" : undefined} aria-pressed={activeFormat.heading === 2} title="Heading 2" type="button" onClick={() => withEditor((view) => setHeading(view, 2))}>
-              <Heading2 size={14} />
-            </button>
-            <button className={activeFormat.heading === 3 ? "isActive" : undefined} aria-pressed={activeFormat.heading === 3} title="Heading 3" type="button" onClick={() => withEditor((view) => setHeading(view, 3))}>
-              <Heading3 size={14} />
-            </button>
-            <button className={activeFormat.bold ? "isActive" : undefined} aria-pressed={activeFormat.bold} title="Bold" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "**", after: "**", placeholder: "bold" }))}>
-              <Bold size={14} />
-            </button>
-            <button className={activeFormat.italic ? "isActive" : undefined} aria-pressed={activeFormat.italic} title="Italic" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "*", after: "*", placeholder: "italic" }))}>
-              <Italic size={14} />
-            </button>
-            <button className={activeFormat.underline ? "isActive" : undefined} aria-pressed={activeFormat.underline} title="Underline" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "<u>", after: "</u>", placeholder: "underline" }))}>
-              <Underline size={14} />
-            </button>
-            <button className={activeFormat.strike ? "isActive" : undefined} aria-pressed={activeFormat.strike} title="Strikethrough" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "~~", after: "~~", placeholder: "strike" }))}>
-              <Strikethrough size={14} />
-            </button>
-            <button className={activeFormat.inlineCode ? "isActive" : undefined} aria-pressed={activeFormat.inlineCode} title="Inline code" type="button" onClick={() => withEditor((view) => wrapSelection(view, { before: "`", after: "`", placeholder: "code" }))}>
-              <Code size={14} />
-            </button>
-            <button className={activeFormat.codeBlock ? "isActive" : undefined} aria-pressed={activeFormat.codeBlock} title="Code block" type="button" onClick={() => withEditor((view) => insertBlock(view, "```js\ncode\n```\n"))}>
-              <Code2 size={14} />
-            </button>
-            <button className={activeFormat.link ? "isActive" : undefined} aria-pressed={activeFormat.link} title="Link" type="button" onClick={() => withEditor(insertLink)}>
-              <Link size={14} />
-            </button>
-            <span className="toolbarDivider" />
-            <button className={activeFormat.unorderedList ? "isActive" : undefined} aria-pressed={activeFormat.unorderedList} title="Bulleted list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "- "))}>
-              <List size={14} />
-            </button>
-            <button className={activeFormat.orderedList ? "isActive" : undefined} aria-pressed={activeFormat.orderedList} title="Numbered list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "1. "))}>
-              <ListOrdered size={14} />
-            </button>
-            <button className={activeFormat.taskList ? "isActive" : undefined} aria-pressed={activeFormat.taskList} title="Task list" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "- [ ] "))}>
-              <ListChecks size={14} />
-            </button>
-            <button className={activeFormat.quote ? "isActive" : undefined} aria-pressed={activeFormat.quote} title="Blockquote" type="button" onClick={() => withEditor((view) => toggleLinePrefix(view, "> "))}>
-              <Quote size={14} />
-            </button>
-            <button className={activeFormat.rule ? "isActive" : undefined} aria-pressed={activeFormat.rule} title="Horizontal rule" type="button" onClick={() => withEditor((view) => insertBlock(view, "---\n"))}>
-              <Minus size={14} />
-            </button>
-            <button className={activeFormat.table ? "isActive" : undefined} aria-pressed={activeFormat.table} title="Table" type="button" onClick={() => withEditor((view) => insertBlock(view, "| Header 1 | Header 2 |\n| -------- | -------- |\n| Cell     | Cell     |\n"))}>
-              <TableIcon size={14} />
-            </button>
+            {toolbarItems.map((item) => renderToolbarItem(item, toolbarContext, withEditor))}
           </div>
 
           <div className="toolbarSide toolbarSideRight">
@@ -971,9 +1037,43 @@ export function App() {
         </nav>
       )}
 
-      <section className="editorShell" aria-label="Markdown editor">
-        <MarkdownEditor key={fileVersion} value={file.savedContents} zen={zen} raw={raw} onChange={setMarkdown} onFormatChange={setActiveFormat} onReady={handleReady} />
+      <section className={commentsOpen ? "workspace workspaceWithComments" : "workspace"} aria-label="Editor workspace">
+        <section className="editorShell" aria-label="Markdown editor">
+          <MarkdownEditor
+            key={fileVersion}
+            value={file.savedContents}
+            zen={zen}
+            raw={raw}
+            contentWidth={contentWidth}
+            onChange={setMarkdown}
+            onFormatChange={setActiveFormat}
+            onSelectionChange={setHasEditorSelection}
+            onReady={handleReady}
+            contributions={editorContributions}
+          />
+        </section>
+        {commentsOpen && (
+          <CommentsSidebar
+            parseResult={commentsParse}
+            selectedThreadId={selectedCommentId}
+            raw={raw}
+            onSelectThread={handleSelectCommentThread}
+            onClose={() => setCommentsOpen(false)}
+            onAddReply={handleAddCommentReply}
+            onResolveThread={handleResolveCommentThread}
+          />
+        )}
       </section>
+
+      {settingsOpen && (
+        <SettingsPanel
+          commentAuthor={commentAuthor}
+          contentWidth={contentWidth}
+          onCommentAuthorNameChange={handleAuthorNameChange}
+          onContentWidthChange={handleContentWidthChange}
+          onClose={() => setSettingsOpen(false)}
+        />
+      )}
 
       {zen ? (
         <div className="zenIndicator" aria-hidden="true">
@@ -1019,6 +1119,119 @@ function describeStatus({
     return { label: "Unsaved", tone: "unsaved" };
   }
   return { label: "Saved", tone: "saved" };
+}
+
+function renderToolbarItem(
+  item: ToolbarItem,
+  context: ToolbarContext,
+  withEditor: (command: (view: EditorView) => void) => void,
+) {
+  if (item.type === "divider") {
+    return <span className="toolbarDivider" key={item.id} />;
+  }
+
+  if (item.type === "select") {
+    const active = Boolean(context.activeFormat.heading);
+    return (
+      <label className={active ? "headingMenu isActive" : "headingMenu"} key={item.id}>
+        <span className="srOnly">{item.label}</span>
+        <select
+          aria-label={item.label}
+          value={item.value(context)}
+          onChange={(event) => {
+            const value = event.currentTarget.value;
+            withEditor((view) => {
+              item.command(view, value);
+            });
+          }}
+        >
+          {item.options.map((option) => (
+            <option value={option.value} disabled={option.disabled} key={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+    );
+  }
+
+  const Icon = item.icon;
+  const active = item.isActive?.(context) ?? false;
+  const disabled = item.isDisabled?.(context) ?? false;
+  return (
+    <button
+      className={active ? "isActive" : undefined}
+      aria-pressed={active}
+      title={item.label}
+      aria-label={item.label}
+      type="button"
+      disabled={disabled}
+      key={item.id}
+      onClick={() => withEditor((view) => {
+        item.command(view);
+      })}
+    >
+      <Icon size={14} />
+    </button>
+  );
+}
+
+function SettingsPanel({
+  commentAuthor,
+  contentWidth,
+  onCommentAuthorNameChange,
+  onContentWidthChange,
+  onClose,
+}: {
+  commentAuthor: CommentAuthor;
+  contentWidth: ContentWidth;
+  onCommentAuthorNameChange: (name: string) => void;
+  onContentWidthChange: (value: ContentWidth) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div className="settingsOverlay">
+      <section className="settingsPanel" role="dialog" aria-modal="true" aria-label="Settings">
+        <div className="settingsHeader">
+          <div>
+            <h2>Settings</h2>
+            <p>Editor preferences</p>
+          </div>
+          <button className="iconButton" type="button" title="Close settings" aria-label="Close settings" onClick={onClose}>
+            <PanelTopClose size={16} />
+          </button>
+        </div>
+
+        <div className="settingsSection">
+          <h3>Editor</h3>
+          <label className="settingsField">
+            <span>Content width</span>
+            <select
+              aria-label="Content width"
+              value={contentWidth}
+              onChange={(event) => onContentWidthChange(event.currentTarget.value as ContentWidth)}
+            >
+              <option value="focused">Focused</option>
+              <option value="wide">Wide</option>
+              <option value="full">Full width</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="settingsSection">
+          <h3>Comments</h3>
+          <label className="commentAuthorField">
+            <span>Display name</span>
+            <input
+              value={commentAuthor.name}
+              onChange={(event) => onCommentAuthorNameChange(event.currentTarget.value)}
+              placeholder="Your name"
+            />
+          </label>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function wordCount(markdown: string) {

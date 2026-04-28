@@ -89,14 +89,14 @@ Local-only users should not need an account.
 
 ## Comments And Annotations
 
-Comments likely make the most sense in cloud collaboration, but local support should remain possible.
+Comments are the next active milestone after the local MVP.
 
 Preferred direction:
 
-- Store comment thread data outside the Markdown body.
-- Use sidecar files for local comments.
-- Use database records for cloud comments.
-- Optionally insert hidden HTML comment anchors into `.md` files for robust anchoring.
+- Keep `.md` as the portable unit: local comments are embedded in the same Markdown file as metadata, not stored in a required sidecar.
+- Anchor each thread with paired hidden HTML comment range markers.
+- Store thread bodies, authors, timestamps, and resolved state in one trailing `markdown-comments-v1` HTML comment metadata block.
+- Keep cloud audit/history server-side later, while saving materialized state back into the `.md` file.
 
 The Markdown document should remain readable in other editors and renderers.
 

@@ -222,13 +222,10 @@ function buildDecorations(view: EditorView): DecorationSet {
       }
 
       if (commentRanges.length > 0) {
-        const first = commentRanges[0];
-        const last = commentRanges[commentRanges.length - 1];
         // "Full" means the comment range(s) cover the entire visible line.
         // For the multi-line interior case, an empty line still counts so the
         // empty line is treated as fully-comment (no markdown processing).
-        const fullyComment =
-          first.from === 0 && (last.to >= text.length || text.length === 0);
+        const fullyComment = commentRangesCoverLine(commentRanges, text.length);
 
         if (fullyComment) {
           // Fully-comment lines collapse via the `htmlCommentBlockState`
@@ -1269,10 +1266,7 @@ function buildHtmlCommentBlockDecorations(state: EditorState): DecorationSet {
       continue;
     }
 
-    const first = ranges[0];
-    const last = ranges[ranges.length - 1];
-    const fullyComment =
-      first.from === 0 && (last.to >= text.length || text.length === 0);
+    const fullyComment = commentRangesCoverLine(ranges, text.length);
     if (!fullyComment) {
       continue;
     }
@@ -1288,6 +1282,27 @@ function buildHtmlCommentBlockDecorations(state: EditorState): DecorationSet {
   }
 
   return Decoration.set(decorations, true);
+}
+
+function commentRangesCoverLine(ranges: Array<{ from: number; to: number }>, textLength: number) {
+  if (ranges.length === 0) {
+    return false;
+  }
+  if (textLength === 0) {
+    return ranges.some((range) => range.from === 0 && range.to === 0);
+  }
+
+  let coveredTo = 0;
+  for (const range of ranges) {
+    if (range.from > coveredTo) {
+      return false;
+    }
+    coveredTo = Math.max(coveredTo, range.to);
+    if (coveredTo >= textLength) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export const htmlCommentBlockState = StateField.define<DecorationSet>({

@@ -197,6 +197,8 @@ button {
 }
 
 .fileActions {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 2px;
@@ -219,6 +221,11 @@ button {
 .iconButton:hover:not(:disabled) {
   background: var(--bg-surface-hover);
   color: var(--fg-icon-strong);
+}
+
+.iconButton.isActive {
+  background: var(--accent-bg);
+  color: var(--accent-fg);
 }
 
 .iconButton:disabled {
@@ -312,6 +319,16 @@ button {
 .toolbar button:hover {
   background: var(--bg-surface-hover);
   color: var(--fg-icon-strong);
+}
+
+.toolbar button:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.toolbar button:disabled:hover {
+  background: transparent;
+  color: var(--fg-icon);
 }
 
 .toolbar button.isActive {
@@ -408,6 +425,17 @@ button {
   background: var(--rule);
 }
 
+.workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  min-height: 0;
+  overflow: hidden;
+}
+
+.workspaceWithComments {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+}
+
 .editorShell {
   min-height: 0;
   overflow: hidden;
@@ -416,6 +444,329 @@ button {
 
 .appZen .editorShell {
   padding: 68px 0 96px;
+}
+
+.commentsSidebar {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--rule);
+  background: var(--bg-chrome);
+  flex-direction: column;
+}
+
+.commentsSidebarHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 16px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.commentsSidebarHeader h2 {
+  margin: 0;
+  color: var(--fg-strong);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.commentsSidebarHeader p {
+  margin: 4px 0 0;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+.commentsNotice {
+  margin: 12px 12px 0;
+  padding: 9px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 7px;
+  background: var(--bg-surface);
+  color: var(--fg-muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.commentsNoticeError {
+  border-color: var(--tone-error-fg);
+  color: var(--tone-error-fg);
+}
+
+.commentAuthorField {
+  display: grid;
+  gap: 6px;
+  padding: 12px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.commentAuthorField input,
+.settingsField select,
+.commentThread textarea {
+  width: 100%;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg-surface);
+  color: var(--fg-body);
+  font: inherit;
+  outline: none;
+}
+
+.commentAuthorField input {
+  height: 30px;
+  padding: 0 9px;
+  font-size: 12px;
+}
+
+.settingsField {
+  display: grid;
+  gap: 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.settingsField select {
+  height: 32px;
+  padding: 0 9px;
+  color: var(--fg-body);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.settingsOverlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: color-mix(in srgb, var(--bg-app) 72%, transparent);
+}
+
+.settingsPanel {
+  width: min(520px, 100%);
+  max-height: min(620px, calc(100vh - 48px));
+  overflow: auto;
+  border: 1px solid var(--rule);
+  border-radius: 10px;
+  background: var(--bg-surface);
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.16);
+}
+
+.settingsHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 14px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.settingsHeader h2,
+.settingsSection h3 {
+  margin: 0;
+  color: var(--fg-strong);
+}
+
+.settingsHeader h2 {
+  font-size: 16px;
+  line-height: 1.2;
+}
+
+.settingsHeader p {
+  margin: 4px 0 0;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+
+.settingsSection {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+}
+
+.settingsSection h3 {
+  font-size: 13px;
+}
+
+.settingsSection .commentAuthorField {
+  padding: 0;
+}
+
+.editorMount {
+  --editor-content-max-width: 700px;
+  --editor-content-padding: 32px;
+}
+
+.editorWidthWide {
+  --editor-content-max-width: 980px;
+}
+
+.editorWidthFull {
+  --editor-content-max-width: none;
+  --editor-content-padding: 24px;
+}
+
+.commentThreadList {
+  display: grid;
+  align-content: start;
+  flex: 1 1 auto;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 12px 16px;
+}
+
+.commentsEmpty {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 4px;
+  color: var(--fg-faint);
+  font-size: 12px;
+}
+
+.commentThread {
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.commentThread.isSelected {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.commentThread.isResolved {
+  opacity: 0.72;
+}
+
+.commentThread.isResolved.isSelected {
+  opacity: 1;
+}
+
+.commentThreadHeader {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: var(--fg-strong);
+  cursor: pointer;
+  font: inherit;
+  padding: 10px;
+  text-align: left;
+}
+
+.commentThreadTitle {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.commentBadge {
+  flex: none;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent-fg);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 6px;
+}
+
+.commentThreadBody {
+  display: grid;
+  gap: 10px;
+  padding: 0 10px 10px;
+}
+
+.commentThreadSummary {
+  overflow: hidden;
+  margin: -2px 10px 10px;
+  color: var(--fg-muted);
+  display: -webkit-box;
+  font-size: 12px;
+  line-height: 1.4;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.commentReplies {
+  display: grid;
+  gap: 10px;
+}
+
+.commentReply {
+  display: grid;
+  gap: 4px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.commentReply:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.commentReply div {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.commentReply p,
+.commentDraftHint {
+  margin: 0;
+  color: var(--fg-body);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.commentDraftHint {
+  color: var(--fg-faint);
+}
+
+.commentThread textarea {
+  min-height: 68px;
+  resize: none;
+  padding: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.commentThreadActions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.commentActionButton {
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--accent);
+  color: var(--accent-check);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 10px;
+}
+
+.commentActionButton:disabled,
+.commentThreadActions .iconButton:disabled {
+  cursor: default;
+  opacity: 0.45;
 }
 
 .editorMount {
@@ -776,6 +1127,56 @@ button {
   font-style: italic;
 }
 
+.cm-editor .cm-commentRange {
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  box-shadow: inset 0 -2px 0 var(--accent-underline);
+}
+
+.cm-editor .cm-commentRangeResolved {
+  background: transparent;
+  color: color-mix(in srgb, var(--fg-body) 78%, var(--fg-faint));
+  box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--fg-faint) 72%, transparent);
+  text-decoration: underline dotted color-mix(in srgb, var(--fg-faint) 70%, transparent);
+  text-underline-offset: 4px;
+}
+
+.cm-editor .cm-commentRangeOrphaned {
+  background: color-mix(in srgb, var(--tone-unsaved-dot) 18%, transparent);
+  box-shadow: inset 0 -2px 0 var(--tone-unsaved-dot);
+}
+
+.cm-editor .cm-commentGutter {
+  width: 22px;
+  background: transparent;
+}
+
+.cm-editor .cm-commentMarker {
+  display: block;
+  width: 7px;
+  height: 7px;
+  margin: 11px auto 0;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+.cm-editor .cm-commentMarkerResolved {
+  border: 1px solid var(--fg-faint);
+  background: transparent;
+  box-shadow: none;
+}
+
+.appZen .cm-editor .cm-commentGutter,
+.appZen .cm-editor .cm-commentMarker {
+  display: none;
+}
+
+.appZen .workspaceWithComments .cm-editor .cm-commentGutter,
+.appZen .workspaceWithComments .cm-editor .cm-commentMarker {
+  display: block;
+}
+
 .cm-editor .cm-md-code-function {
   color: var(--syntax-function);
 }
@@ -811,12 +1212,28 @@ button {
 }
 
 .topbarRight {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 4px;
 }
 
 @media (max-width: 860px) {
+  .workspaceWithComments {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .commentsSidebar {
+    position: absolute;
+    right: 0;
+    bottom: 32px;
+    top: 87px;
+    z-index: 18;
+    width: min(340px, 88vw);
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.08);
+  }
+
   .toolbar {
     grid-template-columns: auto minmax(0, 1fr) auto;
     padding: 8px 12px;
@@ -846,6 +1263,11 @@ button {
   .toolbar {
     grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
+  }
+
+  .commentsSidebar {
+    top: 87px;
+    bottom: 32px;
   }
 
   .toolbarCenter {

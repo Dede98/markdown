@@ -5,7 +5,9 @@ import { GFM } from "@lezer/markdown";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
 import { useEffect, useRef } from "react";
+import type { ContentWidth } from "./contentWidth";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
+import type { EditorContribution } from "./editorContributions";
 import { autoPairExtension, linkPasteExtension } from "./editorInputs";
 import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
 import { insertLink, wrapSelection } from "./markdownCommands";
@@ -15,9 +17,12 @@ type MarkdownEditorProps = {
   value: string;
   zen: boolean;
   raw: boolean;
+  contentWidth: ContentWidth;
   onChange: (value: string) => void;
   onFormatChange: (format: ActiveFormat) => void;
+  onSelectionChange?: (hasSelection: boolean) => void;
   onReady: (view: EditorView) => void;
+  contributions?: EditorContribution[];
 };
 
 // The three preview-pipeline extensions live behind a `Compartment` so the
@@ -25,12 +30,14 @@ type MarkdownEditorProps = {
 // `EditorView`. A view rebuild would re-seed the doc from `initialValueRef`
 // and discard the user's unsaved edits — losing live work on every toggle.
 const previewExtensions: Extension[] = [markdownPreview, tableBlockState, htmlCommentBlockState];
+const emptyContributions: EditorContribution[] = [];
 
-export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onReady }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onFormatChange, onSelectionChange, onReady, contributions = emptyContributions }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onFormatChangeRef = useRef(onFormatChange);
+  const onSelectionChangeRef = useRef(onSelectionChange);
   const initialValueRef = useRef(value);
   // Lazy-init the Compartment so we don't allocate a fresh one on every
   // render. `useRef(new Compartment())` would call the constructor each render
@@ -43,6 +50,7 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
 
   onChangeRef.current = onChange;
   onFormatChangeRef.current = onFormatChange;
+  onSelectionChangeRef.current = onSelectionChange;
   rawRef.current = raw;
 
   useEffect(() => {
@@ -53,6 +61,9 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
     // Non-null: the lazy-init at the top of the component runs before any
     // effect, so `.current` is always populated by the time we reach here.
     const previewCompartment = previewCompartmentRef.current!;
+
+    const contributionExtensions = contributions.flatMap((contribution) => contribution.extensions ?? []);
+    const contributionKeymap = contributions.flatMap((contribution) => contribution.keymap ?? []);
 
     const extensions: Extension[] = [
       history(),
@@ -71,6 +82,7 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
       // toggles raw mode. Lezer parsing stays on either way so syntax
       // highlighting and the toolbar `activeFormat` continue to work in raw.
       previewCompartment.of(rawRef.current ? [] : previewExtensions),
+      ...contributionExtensions,
       syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
       Prec.highest(
         keymap.of([
@@ -81,6 +93,7 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
           { key: "Tab", run: insertTab, preventDefault: true },
           { key: "Shift-Tab", run: indentLess, preventDefault: true },
           ...buildFormattingKeymap(),
+          ...contributionKeymap,
         ]),
       ),
       autoPairExtension,
@@ -122,6 +135,7 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
         }
         if (update.docChanged || update.selectionSet) {
           onFormatChangeRef.current(getActiveFormat(update.state));
+          onSelectionChangeRef.current?.(!update.state.selection.main.empty);
         }
       }),
       // Theme values are CSS custom properties so the editor switches with
@@ -143,10 +157,10 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
           padding: "0",
         },
         ".cm-content": {
-          maxWidth: "700px",
+          maxWidth: "var(--editor-content-max-width, 700px)",
           width: "100%",
           margin: "0 auto",
-          padding: "0 32px",
+          padding: "0 var(--editor-content-padding, 32px)",
           caretColor: "var(--accent)",
         },
         ".cm-line": {
@@ -185,6 +199,7 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
     viewRef.current = view;
     onReady(view);
     onFormatChangeRef.current(getActiveFormat(view.state));
+    onSelectionChangeRef.current?.(!view.state.selection.main.empty);
     if (shouldExposeTestEditor()) {
       getWindowWithEditor().__markdownEditorView = view;
     }
@@ -196,7 +211,7 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
       view.destroy();
       viewRef.current = null;
     };
-  }, [onReady]);
+  }, [onReady, contributions]);
 
   // Reconfigure the preview compartment when raw mode toggles. Dispatching a
   // reconfigure keeps the doc, selection, and history intact — only the
@@ -214,7 +229,18 @@ export function MarkdownEditor({ value, zen, raw, onChange, onFormatChange, onRe
   const classes = ["editorMount"];
   if (zen) classes.push("editorMountZen");
   if (raw) classes.push("editorMountRaw");
+  classes.push(`editorWidth${toClassSuffix(contentWidth)}`);
   return <div className={classes.join(" ")} ref={containerRef} />;
+}
+
+function toClassSuffix(value: ContentWidth) {
+  if (value === "wide") {
+    return "Wide";
+  }
+  if (value === "full") {
+    return "Full";
+  }
+  return "Focused";
 }
 
 function getWindowWithEditor() {
