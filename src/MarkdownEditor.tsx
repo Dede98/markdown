@@ -11,7 +11,7 @@ import type { EditorContribution } from "./editorContributions";
 import { autoPairExtension, linkPasteExtension } from "./editorInputs";
 import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
 import { insertLink, wrapSelection } from "./markdownCommands";
-import { htmlCommentBlockState, markdownPreview, tableBlockState } from "./markdownPreview";
+import { htmlCommentBlockState, markdownPreview, mermaidBlockState, tableBlockState } from "./markdownPreview";
 
 type MarkdownEditorProps = {
   value: string;
@@ -25,11 +25,11 @@ type MarkdownEditorProps = {
   contributions?: EditorContribution[];
 };
 
-// The three preview-pipeline extensions live behind a `Compartment` so the
+// The preview-pipeline extensions live behind a `Compartment` so the
 // `raw` toggle can swap them in/out via `dispatch` without rebuilding the
 // `EditorView`. A view rebuild would re-seed the doc from `initialValueRef`
 // and discard the user's unsaved edits — losing live work on every toggle.
-const previewExtensions: Extension[] = [markdownPreview, tableBlockState, htmlCommentBlockState];
+const previewExtensions: Extension[] = [markdownPreview, mermaidBlockState, tableBlockState, htmlCommentBlockState];
 const emptyContributions: EditorContribution[] = [];
 
 export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onFormatChange, onSelectionChange, onReady, contributions = emptyContributions }: MarkdownEditorProps) {

@@ -41,6 +41,7 @@
     "@tauri-apps/plugin-updater": "^2.10.1",
     "codemirror": "^6.0.2",
     "lucide-react": "^0.468.0",
+    "mermaid": "^11.14.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "ulid": "^3.0.2"

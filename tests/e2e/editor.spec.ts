@@ -452,10 +452,10 @@ test.describe("editor core", () => {
 
     const firstCell = page.locator(".cm-md-table tbody tr").first().locator("td").first();
     await firstCell.click();
-    // Click swaps the cell into edit mode (an <input> takes its place) and
+    // Click swaps the cell into edit mode (a <textarea> takes its place) and
     // selects the existing value, so typing replaces it. End-key first
     // collapses selection to the right so `keyboard.type` appends.
-    const input = firstCell.locator("input.cm-md-table-cell-input");
+    const input = firstCell.locator("textarea.cm-md-table-cell-input");
     await expect(input).toBeFocused();
     await page.keyboard.press("End");
     await page.keyboard.type("X");
@@ -484,7 +484,48 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-md-table tbody")).not.toContainText("<u>");
   });
 
-  test("clicking a cell mounts a text input prefilled with the raw markdown", async ({ page }, testInfo) => {
+  test("rendered tables keep short columns readable instead of squeezing words", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "lead\n\n| Tabelle | Zweck | Wichtigste Felder | KPI-Relevanz |\n| --- | --- | --- | --- |\n| `user` | Alle registrierten Personen | `id`, `email`, `createdAt`, `activeOrganizationId`, `onboardingCompletedAt` | Sign-up-Volumen, Onboarding-Funnel, Aktive Nutzerbasis |\n| `session` | Aktive Browser-/iOS-Sessions | `userId`, `createdAt`, `expiresAt`, `ipAddress`, `userAgent` | DAU/WAU/MAU, Geräte-Mix, Session-Dauer |\n\ntail",
+    );
+    await setCursorInsideText(page, "lead");
+
+    const tableLayout = await page.locator(".cm-md-table-wrapper").evaluate((wrapper) => {
+      const table = wrapper.querySelector<HTMLTableElement>(".cm-md-table");
+      if (!table) {
+        throw new Error("Rendered table is missing");
+      }
+      return {
+        tableWidth: table.getBoundingClientRect().width,
+        wrapperWidth: wrapper.getBoundingClientRect().width,
+        columnWidths: Array.from(table.querySelectorAll("thead th"), (cell) => cell.getBoundingClientRect().width),
+      };
+    });
+    if (tableLayout.wrapperWidth > 700) {
+      expect(tableLayout.tableWidth).toBeLessThanOrEqual(tableLayout.wrapperWidth + 1);
+    }
+    await expect(page.locator(".cm-md-table-wrapper")).not.toHaveCSS("overflow-x", "auto");
+    const [firstColumnWidth, secondColumnWidth, thirdColumnWidth, fourthColumnWidth] = tableLayout.columnWidths;
+    expect(firstColumnWidth).toBeLessThan(secondColumnWidth);
+    expect(firstColumnWidth).toBeLessThan(thirdColumnWidth);
+    expect(firstColumnWidth).toBeLessThan(fourthColumnWidth);
+    const maxColumnWidth = Math.max(...tableLayout.columnWidths);
+    const minColumnWidth = Math.min(...tableLayout.columnWidths);
+    expect(maxColumnWidth / minColumnWidth).toBeLessThan(2.5);
+
+    const firstCodeBox = page.locator(".cm-md-table tbody td").first().locator("code");
+    const codeBox = await firstCodeBox.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    });
+    if (tableLayout.wrapperWidth > 500) {
+      expect(codeBox.width).toBeGreaterThan(codeBox.height * 1.6);
+    }
+  });
+
+  test("clicking a cell mounts a wrapping text editor prefilled with the raw markdown", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
     await setEditorText(
@@ -496,14 +537,59 @@ test.describe("editor core", () => {
     await expect(headerCell.locator("strong")).toHaveText("bold");
 
     await headerCell.click();
-    const input = headerCell.locator("input.cm-md-table-cell-input");
+    const input = headerCell.locator("textarea.cm-md-table-cell-input");
     await expect(input).toBeFocused();
     await expect(input).toHaveValue("**bold**");
     // Rendered HTML is cleared while in edit mode.
     await expect(headerCell.locator("strong")).toHaveCount(0);
   });
 
-  test("blurring the cell input restores the rendered HTML view", async ({ page }, testInfo) => {
+  test("long table cell text edits in a wrapping textarea", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "lead\n\n| A | B |\n| --- | --- |\n| short | this is a very long table cell value that should wrap while the user edits it instead of forcing a single horizontal input line |\n\ntail",
+    );
+
+    const longCell = page.locator(".cm-md-table tbody td").nth(1);
+    await longCell.click();
+    const input = longCell.locator("textarea.cm-md-table-cell-input");
+    await expect(input).toBeFocused();
+    const editorBox = await input.evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      const style = getComputedStyle(node);
+      return {
+        height: rect.height,
+        lineHeight: Number.parseFloat(style.lineHeight),
+        whiteSpace: style.whiteSpace,
+      };
+    });
+    expect(editorBox.whiteSpace).toBe("pre-wrap");
+    expect(editorBox.height).toBeGreaterThan(editorBox.lineHeight * 1.8);
+  });
+
+  test("short table cell editor uses the visible row height", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "lead\n\n| Table | KPI |\n| --- | --- |\n| `knowledge.knowledge_document` | Document-Adoption (Uploads pro Org/Monat), Storage-Volumen (sum fileSize pro Org -> Plan-Limit-Indikator), Kategorie-Mix, Soft-Delete-Rate (isActive=false), Aktive Wissensbasis (Anzahl docs pro Org als Engagement-Proxy) |\n\ntail",
+    );
+    await setCursorInsideText(page, "lead");
+
+    const shortCell = page.locator(".cm-md-table tbody td").first();
+    const rowHeight = await page.locator(".cm-md-table tbody tr").first().evaluate((node) => node.getBoundingClientRect().height);
+    await shortCell.click();
+    const input = shortCell.locator("textarea.cm-md-table-cell-input");
+    await expect(input).toBeFocused();
+    const inputHeight = await input.evaluate((node) => node.getBoundingClientRect().height);
+
+    expect(rowHeight).toBeGreaterThan(140);
+    expect(inputHeight).toBeGreaterThan(rowHeight * 0.9);
+  });
+
+  test("blurring the cell textarea restores the rendered HTML view", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
     await setEditorText(
@@ -513,9 +599,9 @@ test.describe("editor core", () => {
 
     const headerCell = page.locator(".cm-md-table thead th").first();
     await headerCell.click();
-    await expect(headerCell.locator("input")).toBeFocused();
+    await expect(headerCell.locator("textarea")).toBeFocused();
     await page.keyboard.press("Escape");
-    await expect(headerCell.locator("input")).toHaveCount(0);
+    await expect(headerCell.locator("textarea")).toHaveCount(0);
     await expect(headerCell.locator("strong")).toHaveText("bold");
   });
 
@@ -639,6 +725,60 @@ test.describe("editor core", () => {
     const ruleWidth = await page.locator(".cm-md-rule-widget").evaluate((node) => node.getBoundingClientRect().width);
     const ruleLineWidth = await page.locator(".cm-md-rule-widget").evaluate((node) => node.parentElement?.getBoundingClientRect().width ?? 0);
     expect(ruleWidth).toBeGreaterThan(ruleLineWidth * 0.95);
+  });
+
+  test("mermaid fenced code renders as a diagram without changing markdown source", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "before\n\n```mermaid\nflowchart LR\n  A[Start] --> B[Done]\n```\n\nafter");
+
+    await expect(page.locator(".cm-md-mermaid")).toBeVisible();
+    await expect(page.locator(".cm-md-mermaid svg")).toBeVisible();
+    await expect(page.locator(".cm-md-mermaid")).toContainText("Start");
+    await expect(page.locator(".cm-content")).not.toContainText("```mermaid");
+    await expectEditorSource(page, "```mermaid\nflowchart LR\n  A[Start] --> B[Done]\n```");
+  });
+
+  test("raw mode shows mermaid fence source instead of the rendered diagram", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "```mermaid\nflowchart TD\n  A --> B\n```\n\nafter");
+
+    await expect(page.locator(".cm-md-mermaid svg")).toBeVisible();
+
+    await page.getByRole("button", { name: "Raw" }).click();
+
+    await expect(page.locator(".cm-md-mermaid")).toHaveCount(0);
+    await expect(page.locator(".cm-content")).toContainText("```mermaid");
+    await expect(page.locator(".cm-content")).toContainText("flowchart TD");
+  });
+
+  test("dark theme renders mermaid diagrams on a GitHub-like dark canvas", async ({ page }) => {
+    await seedTheme(page, "dark");
+    await page.goto("/");
+    await setEditorText(page, "```mermaid\nerDiagram\n  user {\n    string id PK\n    string email UK\n    timestamp createdAt\n    boolean isActive\n    string activeOrganizationId FK\n    timestamp onboardingCompletedAt\n    string position\n    string department\n    string locationCity\n  }\n```\n\nafter");
+
+    await expect(page.locator(".cm-md-mermaid svg")).toBeVisible();
+    await expect.poll(() => page.locator(".cm-md-mermaid").evaluate((node) => getComputedStyle(node).backgroundColor)).toBe("rgb(13, 17, 23)");
+    await expect.poll(() => page.locator(".cm-md-mermaid").evaluate((node) => node.getBoundingClientRect().height)).toBeGreaterThan(400);
+  });
+
+  test("mermaid diagram move mode supports zoom and preserves edit-on-click default", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "```mermaid\nflowchart LR\n  A[Start] --> B[Done]\n```\n\nafter");
+
+    await expect(page.locator(".cm-md-mermaid svg")).toBeVisible();
+    await page.getByRole("button", { name: "Enable diagram pan and zoom" }).click();
+    await expect(page.getByRole("button", { name: "Edit Mermaid source" })).toBeVisible();
+
+    const canvas = page.locator(".cm-md-mermaid-canvas");
+    const before = await canvas.evaluate((node) => getComputedStyle(node).transform);
+    await page.getByRole("button", { name: "Zoom diagram in" }).click();
+    await expect.poll(() => canvas.evaluate((node) => getComputedStyle(node).transform)).not.toBe(before);
+
+    await page.getByRole("button", { name: "Edit Mermaid source" }).click();
+    await page.locator(".cm-md-mermaid-viewport").click();
+
+    await expect(page.locator(".cm-md-mermaid")).toHaveCount(0);
+    await expect(page.locator(".cm-content")).toContainText("```mermaid");
   });
 
   test("top chrome stays pinned while the document scrolls", async ({ page }) => {

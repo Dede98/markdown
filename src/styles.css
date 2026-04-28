@@ -948,9 +948,9 @@ button {
   color: var(--rule);
 }
 
-/* Rendered <table> widget that always replaces a GFM table block. Cells are
- * directly editable via `contenteditable`; the widget reads them on `input`
- * and dispatches a markdown change covering the entire block.
+/* Rendered <table> widget that always replaces a GFM table block. Cells mount
+ * a wrapping textarea while editing; the widget reads it on `input` and
+ * dispatches a markdown change covering the entire block.
  *
  * The wrapper exists to give CM6 a proper `display: block` widget root.
  * Block-level vertical spacing must use PADDING, not margin: CM6's height
@@ -970,6 +970,9 @@ button {
   margin: 0;
   font-family: inherit;
   font-size: 0.95em;
+  min-width: 100%;
+  width: 100%;
+  table-layout: fixed;
 }
 
 .cm-md-table th,
@@ -977,7 +980,9 @@ button {
   border: 1px solid var(--rule);
   padding: 0.32em 0.7em;
   vertical-align: top;
-  min-width: 1.5em;
+  min-width: 0;
+  word-break: normal;
+  overflow-wrap: break-word;
   /* Lock cells to a stable minimum height so the widget's overall geometry
    * doesn't drift as cells gain or lose content. CodeMirror caches per-line
    * heights for the height map, and a wobbly widget height makes click /
@@ -992,13 +997,16 @@ button {
 
 .cm-md-table-cell--editing {
   background: var(--bg-active);
-  /* Tighten padding while the input lives inside so the input-rendered text
+  /* Tighten padding while the textarea lives inside so the edited text
    * lands on the same baseline as the rendered HTML it replaces. */
   padding: 0;
 }
 
 .cm-md-table-cell-input {
+  display: block;
+  box-sizing: border-box;
   width: 100%;
+  min-height: 2.5em;
   margin: 0;
   padding: 0.32em 0.7em;
   border: 0;
@@ -1006,6 +1014,10 @@ button {
   color: inherit;
   font: inherit;
   outline: none;
+  overflow-y: auto;
+  resize: vertical;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
 }
 
 .cm-md-table thead th {
@@ -1019,6 +1031,7 @@ button {
 }
 
 .cm-md-inline-code {
+  display: inline-block;
   border: 1px solid var(--code-border-inline);
   border-radius: 5px;
   background: var(--code-bg-inline);
@@ -1026,6 +1039,13 @@ button {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   font-size: 0.88em;
   padding: 0 0.25em;
+  white-space: nowrap;
+}
+
+.cm-md-table .cm-md-inline-code {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .cm-md-quote {
@@ -1107,6 +1127,134 @@ button {
   font-size: 0.9em;
   line-height: 1.55;
   padding-left: 14px;
+}
+
+.cm-md-mermaid {
+  display: block;
+  box-sizing: border-box;
+  position: relative;
+  width: 100%;
+  margin: 0.9em 0;
+  min-height: 260px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: #fbfbfa;
+}
+
+:root[data-theme="dark"] .cm-md-mermaid {
+  border-color: #30363d;
+  background: #0d1117;
+}
+
+.cm-md-mermaid-controls {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  z-index: 2;
+  display: flex;
+  gap: 4px;
+  padding: 3px;
+  border: 1px solid color-mix(in srgb, var(--rule) 80%, transparent);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--bg-surface) 92%, transparent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  font-family: Inter, system-ui, sans-serif;
+}
+
+:root[data-theme="dark"] .cm-md-mermaid-controls {
+  border-color: #30363d;
+  background: rgba(22, 27, 34, 0.92);
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.34);
+}
+
+.cm-md-mermaid-control {
+  min-width: 28px;
+  height: 26px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg-muted);
+  font: 600 12px/1 Inter, system-ui, sans-serif;
+  cursor: pointer;
+}
+
+.cm-md-mermaid-control:hover:not(:disabled),
+.cm-md-mermaid-control:focus-visible {
+  background: var(--bg-surface-hover);
+  color: var(--fg-strong);
+  outline: none;
+}
+
+:root[data-theme="dark"] .cm-md-mermaid-control:hover:not(:disabled),
+:root[data-theme="dark"] .cm-md-mermaid-control:focus-visible {
+  background: #30363d;
+  color: #f0f6fc;
+}
+
+.cm-md-mermaid-control:disabled {
+  cursor: default;
+  opacity: 0.38;
+}
+
+.cm-md-mermaid-mode {
+  min-width: 48px;
+}
+
+.cm-md-mermaid-zoom-label {
+  min-width: 44px;
+}
+
+.cm-md-mermaid-viewport {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  padding: 48px 18px 18px;
+  cursor: text;
+}
+
+.cm-md-mermaid.isPanMode .cm-md-mermaid-viewport {
+  cursor: grab;
+}
+
+.cm-md-mermaid.isDragging .cm-md-mermaid-viewport {
+  cursor: grabbing;
+}
+
+.cm-md-mermaid-canvas {
+  display: flex;
+  min-width: 100%;
+  min-height: 100%;
+  align-items: center;
+  justify-content: center;
+  transform-origin: 0 0;
+}
+
+:root[data-theme="dark"] .cm-md-mermaid-canvas {
+  color: #c9d1d9;
+}
+
+.cm-md-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+:root[data-theme="dark"] .cm-md-mermaid svg {
+  background: #0d1117 !important;
+}
+
+.cm-md-mermaid-status {
+  color: var(--fg-muted);
+  font-family: Inter, system-ui, sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.cm-md-mermaid-status-error {
+  color: var(--tone-error-fg);
 }
 
 .cm-editor .cm-md-code-keyword {

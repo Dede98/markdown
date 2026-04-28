@@ -27,6 +27,82 @@ type TableBlock = {
 // the JS tokenizer fires only for `js` / `ts` info strings.
 type FencedCodeContext = { role: "opener" | "closer" | "body"; language: string | null };
 
+type MermaidBlock = {
+  from: number;
+  to: number;
+  source: string;
+};
+
+let mermaidInitialized = false;
+let mermaidConfiguredTheme: "light" | "dark" | null = null;
+let mermaidRenderCounter = 0;
+let mermaidModulePromise: Promise<typeof import("mermaid")> | null = null;
+
+function getMermaidModule() {
+  mermaidModulePromise ??= import("mermaid");
+  return mermaidModulePromise;
+}
+
+function ensureMermaidInitialized(mermaid: typeof import("mermaid").default, theme: "light" | "dark") {
+  if (mermaidInitialized && mermaidConfiguredTheme === theme) {
+    return;
+  }
+  mermaid.initialize({
+    startOnLoad: false,
+    securityLevel: "strict",
+    theme: "base",
+    darkMode: theme === "dark",
+    themeVariables: getMermaidThemeVariables(theme),
+  });
+  mermaidInitialized = true;
+  mermaidConfiguredTheme = theme;
+}
+
+function getMermaidThemeVariables(theme: "light" | "dark") {
+  if (theme === "dark") {
+    return {
+      fontFamily: "Inter, system-ui, sans-serif",
+      background: "#0d1117",
+      mainBkg: "#0d1117",
+      primaryColor: "#21262d",
+      secondaryColor: "#0d1117",
+      tertiaryColor: "#161b22",
+      primaryTextColor: "#c9d1d9",
+      secondaryTextColor: "#c9d1d9",
+      tertiaryTextColor: "#c9d1d9",
+      textColor: "#c9d1d9",
+      primaryBorderColor: "#8b949e",
+      secondaryBorderColor: "#8b949e",
+      tertiaryBorderColor: "#8b949e",
+      lineColor: "#8b949e",
+      arrowheadColor: "#8b949e",
+      edgeLabelBackground: "#161b22",
+      labelTextColor: "#c9d1d9",
+      nodeBkg: "#21262d",
+      nodeBorder: "#8b949e",
+      rowOdd: "#0d1117",
+      rowEven: "#262626",
+    };
+  }
+
+  return {
+    fontFamily: "Inter, system-ui, sans-serif",
+    primaryColor: "#fbfbfa",
+    primaryTextColor: "#1a1a1e",
+    primaryBorderColor: "#c9c9cf",
+    lineColor: "#5e5e66",
+    secondaryColor: "#f3f3f4",
+    tertiaryColor: "#ffffff",
+  };
+}
+
+function getCurrentMermaidTheme(): "light" | "dark" {
+  if (typeof document === "undefined") {
+    return "light";
+  }
+  return document.documentElement.getAttribute("data-theme") === "dark" ? "dark" : "light";
+}
+
 function getFencedCodeContext(state: EditorState, line: Line): FencedCodeContext | null {
   const tree = syntaxTree(state);
   let fence: SyntaxNode | null = tree.resolveInner(line.from, 1);
@@ -56,7 +132,7 @@ function getFencedCodeContext(state: EditorState, line: Line): FencedCodeContext
     child = child.nextSibling;
   }
 
-  const language = codeInfo ? state.sliceDoc(codeInfo.from, codeInfo.to).toLowerCase() : null;
+  const language = codeInfo ? normalizeFenceLanguage(state.sliceDoc(codeInfo.from, codeInfo.to)) : null;
 
   let role: "opener" | "closer" | "body" = "body";
   if (openerMark && line.from <= openerMark.to) {
@@ -66,6 +142,15 @@ function getFencedCodeContext(state: EditorState, line: Line): FencedCodeContext
   }
 
   return { role, language };
+}
+
+function normalizeFenceLanguage(info: string) {
+  const [language] = info.trim().toLowerCase().split(/\s+/, 1);
+  return language || null;
+}
+
+function isMermaidLanguage(language: string | null) {
+  return language === "mermaid" || language === "mmd";
 }
 
 // Lighter variant of `getFencedCodeContext` for callers that only need a
@@ -626,6 +711,332 @@ function getCodeTokenClass(token: string) {
   return "function";
 }
 
+function collectMermaidBlocks(state: EditorState): MermaidBlock[] {
+  const blocks: MermaidBlock[] = [];
+  const doc = state.doc;
+
+  syntaxTree(state).iterate({
+    enter: (ref) => {
+      if (ref.name !== "FencedCode") {
+        return;
+      }
+
+      const block = getMermaidBlock(state, ref.node, doc);
+      if (block && !isSourceRangeSelected(state, block.from, block.to)) {
+        blocks.push(block);
+      }
+
+      return false;
+    },
+  });
+
+  return blocks;
+}
+
+function getMermaidBlock(state: EditorState, fence: SyntaxNode, doc: Text): MermaidBlock | null {
+  let openerMark: SyntaxNode | null = null;
+  let closerMark: SyntaxNode | null = null;
+  let codeInfo: SyntaxNode | null = null;
+  let child = fence.firstChild;
+
+  while (child) {
+    if (child.name === "CodeMark") {
+      if (!openerMark) {
+        openerMark = child;
+      }
+      closerMark = child;
+    } else if (child.name === "CodeInfo") {
+      codeInfo = child;
+    }
+    child = child.nextSibling;
+  }
+
+  if (!openerMark || !closerMark || openerMark === closerMark || !codeInfo) {
+    return null;
+  }
+
+  const language = normalizeFenceLanguage(state.sliceDoc(codeInfo.from, codeInfo.to));
+  if (!isMermaidLanguage(language)) {
+    return null;
+  }
+
+  const openerLine = doc.lineAt(openerMark.from);
+  const closerLine = doc.lineAt(closerMark.from);
+  const sourceFrom = Math.min(openerLine.to + 1, doc.length);
+  const sourceTo = Math.max(sourceFrom, closerLine.from > 0 ? closerLine.from - 1 : closerLine.from);
+  const source = state.sliceDoc(sourceFrom, sourceTo).trim();
+
+  if (!source) {
+    return null;
+  }
+
+  return { from: fence.from, to: fence.to, source };
+}
+
+function isSourceRangeSelected(state: EditorState, from: number, to: number) {
+  return state.selection.ranges.some((range) => {
+    if (range.empty) {
+      return range.from >= from && range.from <= to;
+    }
+
+    return range.from < to && range.to > from;
+  });
+}
+
+class MermaidWidget extends WidgetType {
+  constructor(
+    private readonly sourceFrom: number,
+    private readonly source: string,
+  ) {
+    super();
+  }
+
+  eq(other: MermaidWidget) {
+    return this.source === other.source && this.sourceFrom === other.sourceFrom;
+  }
+
+  toDOM(view: EditorView) {
+    const wrapper = document.createElement("div");
+    wrapper.className = "cm-md-mermaid";
+    wrapper.setAttribute("aria-label", "Mermaid diagram");
+
+    const controls = document.createElement("div");
+    controls.className = "cm-md-mermaid-controls";
+
+    const modeButton = document.createElement("button");
+    modeButton.type = "button";
+    modeButton.className = "cm-md-mermaid-control cm-md-mermaid-mode";
+    controls.append(modeButton);
+
+    const zoomOutButton = document.createElement("button");
+    zoomOutButton.type = "button";
+    zoomOutButton.className = "cm-md-mermaid-control";
+    zoomOutButton.textContent = "-";
+    zoomOutButton.setAttribute("aria-label", "Zoom diagram out");
+    controls.append(zoomOutButton);
+
+    const zoomLabel = document.createElement("button");
+    zoomLabel.type = "button";
+    zoomLabel.className = "cm-md-mermaid-control cm-md-mermaid-zoom-label";
+    zoomLabel.setAttribute("aria-label", "Reset diagram zoom");
+    controls.append(zoomLabel);
+
+    const zoomInButton = document.createElement("button");
+    zoomInButton.type = "button";
+    zoomInButton.className = "cm-md-mermaid-control";
+    zoomInButton.textContent = "+";
+    zoomInButton.setAttribute("aria-label", "Zoom diagram in");
+    controls.append(zoomInButton);
+
+    const viewport = document.createElement("div");
+    viewport.className = "cm-md-mermaid-viewport";
+
+    const canvas = document.createElement("div");
+    canvas.className = "cm-md-mermaid-canvas";
+
+    const status = document.createElement("div");
+    status.className = "cm-md-mermaid-status";
+    status.textContent = "Rendering diagram...";
+    canvas.append(status);
+    viewport.append(canvas);
+    wrapper.append(controls, viewport);
+
+    let panMode = false;
+    let scale = 1;
+    let baseSvgDisplayWidth = 0;
+    let x = 0;
+    let y = 0;
+    let dragStart: { pointerId: number; clientX: number; clientY: number; x: number; y: number } | null = null;
+    let renderVersion = 0;
+
+    const clampScale = (next: number) => Math.min(4, Math.max(0.35, next));
+    const updateTransform = () => {
+      const svg = canvas.querySelector<SVGSVGElement>("svg");
+      if (svg && baseSvgDisplayWidth > 0) {
+        svg.style.width = `${Math.round(baseSvgDisplayWidth * scale)}px`;
+        svg.style.maxWidth = "none";
+        svg.style.height = "auto";
+      }
+      canvas.style.transform = `translate(${x}px, ${y}px)`;
+      zoomLabel.textContent = `${Math.round(scale * 100)}%`;
+    };
+    const setPanMode = (enabled: boolean) => {
+      panMode = enabled;
+      wrapper.classList.toggle("isPanMode", panMode);
+      modeButton.textContent = panMode ? "Edit" : "Move";
+      modeButton.setAttribute("aria-label", panMode ? "Edit Mermaid source" : "Enable diagram pan and zoom");
+      modeButton.title = panMode ? "Click the diagram no longer edits. Return to source editing." : "Enable pan and zoom for this diagram";
+      zoomOutButton.disabled = !panMode;
+      zoomLabel.disabled = !panMode;
+      zoomInButton.disabled = !panMode;
+    };
+    const setScale = (nextScale: number, originX = viewport.clientWidth / 2, originY = viewport.clientHeight / 2) => {
+      const previous = scale;
+      scale = clampScale(nextScale);
+      if (scale === previous) {
+        return;
+      }
+      const contentX = (originX - x) / previous;
+      const contentY = (originY - y) / previous;
+      x = originX - contentX * scale;
+      y = originY - contentY * scale;
+      updateTransform();
+    };
+    const resetTransform = () => {
+      scale = 1;
+      x = 0;
+      y = 0;
+      updateTransform();
+    };
+    const syncFrameSize = () => {
+      const svg = canvas.querySelector<SVGSVGElement>("svg");
+      if (!svg) {
+        wrapper.style.height = "";
+        return;
+      }
+
+      const viewBox = svg.viewBox.baseVal;
+      const svgWidth = viewBox.width || svg.width.baseVal.value || svg.getBoundingClientRect().width;
+      const svgHeight = viewBox.height || svg.height.baseVal.value || svg.getBoundingClientRect().height;
+      if (!svgWidth || !svgHeight) {
+        return;
+      }
+
+      const horizontalPadding = 36;
+      const verticalChrome = 66;
+      const availableWidth = Math.max(1, wrapper.clientWidth - horizontalPadding);
+      baseSvgDisplayWidth = Math.min(svgWidth, availableWidth);
+      const renderedHeight = svgHeight * (baseSvgDisplayWidth / svgWidth);
+      const maxHeight = Math.max(520, Math.min(window.innerHeight * 0.72, 900));
+      const nextHeight = Math.min(Math.max(renderedHeight + verticalChrome, 420), maxHeight);
+      wrapper.style.height = `${Math.round(nextHeight)}px`;
+      updateTransform();
+    };
+    const focusSource = () => {
+      view.dispatch({ selection: { anchor: this.sourceFrom }, scrollIntoView: true });
+      view.focus();
+    };
+
+    const rerender = () => {
+      const version = ++renderVersion;
+      void this.render(canvas, status).then(() => {
+        if (version === renderVersion) {
+          requestAnimationFrame(syncFrameSize);
+          resetTransform();
+        }
+      });
+    };
+
+    controls.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    controls.addEventListener("click", (event) => {
+      event.stopPropagation();
+    });
+    modeButton.addEventListener("click", () => setPanMode(!panMode));
+    zoomOutButton.addEventListener("click", () => setScale(scale / 1.2));
+    zoomInButton.addEventListener("click", () => setScale(scale * 1.2));
+    zoomLabel.addEventListener("click", resetTransform);
+
+    viewport.addEventListener("mousedown", (event) => {
+      if (panMode) {
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      focusSource();
+    });
+    viewport.addEventListener("wheel", (event) => {
+      if (!panMode) {
+        return;
+      }
+      event.preventDefault();
+      const rect = viewport.getBoundingClientRect();
+      const zoomFactor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      setScale(scale * zoomFactor, event.clientX - rect.left, event.clientY - rect.top);
+    }, { passive: false });
+    viewport.addEventListener("pointerdown", (event) => {
+      if (!panMode || event.button !== 0) {
+        return;
+      }
+      event.preventDefault();
+      viewport.setPointerCapture(event.pointerId);
+      dragStart = { pointerId: event.pointerId, clientX: event.clientX, clientY: event.clientY, x, y };
+      wrapper.classList.add("isDragging");
+    });
+    viewport.addEventListener("pointermove", (event) => {
+      if (!dragStart || dragStart.pointerId !== event.pointerId) {
+        return;
+      }
+      event.preventDefault();
+      x = dragStart.x + event.clientX - dragStart.clientX;
+      y = dragStart.y + event.clientY - dragStart.clientY;
+      updateTransform();
+    });
+    const endDrag = (event: PointerEvent) => {
+      if (!dragStart || dragStart.pointerId !== event.pointerId) {
+        return;
+      }
+      dragStart = null;
+      wrapper.classList.remove("isDragging");
+    };
+    viewport.addEventListener("pointerup", endDrag);
+    viewport.addEventListener("pointercancel", endDrag);
+
+    const observer = new MutationObserver((records) => {
+      if (records.some((record) => record.attributeName === "data-theme")) {
+        rerender();
+      }
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    window.addEventListener("resize", syncFrameSize);
+    (wrapper as MermaidElement).__cleanup = () => {
+      observer.disconnect();
+      window.removeEventListener("resize", syncFrameSize);
+    };
+
+    setPanMode(false);
+    updateTransform();
+    rerender();
+    return wrapper;
+  }
+
+  ignoreEvent() {
+    return false;
+  }
+
+  destroy(dom: HTMLElement) {
+    (dom as MermaidElement).__cleanup?.();
+  }
+
+  private async render(canvas: HTMLElement, status: HTMLElement) {
+    try {
+      const { default: mermaid } = await getMermaidModule();
+      ensureMermaidInitialized(mermaid, getCurrentMermaidTheme());
+      const renderId = `markdown-mermaid-${++mermaidRenderCounter}`;
+      const { svg, bindFunctions } = await mermaid.render(renderId, this.source);
+      canvas.innerHTML = svg;
+      bindFunctions?.(canvas);
+    } catch (error) {
+      canvas.replaceChildren(status);
+      status.classList.add("cm-md-mermaid-status-error");
+      status.textContent = getMermaidErrorMessage(error);
+    }
+  }
+}
+
+type MermaidElement = HTMLElement & { __cleanup?: () => void };
+
+function getMermaidErrorMessage(error: unknown) {
+  if (error instanceof Error && error.message.trim()) {
+    return `Mermaid error: ${error.message}`;
+  }
+  return "Mermaid error: unable to render diagram";
+}
+
 class BulletMarkerWidget extends WidgetType {
   toDOM() {
     const marker = document.createElement("span");
@@ -759,6 +1170,75 @@ function parseAlignment(cell: string): TableAlign {
   return null;
 }
 
+function getTableColumnWidths(rows: string[][], colCount: number): number[] {
+  if (colCount === 0) {
+    return [];
+  }
+  const scores = Array.from({ length: colCount }, () => 10);
+  for (const row of rows) {
+    for (let c = 0; c < colCount; c += 1) {
+      scores[c] += getTableCellWidthScore(row[c] ?? "");
+    }
+  }
+
+  const min = Math.min(14, 100 / colCount);
+  const max = Math.max(min, Math.min(42, 100 - min * Math.max(0, colCount - 1)));
+  let widths = normalizeColumnScores(scores).map((width) => Math.min(max, Math.max(min, width)));
+
+  for (let i = 0; i < 8; i += 1) {
+    const total = widths.reduce((sum, width) => sum + width, 0);
+    const delta = 100 - total;
+    if (Math.abs(delta) < 0.01) {
+      break;
+    }
+    const adjustable = widths
+      .map((width, index) => ({ index, width }))
+      .filter(({ width }) => (delta > 0 ? width < max : width > min));
+    if (adjustable.length === 0) {
+      break;
+    }
+    const each = delta / adjustable.length;
+    widths = widths.map((width, index) => {
+      if (!adjustable.some((entry) => entry.index === index)) {
+        return width;
+      }
+      return Math.min(max, Math.max(min, width + each));
+    });
+  }
+
+  return widths;
+}
+
+function normalizeColumnScores(scores: number[]): number[] {
+  const total = scores.reduce((sum, score) => sum + score, 0);
+  if (total <= 0) {
+    return scores.map(() => 100 / scores.length);
+  }
+  return scores.map((score) => (score / total) * 100);
+}
+
+function getTableCellWidthScore(source: string): number {
+  const plain = source
+    .replace(/`([^`]*)`/g, "$1")
+    .replace(/\*\*([^*]*)\*\*/g, "$1")
+    .replace(/\*([^*]*)\*/g, "$1")
+    .replace(/~~([^~]*)~~/g, "$1")
+    .replace(/<u>(.*?)<\/u>/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .trim();
+  if (!plain) {
+    return 0;
+  }
+  const words = plain.split(/[\s,;:()/\\]+/).filter(Boolean);
+  const hasNaturalWrapPoints = /\s|,|;|\//.test(plain);
+  if (!hasNaturalWrapPoints && words.length <= 1) {
+    // Long code-like identifiers should be readable, but they must not
+    // dominate a table's column sizing just because they lack spaces.
+    return Math.min(18, Math.max(8, plain.length * 0.35));
+  }
+  return Math.min(46, plain.length * 0.45 + words.length * 5);
+}
+
 class TableWidget extends WidgetType {
   constructor(
     private readonly rows: string[][],
@@ -770,7 +1250,7 @@ class TableWidget extends WidgetType {
   eq(other: TableWidget): boolean {
     // Strict deep-compare. CodeMirror still keeps the DOM mounted during
     // typing because `updateDOM` below patches cells in place, leaving the
-    // focused cell untouched so the contenteditable cursor is preserved.
+    // focused cell untouched so the textarea cursor is preserved.
     if (this.rows.length !== other.rows.length) {
       return false;
     }
@@ -813,6 +1293,14 @@ class TableWidget extends WidgetType {
     wrapper.appendChild(table);
     const colCount = this.alignments.length;
     const rowCount = this.rows.length;
+    const colgroup = document.createElement("colgroup");
+    const columnWidths = getTableColumnWidths(this.rows, colCount);
+    for (const width of columnWidths) {
+      const col = document.createElement("col");
+      col.style.width = `${width}%`;
+      colgroup.appendChild(col);
+    }
+    table.appendChild(colgroup);
 
     // Look up the widget's CURRENT source range via the rendered DOM. The
     // widget instance's positions go stale as the doc changes; reading them
@@ -853,28 +1341,41 @@ class TableWidget extends WidgetType {
       });
     };
 
-    // Click on a cell swaps in a real <input> element so the user gets a
-    // browser-native text field with its own selection model. CodeMirror's
-    // selection handling and the input's selection handling don't fight
-    // because the input is opaque to CM6 (the widget reports
+    // Click on a cell swaps in a real <textarea> element so long cell text
+    // wraps naturally while editing. Markdown table cells are still one-line
+    // source, so pasted newlines are collapsed before serialization.
+    // CodeMirror's selection handling and the textarea selection handling
+    // don't fight because the textarea is opaque to CM6 (the widget reports
     // `ignoreEvent: true` so CM6 never tries to interpret events that
     // originate inside it).
     const enterEditMode = (cell: HTMLTableCellElement) => {
-      if (cell.querySelector("input")) {
+      if (cell.querySelector(".cm-md-table-cell-input")) {
         return;
       }
       const source = cell.dataset.mdSource ?? "";
+      let availableEditHeight = Math.ceil(cell.getBoundingClientRect().height);
       cell.replaceChildren();
       cell.classList.add("cm-md-table-cell--editing");
-      const input = cell.ownerDocument.createElement("input");
-      input.type = "text";
+      const input = cell.ownerDocument.createElement("textarea");
       input.value = source;
+      input.rows = 1;
       input.spellcheck = false;
       input.className = "cm-md-table-cell-input";
+      const resizeInput = () => {
+        const rowHeight = Math.ceil(cell.closest("tr")?.getBoundingClientRect().height ?? 0);
+        availableEditHeight = Math.max(availableEditHeight, rowHeight);
+        const viewportHeight = cell.ownerDocument.defaultView?.innerHeight ?? 0;
+        const viewportCap = viewportHeight > 0 ? Math.max(160, viewportHeight * 0.75) : Number.POSITIVE_INFINITY;
+        input.style.height = "auto";
+        input.style.height = `${Math.min(Math.max(input.scrollHeight, availableEditHeight, 40), viewportCap)}px`;
+      };
 
       input.addEventListener("input", () => {
         cell.dataset.mdSource = normalizeCellText(input.value);
-        input.value = cell.dataset.mdSource;
+        if (input.value !== cell.dataset.mdSource) {
+          input.value = cell.dataset.mdSource;
+        }
+        resizeInput();
         commitFromDOM();
       });
 
@@ -895,6 +1396,7 @@ class TableWidget extends WidgetType {
       // moving the caret immediately on a freshly-mounted element.
       requestAnimationFrame(() => {
         if (input.isConnected) {
+          resizeInput();
           input.focus();
           input.select();
         }
@@ -907,7 +1409,7 @@ class TableWidget extends WidgetType {
         return;
       }
       // Block CM6's own pointer handling and the editor's selection update;
-      // we'll move focus into the input ourselves.
+      // we'll move focus into the textarea ourselves.
       event.preventDefault();
       event.stopPropagation();
       enterEditMode(cell);
@@ -968,9 +1470,9 @@ class TableWidget extends WidgetType {
 
   updateDOM(dom: HTMLElement, view: EditorView): boolean {
     // Patch the existing widget DOM in place to reflect this widget's rows.
-    // The cell currently in edit mode (containing the focused <input>) is
+    // The cell currently in edit mode (containing the focused <textarea>) is
     // intentionally left alone so the user's caret and selection inside the
-    // input are preserved across the dispatch round-trip that fires on
+    // textarea are preserved across the dispatch round-trip that fires on
     // every keystroke.
     if (!dom.classList.contains("cm-md-table-wrapper")) {
       return false;
@@ -985,8 +1487,20 @@ class TableWidget extends WidgetType {
     if (cells.length !== rowCount * colCount) {
       return false;
     }
-    let idx = 0;
+    const columns = table.querySelectorAll<HTMLTableColElement>("colgroup col");
+    if (columns.length !== colCount) {
+      return false;
+    }
     let touched = false;
+    const columnWidths = getTableColumnWidths(this.rows, colCount);
+    for (let c = 0; c < colCount; c += 1) {
+      const width = `${columnWidths[c]}%`;
+      if (columns[c].style.width !== width) {
+        columns[c].style.width = width;
+        touched = true;
+      }
+    }
+    let idx = 0;
     for (let r = 0; r < rowCount; r += 1) {
       const row = this.rows[r];
       if (row.length !== colCount) {
@@ -1001,7 +1515,7 @@ class TableWidget extends WidgetType {
         }
         touched = true;
         cell.dataset.mdSource = newSource;
-        const input = cell.querySelector<HTMLInputElement>("input.cm-md-table-cell-input");
+        const input = cell.querySelector<HTMLTextAreaElement>("textarea.cm-md-table-cell-input");
         if (input) {
           // Active editor cell: only sync the input value if it really
           // diverged (e.g. external doc change while editing).
@@ -1027,7 +1541,7 @@ class TableWidget extends WidgetType {
   // Returning `true` keeps CodeMirror from intercepting clicks and key
   // events on the widget. With `false` CM6 calls `posAtCoords` on every
   // click and dispatches a selection update at the block edge, which would
-  // yank focus from the cell input the user just clicked into and push the
+  // yank focus from the cell textarea the user just clicked into and push the
   // selection model into a confused state.
   ignoreEvent(): boolean {
     return true;
@@ -1045,7 +1559,7 @@ function readCellSource(cell: HTMLTableCellElement | undefined): string {
   if (cell.dataset.mdSource !== undefined) {
     return cell.dataset.mdSource;
   }
-  const input = cell.querySelector<HTMLInputElement>("input.cm-md-table-cell-input");
+  const input = cell.querySelector<HTMLTextAreaElement>("textarea.cm-md-table-cell-input");
   if (input) {
     return normalizeCellText(input.value);
   }
@@ -1163,6 +1677,28 @@ function serializeTableSource(rows: string[][], alignments: TableAlign[]): strin
 // them from a ViewPlugin. Per-line `cm-md-table-row` source decorations
 // emitted by the ViewPlugin still apply to lines covered by the widget but
 // have no visual effect — the block replace hides those lines wholesale.
+function buildMermaidBlockDecorations(state: EditorState): DecorationSet {
+  const decorations = collectMermaidBlocks(state).map((block) =>
+    Decoration.replace({
+      widget: new MermaidWidget(block.from, block.source),
+      block: true,
+    }).range(block.from, block.to),
+  );
+
+  return Decoration.set(decorations, true);
+}
+
+export const mermaidBlockState = StateField.define<DecorationSet>({
+  create: (state) => buildMermaidBlockDecorations(state),
+  update: (value, tr) => {
+    if (tr.docChanged || tr.selection) {
+      return buildMermaidBlockDecorations(tr.state);
+    }
+    return value;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
+
 function buildTableBlockDecorations(state: EditorState): DecorationSet {
   const decorations: Range<Decoration>[] = [];
   const textBuf = state.doc;
