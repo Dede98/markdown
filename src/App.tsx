@@ -1,21 +1,22 @@
 import type { EditorView } from "@codemirror/view";
 import {
+  BookOpenText,
   Download,
   Eye,
   FilePlus,
   FileText,
   FileCode,
   FolderOpen,
+  Leaf,
   MessageSquare,
   Monitor,
   Moon,
-  PanelTopClose,
-  PanelTopOpen,
   Save,
   Settings,
   Sun,
+  X,
 } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { addCommentReply, createThreadId, insertCommentAnchor, resolveCommentThread } from "./comments/commands";
 import { CommentsSidebar } from "./comments/CommentsSidebar";
 import { createCommentsContribution } from "./comments/contribution";
@@ -45,7 +46,7 @@ import {
   type ThemePref,
 } from "./theme";
 import { markdownToolbarItems, type ToolbarContext, type ToolbarItem } from "./toolbarRegistry";
-import { checkForUpdate, installAndRelaunch, type Update } from "./updater";
+import { checkForUpdate, installAndRelaunch, type Update, type UpdateProgress } from "./updater";
 import { getStoredRaw, getStoredZen, storeRaw, storeZen } from "./viewMode";
 import { webFileAdapter } from "./webFileAdapter";
 
@@ -141,6 +142,11 @@ const SHORTCUT_LABELS: { raw: string; zen: string } = (() => {
   return { raw: "Ctrl+Shift+R", zen: "Ctrl+." };
 })();
 
+function formatUpdateVersion(version: string): string {
+  const trimmed = version.trim();
+  return trimmed.toLowerCase().startsWith("v") ? trimmed : `v${trimmed}`;
+}
+
 export function App() {
   const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
@@ -169,6 +175,7 @@ export function App() {
   // is in flight.
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const [installingUpdate, setInstallingUpdate] = useState(false);
+  const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
   const editorRef = useRef<EditorView | null>(null);
   // Latest editor text. Saving from a keyboard shortcut runs in the same tick
   // as `setMarkdown`, so a closure-captured `markdown` would be stale; reading
@@ -635,15 +642,18 @@ export function App() {
       return;
     }
     setInstallingUpdate(true);
+    setUpdateProgress({ downloaded: 0, contentLength: null });
     try {
-      await installAndRelaunch(pendingUpdate);
+      await installAndRelaunch(pendingUpdate, setUpdateProgress);
       // `installAndRelaunch` ends in `relaunch()`, so this line normally
       // never executes — the process is replaced. Still clear the flag in
       // case the relaunch call rejects without restarting.
       setInstallingUpdate(false);
+      setUpdateProgress(null);
     } catch (error) {
       console.error("Update install failed", error);
       setInstallingUpdate(false);
+      setUpdateProgress(null);
     }
   }, [pendingUpdate, installingUpdate]);
 
@@ -900,6 +910,15 @@ export function App() {
     };
   }, [handleNew, handleOpen, handleSave, handleSaveAs]);
 
+  const updateProgressPercent =
+    updateProgress?.contentLength && updateProgress.contentLength > 0
+      ? Math.min(100, Math.max(0, Math.round((updateProgress.downloaded / updateProgress.contentLength) * 100)))
+      : null;
+  const updateProgressStyle =
+    installingUpdate
+      ? ({ "--update-progress": `${updateProgressPercent ?? 0}%` } as CSSProperties)
+      : undefined;
+
   return (
     <main className={zen ? "app appZen" : "app"}>
       <header className="topbar" data-tauri-drag-region>
@@ -946,19 +965,30 @@ export function App() {
               type="button"
               title={
                 installingUpdate
-                  ? `Installing v${pendingUpdate.version}…`
-                  : `Update available: v${pendingUpdate.version} — install and restart`
+                  ? updateProgressPercent === null
+                    ? `Downloading ${formatUpdateVersion(pendingUpdate.version)}…`
+                    : `Downloading ${formatUpdateVersion(pendingUpdate.version)}: ${updateProgressPercent}%`
+                  : `Update available: ${formatUpdateVersion(pendingUpdate.version)} — install and restart`
               }
               aria-label={
                 installingUpdate
-                  ? `Installing update v${pendingUpdate.version}`
-                  : `Update available: v${pendingUpdate.version}`
+                  ? updateProgressPercent === null
+                    ? `Downloading update ${formatUpdateVersion(pendingUpdate.version)}`
+                    : `Downloading update ${formatUpdateVersion(pendingUpdate.version)} ${updateProgressPercent}%`
+                  : `Update available: ${formatUpdateVersion(pendingUpdate.version)}`
               }
               onClick={() => void handleInstallUpdate()}
               disabled={installingUpdate}
               data-installing={installingUpdate ? "true" : undefined}
+              data-progress-known={installingUpdate && updateProgressPercent !== null ? "true" : undefined}
+              style={updateProgressStyle}
             >
-              <Download size={16} />
+              {installingUpdate ? (
+                <span className="updateProgressCircle" aria-hidden="true" />
+              ) : (
+                <Download size={16} />
+              )}
+              <span className="updateVersion">{formatUpdateVersion(pendingUpdate.version)}</span>
             </button>
           )}
           <button
@@ -997,7 +1027,7 @@ export function App() {
             )}
           </button>
           <button
-            className="modeButton"
+            className="modeButton modeButtonIcon"
             type="button"
             onClick={() => setRaw((value) => !value)}
             title={
@@ -1005,20 +1035,20 @@ export function App() {
                 ? `Switch to rendered view (${SHORTCUT_LABELS.raw})`
                 : `Switch to raw markdown view (${SHORTCUT_LABELS.raw})`
             }
+            aria-label={raw ? "Rendered" : "Raw"}
             aria-pressed={raw}
           >
             {raw ? <Eye size={18} /> : <FileCode size={18} />}
-            <span>{raw ? "Rendered" : "Raw"}</span>
           </button>
           <button
-            className="modeButton"
+            className="modeButton modeButtonIcon"
             type="button"
             onClick={() => setZen((value) => !value)}
             title={zen ? `Normal Mode (${SHORTCUT_LABELS.zen})` : `Zen Mode (${SHORTCUT_LABELS.zen})`}
+            aria-label={zen ? "Normal Mode" : "Zen Mode"}
             aria-pressed={zen}
           >
-            {zen ? <PanelTopOpen size={18} /> : <PanelTopClose size={18} />}
-            <span>{zen ? "Normal" : "Zen"}</span>
+            {zen ? <BookOpenText size={18} /> : <Leaf size={18} />}
           </button>
         </div>
       </header>
@@ -1198,7 +1228,7 @@ function SettingsPanel({
             <p>Editor preferences</p>
           </div>
           <button className="iconButton" type="button" title="Close settings" aria-label="Close settings" onClick={onClose}>
-            <PanelTopClose size={16} />
+            <X size={16} />
           </button>
         </div>
 

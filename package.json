@@ -1,6 +1,6 @@
 {
   "name": "markdown-editor",
-  "version": "0.0.0",
+  "version": "0.0.19",
   "private": true,
   "description": "Local-first Markdown editor for Mac and Web.",
   "license": "MIT",
