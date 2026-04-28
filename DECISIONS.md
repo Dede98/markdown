@@ -160,7 +160,7 @@ Scope of v1:
 - Open / new / save `.md` files (web + Tauri).
 - WYSIWYM live-preview editor with raw-source toggle.
 - Zen and Normal modes with toolbar.
-- Common formatting (headings, bold, italic, links, blockquotes, lists, task lists, fenced code, horizontal rules).
+- Common formatting (headings, bold, italic, links, blockquotes, lists, task lists, fenced code, GFM tables, Mermaid fenced code blocks, horizontal rules).
 - Offline use without an account.
 
 Out of scope for v1: comments, realtime collaboration, history, MCP, third-party storage adapters. Those are subsequent milestones.
@@ -169,3 +169,25 @@ Implications:
 
 - A short polish pass closes v1 (persist mode prefs, view-mode keyboard shortcuts, accessibility parity on the Zen toggle, and any other small gaps captured in the active handoff).
 - After v1 is sealed, the next active milestone is Comments and annotations, built directly using the seams in `ARCHITECTURE.md` § Decoupling Seams.
+
+## 12. Rendered Widgets Must Preserve Markdown Source
+
+Decision: Rendered block widgets may improve editing and preview quality, but they must keep the `.md` text as the canonical source and raw mode must expose the plain source.
+
+Current widgets:
+
+- GFM tables render as real tables. Cell edits use a wrapping textarea and serialize back to Markdown table rows.
+- Mermaid fenced code blocks (`mermaid` / `mmd`) render as diagrams. The widget provides pan/zoom in Move mode and switches back to source editing when the user chooses Edit or clicks the diagram in normal edit mode.
+
+Reason:
+
+- Tables and diagrams are hard to inspect in raw Markdown alone.
+- GitHub-style rendered Markdown is a strong user expectation for `.md` files.
+- The product direction still rejects a proprietary block document model.
+
+Implications:
+
+- Widget state must be derived from Markdown source, not stored as a separate canonical model.
+- Raw mode disables rendered widgets and shows the exact `.md` bytes.
+- Saving writes Markdown source only.
+- Any future rendered widget follows the same rule: source first, widget second.

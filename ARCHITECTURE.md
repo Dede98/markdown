@@ -61,6 +61,15 @@ Expected layers:
 
 Raw Markdown syntax should be editable, especially when the cursor is inside formatted text. A "raw" view mode swaps the decoration pipeline out via a CodeMirror `Compartment` so the source is shown verbatim while the doc, selection, and history survive the toggle.
 
+The current preview pipeline is source-preserving:
+
+- Inline Markdown syntax is hidden/rendered by CodeMirror decorations while the underlying text remains Markdown.
+- GFM table blocks render as real table widgets off-source. Cell edits mount a wrapping textarea, then serialize back to the same Markdown table block.
+- Mermaid fenced code blocks with `mermaid` or `mmd` info strings render as diagrams off-source. The diagram frame supports a Move/Edit toggle plus pan and crisp SVG zoom. Clicking the diagram in edit mode focuses the fenced Markdown source.
+- HTML comment metadata used by comments is hidden from the rendered surface.
+
+All of these preview extensions live behind the raw-mode `Compartment`. Raw mode disables them and shows the `.md` source verbatim; it must remain the canonical recovery/editing path for any rendered widget.
+
 ## Decoupling Seams
 
 Per `DECISIONS.md` § 10 the project does not build a generic plugin API up front. Instead it carves three local decoupling seams as feature work demands them. Together they will absorb the next product milestones (Comments, Realtime collaboration, History, MCP) without locking the codebase into a guessed-at extension contract.

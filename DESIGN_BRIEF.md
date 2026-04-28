@@ -69,6 +69,9 @@ Normal Mode should include:
 - Entry points for comments and collaboration when available.
 
 Toolbar controls should feel like editing tools, not marketing buttons.
+Topbar mode controls should be icon-only with tooltips and accessible labels. Raw/Rendered uses source/eye icons; Zen uses a calm Zen-like icon and a distinct active-state icon/pressed treatment so the state remains visible without text. Settings close uses a simple `X`.
+
+When a Tauri update is available, the topbar update affordance should show the target version. During download/install it should show an inline circular progress fill when byte totals are known, with an indeterminate ring fallback when totals are unknown.
 
 Visual notes from the design:
 

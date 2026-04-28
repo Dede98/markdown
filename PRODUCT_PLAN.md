@@ -54,6 +54,8 @@ The first product milestone should support:
 - Toggle between Zen and Normal modes.
 - Toggle a Raw view mode that shows the `.md` source verbatim.
 - Use toolbar actions for common Markdown constructs.
+- Render GFM tables as editable table widgets while keeping the Markdown table as the saved source.
+- Render Mermaid fenced code blocks (`mermaid` / `mmd`) as diagrams while keeping the fenced code as the saved source.
 - Work offline without authentication.
 
 Common formatting support:
@@ -67,9 +69,11 @@ Common formatting support:
 - Numbered lists
 - Task lists
 - Fenced code blocks
+- GFM tables
+- Mermaid fenced code blocks
 - Horizontal rules
 
-Status: feature-complete. See `DECISIONS.md` § 11 — outstanding work before sealing v1 is polish only. The active polish punch list lives in `HANDOFF_NEXT_SESSION.md`. Once v1 is sealed, the next active milestone is Comments and annotations, built directly against the seams in `ARCHITECTURE.md` § Decoupling Seams.
+Status: feature-complete. See `DECISIONS.md` § 11 and § 12. The implemented local editor keeps `.md` canonical, including rendered tables and Mermaid diagrams. Raw mode remains the escape hatch for verbatim source editing. Once v1 is sealed, the next active milestone is Comments and annotations, built directly against the seams in `ARCHITECTURE.md` § Decoupling Seams.
 
 ## Cloud Collaboration
 
