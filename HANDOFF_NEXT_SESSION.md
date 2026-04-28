@@ -1,6 +1,6 @@
 # Handoff — local MVP + comments shipped, next up: Cloud collaboration
 
-Status: v0.0.19 is the current app version in the repo. The project is
+Status: v0.0.20 is the current app version in the repo. The project is
 MIT-licensed, has the Tauri auto-update loop wired through GitHub
 Releases, and the local editor MVP is feature-complete
 (`DECISIONS.md` § 11).
@@ -102,7 +102,8 @@ also points at the noreply address; global git config is untouched.
 - HEAD before this handoff refresh: `e2ff8c4` (`Document rendered markdown widgets`).
 - Remote: `git@github.com:Dede98/markdown.git`. Repo is **public**
   and MIT-licensed.
-- Latest local tag: `v0.0.19`.
+- Latest local tag before release: `v0.0.19`; next release target is
+  `v0.0.20`.
 - Verify current working tree and checks before relying on this file as a
   release handoff.
 - App identifier: `io.github.dede98.markdown` (current).

@@ -6,6 +6,8 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.20] - 2026-04-28
+
 ### Added
 
 - Detached comment threads can now be re-anchored to the current
@@ -124,6 +126,7 @@ record):
   table / HTML-comment block detection, replacing earlier regex
   heuristics.
 
+[0.0.20]: https://github.com/Dede98/markdown/releases/tag/v0.0.20
 [0.0.19]: https://github.com/Dede98/markdown/releases/tag/v0.0.19
 [0.0.18]: https://github.com/Dede98/markdown/releases/tag/v0.0.18
 [0.0.17]: https://github.com/Dede98/markdown/releases/tag/v0.0.17
