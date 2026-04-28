@@ -71,8 +71,11 @@ export function getCommentThreadViews(parse: CommentParseResult): CommentThreadV
 
 export function replaceMetadataBlock(markdown: string, threads: Record<string, CommentThread>): string {
   const metadataBlock = findMetadataBlock(markdown);
-  const block = buildMetadataBlock(threads);
   const body = metadataBlock ? markdown.slice(0, metadataBlock.from).trimEnd() : markdown.trimEnd();
+  if (Object.keys(threads).length === 0) {
+    return body;
+  }
+  const block = buildMetadataBlock(threads);
   return `${body}\n\n${block}`;
 }
 

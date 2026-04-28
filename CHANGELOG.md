@@ -4,6 +4,33 @@ All notable changes to this project are recorded here. The format
 follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and
 the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Detached comment threads can now be re-anchored to the current
+  selection or deleted from the sidebar.
+
+### Changed
+
+- Planning and handoff docs now reflect that the local MVP, rendered
+  Markdown widgets, and local comments milestone have shipped; Cloud
+  collaboration is the next major product lane.
+
+## [0.0.19] - 2026-04-28
+
+### Added
+
+- Mermaid fenced code blocks render as source-preserving diagrams with
+  edit / pan / zoom controls.
+- `markdown.pen` design canvas updated with the latest local editor
+  direction.
+
+### Changed
+
+- Topbar controls were polished and the app version was bumped to
+  `0.0.19`.
+
 ## [0.0.18] - 2026-04-26
 
 ### Added
@@ -93,6 +120,7 @@ record):
   table / HTML-comment block detection, replacing earlier regex
   heuristics.
 
+[0.0.19]: https://github.com/Dede98/markdown/releases/tag/v0.0.19
 [0.0.18]: https://github.com/Dede98/markdown/releases/tag/v0.0.18
 [0.0.17]: https://github.com/Dede98/markdown/releases/tag/v0.0.17
 [0.0.16]: https://github.com/Dede98/markdown/releases/tag/v0.0.16

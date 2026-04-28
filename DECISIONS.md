@@ -142,14 +142,14 @@ Reason:
 
 Implications:
 
-- The next product milestone (Comments and annotations) is built directly, not through a speculative plugin API.
-- Three decoupling seams should be carved as the work demands them: a toolbar item registry, a `MarkdownCommand` interface, and an `EditorContribution` shape (see `ARCHITECTURE.md` § Decoupling Seams).
+- Comments and annotations were built directly, not through a speculative plugin API.
+- Three decoupling seams were carved as the work demanded them: a toolbar item registry, a `MarkdownCommand` interface, and an `EditorContribution` shape (see `ARCHITECTURE.md` § Decoupling Seams).
 - A formal third-party plugin API may follow once Comments + Realtime collaboration have both been built and the seams have been validated against two real consumers.
 
 Alternatives considered:
 
 - Build a generic plugin system before the next feature: rejected. The cost of designing for four imagined consumers exceeds the cost of refactoring once real shape is known.
-- Skip decoupling and build features monolithically: rejected. The toolbar/command/contribution seams are local, low-risk, and already pay off the first feature (Comments).
+- Skip decoupling and build features monolithically: rejected. The toolbar/command/contribution seams are local, low-risk, and paid off the first feature (Comments).
 
 ## 11. Local MVP Is Feature-Complete
 
@@ -168,7 +168,7 @@ Out of scope for v1: comments, realtime collaboration, history, MCP, third-party
 Implications:
 
 - A short polish pass closes v1 (persist mode prefs, view-mode keyboard shortcuts, accessibility parity on the Zen toggle, and any other small gaps captured in the active handoff).
-- After v1 is sealed, the next active milestone is Comments and annotations, built directly using the seams in `ARCHITECTURE.md` § Decoupling Seams.
+- After v1, Comments and annotations were built directly using the seams in `ARCHITECTURE.md` § Decoupling Seams. The next major product milestone is Cloud collaboration.
 
 ## 12. Rendered Widgets Must Preserve Markdown Source
 

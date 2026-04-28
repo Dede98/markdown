@@ -73,7 +73,7 @@ Common formatting support:
 - Mermaid fenced code blocks
 - Horizontal rules
 
-Status: feature-complete. See `DECISIONS.md` § 11 and § 12. The implemented local editor keeps `.md` canonical, including rendered tables and Mermaid diagrams. Raw mode remains the escape hatch for verbatim source editing. Once v1 is sealed, the next active milestone is Comments and annotations, built directly against the seams in `ARCHITECTURE.md` § Decoupling Seams.
+Status: feature-complete. See `DECISIONS.md` § 11 and § 12. The implemented local editor keeps `.md` canonical, including rendered tables and Mermaid diagrams. Raw mode remains the escape hatch for verbatim source editing.
 
 ## Cloud Collaboration
 
@@ -93,7 +93,7 @@ Local-only users should not need an account.
 
 ## Comments And Annotations
 
-Comments are the next active milestone after the local MVP.
+Status: implemented for local files. Comments are the first non-built-in editor feature and validate the toolbar registry, `MarkdownCommand`, and `EditorContribution` seams.
 
 Preferred direction:
 
@@ -118,9 +118,9 @@ MCP goals:
 
 ## Milestones
 
-1. Local editor MVP.
-2. Comments and annotations model.
-3. Cloud collaboration.
+1. Local editor MVP. Implemented.
+2. Comments and annotations model. Implemented for local files.
+3. Cloud collaboration. Next major milestone.
 4. History and snapshots.
 5. MCP integration.
 6. Third-party storage adapters.

@@ -300,6 +300,46 @@ test.describe("editor core", () => {
     await expect(page.getByText("No replies yet.")).toBeVisible();
   });
 
+  test("detached comment threads can be re-anchored to the current selection", async ({ page }) => {
+    const id = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    await page.goto("/");
+    await setEditorText(
+      page,
+      `before <!--c:${id}-->detached\n\nnew target\n\n<!--\nmarkdown-comments-v1\n{"threads":{"${id}":{"id":"${id}","createdAt":"2026-04-26T20:30:00Z","resolved":false,"replies":[{"id":"r_1","author":{"name":"Local User","uuid":"local"},"ts":"2026-04-26T20:30:00Z","body":"Keep this note."}]}}}\n-->`,
+    );
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Control+Shift+C");
+    await page.getByRole("button", { name: "Open thread" }).click();
+
+    const source = await getEditorSource(page);
+    const from = source.indexOf("new target");
+    await setEditorSelection(page, from, from + "new target".length);
+    await expect(page.getByRole("button", { name: "Re-anchor" })).toBeEnabled();
+    await page.getByRole("button", { name: "Re-anchor" }).click();
+
+    await expectEditorSource(page, `<!--c:${id}-->new target<!--/c:${id}-->`);
+    await expectEditorSource(page, "Keep this note.");
+    await expectEditorSourceNot(page, `before <!--c:${id}-->detached`);
+    await expect(page.locator(".commentBadge", { hasText: "Detached" })).toHaveCount(0);
+  });
+
+  test("detached comment threads can be deleted without leaving metadata behind", async ({ page }) => {
+    const id = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+    await page.goto("/");
+    await setEditorText(
+      page,
+      `before <!--c:${id}-->detached\n\n<!--\nmarkdown-comments-v1\n{"threads":{"${id}":{"id":"${id}","createdAt":"2026-04-26T20:30:00Z","resolved":false,"replies":[]}}}\n-->`,
+    );
+    await page.locator(".cm-content").click();
+    await page.keyboard.press("Control+Shift+C");
+    await page.getByRole("button", { name: "Open thread" }).click();
+    await page.getByRole("button", { name: "Delete" }).click();
+
+    await expectEditorSourceNot(page, id);
+    await expectEditorSourceNot(page, "markdown-comments-v1");
+    await expect(page.getByText("No threads")).toBeVisible();
+  });
+
   test("comment margin markers are visible in normal mode and hidden in quiet zen", async ({ page }) => {
     await seedCommentAuthor(page, "Local User");
     await page.goto("/");

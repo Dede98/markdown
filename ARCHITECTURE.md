@@ -131,12 +131,12 @@ type EditorContribution = {
 Properties:
 
 - Built-in features (formatting, raw mode, file actions) are written as contributions.
-- Comments will be the first non-built-in contribution; its shape validates the contract.
+- Comments are the first non-built-in contribution; its shape validates the contract.
 - A future formal plugin API can expose `EditorContribution` (or a vetted subset) once at least two real first-party features have been built against it.
 
 ### Order Of Carving
 
-The seams are introduced in the order each feature first demands them — typically toolbar registry first (Comments needs a comment button), then `MarkdownCommand` (Comments needs an "insert comment anchor" command), then `EditorContribution` (Comments needs to register its CM extensions, toolbar item, and keymap together). No seam is carved before there is a concrete consumer for it.
+The seams were introduced in the order Comments demanded them: toolbar registry first, then `MarkdownCommand`, then `EditorContribution`. New seams should still wait for a concrete consumer.
 
 ## Realtime Collaboration
 

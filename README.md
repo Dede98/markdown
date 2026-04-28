@@ -8,10 +8,12 @@ Markdown tool.
   still plain Markdown the moment you toggle Raw view.
 - Zen mode hides the chrome for distraction-free writing.
 - Normal mode adds a toolbar so you do not have to memorise Markdown syntax.
+- Comments live inside the `.md` file as hidden metadata, so a copied file
+  keeps its review threads without requiring a sidecar or account.
 - Open / save real `.md` files on disk. No accounts, no cloud sync.
 
-Realtime collaboration, comments, history, and MCP support are planned for
-later milestones — see [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md).
+Realtime collaboration, history, and MCP support are planned for later
+milestones — see [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md).
 
 ## Install (macOS)
 
@@ -85,6 +87,10 @@ Not deployed yet. You can run the web build locally with `pnpm dev` (see
 - Headings, bold, italic, underline, strikethrough, inline code, code blocks,
   links, lists (ordered, unordered, task), blockquotes, tables, and
   horizontal rules — all toolbar-driven.
+- Editable GFM table widgets and rendered Mermaid diagrams that save back to
+  normal Markdown source.
+- Inline comments with right-side thread sidebar, replies, resolved state,
+  detached-thread repair, and Raw view access to the underlying metadata.
 - Light, dark, and system theme.
 - Drag a `.md` file onto the window to open it (web and desktop).
 - Native Mac integrations: file associations, Finder open-with, drag onto

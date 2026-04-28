@@ -17,7 +17,14 @@ import {
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { addCommentReply, createThreadId, insertCommentAnchor, resolveCommentThread } from "./comments/commands";
+import {
+  addCommentReply,
+  createThreadId,
+  deleteCommentThread,
+  insertCommentAnchor,
+  reanchorCommentThread,
+  resolveCommentThread,
+} from "./comments/commands";
 import { CommentsSidebar } from "./comments/CommentsSidebar";
 import { createCommentsContribution } from "./comments/contribution";
 import { getStoredCommentAuthor, storeCommentAuthorName } from "./comments/identity";
@@ -275,6 +282,26 @@ export function App() {
       return;
     }
     resolveCommentThread(editorRef.current, { threadId, resolved });
+  }, []);
+
+  const handleReanchorCommentThread = useCallback((threadId: string) => {
+    if (!editorRef.current) {
+      return;
+    }
+    const repaired = reanchorCommentThread(editorRef.current, { threadId });
+    if (repaired) {
+      setSelectedCommentId(threadId);
+    }
+  }, []);
+
+  const handleDeleteCommentThread = useCallback((threadId: string) => {
+    if (!editorRef.current) {
+      return;
+    }
+    const deleted = deleteCommentThread(editorRef.current, { threadId });
+    if (deleted) {
+      setSelectedCommentId((current) => (current === threadId ? null : current));
+    }
   }, []);
 
   const handleSelectCommentThread = useCallback((threadId: string) => {
@@ -1091,6 +1118,9 @@ export function App() {
             onClose={() => setCommentsOpen(false)}
             onAddReply={handleAddCommentReply}
             onResolveThread={handleResolveCommentThread}
+            onReanchorThread={handleReanchorCommentThread}
+            onDeleteThread={handleDeleteCommentThread}
+            canReanchorThread={hasEditorSelection}
           />
         )}
       </section>

@@ -761,6 +761,12 @@ button {
   gap: 8px;
 }
 
+.commentRepairActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .commentActionButton {
   height: 28px;
   border: 0;
@@ -773,8 +779,30 @@ button {
   padding: 0 10px;
 }
 
+.commentSecondaryButton,
+.commentDangerButton {
+  display: inline-flex;
+  height: 28px;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg-body);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 9px;
+}
+
+.commentDangerButton {
+  color: var(--danger, #b42318);
+}
+
 .commentActionButton:disabled,
-.commentThreadActions .iconButton:disabled {
+.commentThreadActions .iconButton:disabled,
+.commentSecondaryButton:disabled,
+.commentDangerButton:disabled {
   cursor: default;
   opacity: 0.45;
 }

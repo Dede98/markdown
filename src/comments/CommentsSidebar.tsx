@@ -1,4 +1,4 @@
-import { Check, MessageSquare, PanelRightClose, RotateCcw } from "lucide-react";
+import { Check, Link2, MessageSquare, PanelRightClose, RotateCcw, Trash2 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CommentParseResult, CommentThreadView } from "./types";
 import { getCommentThreadViews } from "./storage";
@@ -11,6 +11,9 @@ type CommentsSidebarProps = {
   onClose: () => void;
   onAddReply: (threadId: string, body: string) => void;
   onResolveThread: (threadId: string, resolved: boolean) => void;
+  onReanchorThread: (threadId: string) => void;
+  onDeleteThread: (threadId: string) => void;
+  canReanchorThread: boolean;
 };
 
 export function CommentsSidebar({
@@ -21,6 +24,9 @@ export function CommentsSidebar({
   onClose,
   onAddReply,
   onResolveThread,
+  onReanchorThread,
+  onDeleteThread,
+  canReanchorThread,
 }: CommentsSidebarProps) {
   const threads = useMemo(() => getCommentThreadViews(parseResult), [parseResult]);
 
@@ -64,6 +70,9 @@ export function CommentsSidebar({
               onSelect={() => onSelectThread(thread.id)}
               onAddReply={(body) => onAddReply(thread.id, body)}
               onResolve={(resolved) => onResolveThread(thread.id, resolved)}
+              onReanchor={() => onReanchorThread(thread.id)}
+              onDelete={() => onDeleteThread(thread.id)}
+              canReanchor={canReanchorThread}
             />
           ))
         )}
@@ -79,6 +88,9 @@ type CommentThreadCardProps = {
   onSelect: () => void;
   onAddReply: (body: string) => void;
   onResolve: (resolved: boolean) => void;
+  onReanchor: () => void;
+  onDelete: () => void;
+  canReanchor: boolean;
 };
 
 function CommentThreadCard({
@@ -88,6 +100,9 @@ function CommentThreadCard({
   onSelect,
   onAddReply,
   onResolve,
+  onReanchor,
+  onDelete,
+  canReanchor,
 }: CommentThreadCardProps) {
   const [draft, setDraft] = useState("");
   const latestReply = thread.replies[thread.replies.length - 1];
@@ -170,6 +185,31 @@ function CommentThreadCard({
               {thread.resolved ? <RotateCcw size={14} /> : <Check size={14} />}
             </button>
           </div>
+
+          {thread.orphaned && (
+            <div className="commentRepairActions" aria-label="Detached thread actions">
+              {!thread.anchorOnly && (
+                <button
+                  type="button"
+                  className="commentSecondaryButton"
+                  onClick={onReanchor}
+                  disabled={readOnly || !canReanchor}
+                >
+                  <Link2 size={13} />
+                  Re-anchor
+                </button>
+              )}
+              <button
+                type="button"
+                className="commentDangerButton"
+                onClick={onDelete}
+                disabled={readOnly}
+              >
+                <Trash2 size={13} />
+                Delete
+              </button>
+            </div>
+          )}
         </div>
       )}
     </article>

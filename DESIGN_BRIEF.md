@@ -37,7 +37,7 @@ The app should feel focused, quiet, and document-centric. It should not feel lik
 - Comments sidebar.
 - Recent documents/open document view.
 
-The current editor-core spike should only implement the local Zen and Normal editor direction. Collaboration, comments, history, recent documents, and cloud account states remain design references until those product milestones are explicitly started.
+The current implementation covers the local Zen and Normal editor direction, rendered Markdown widgets, and the local comments sidebar. Collaboration, history, recent documents, and cloud account states remain design references until those product milestones are explicitly started.
 
 ## Zen Mode
 
@@ -108,7 +108,7 @@ Possible UI patterns:
 
 The underlying `.md` file should remain readable in other Markdown tools.
 
-The Pencil comments frames place comment markers in the document margin and threads in a right sidebar. This supports the product direction that comments are metadata anchored to Markdown, not normal visible Markdown content.
+The Pencil comments frames place comment markers in the document margin and threads in a right sidebar. The implemented local comments UI follows that direction: markers are visible in Normal mode, hidden in quiet Zen mode, and thread bodies live in the right sidebar.
 
 ## Visual Direction
 
@@ -132,5 +132,5 @@ First implementation target:
 
 - How visible should Markdown syntax be when the cursor is outside a formatted range?
 - Should Zen Mode hide file chrome completely or keep a subtle title/status line?
-- Should comments be visible as margin markers by default or only when the comments panel is open?
+- Should cloud collaboration reuse the current comments sidebar density or introduce a richer activity panel?
 - How should AI-agent presence differ visually from a human participant without making it feel alien to the collaboration model?

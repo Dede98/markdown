@@ -22,6 +22,14 @@ type ResolveCommentThreadArgs = {
   resolved: boolean;
 };
 
+type ReanchorCommentThreadArgs = {
+  threadId: string;
+};
+
+type DeleteCommentThreadArgs = {
+  threadId: string;
+};
+
 export function createThreadId() {
   return ulid();
 }
@@ -90,6 +98,60 @@ export const resolveCommentThread: MarkdownCommand<ResolveCommentThreadArgs> = (
   updateThread(view, args.threadId, (thread) => ({ ...thread, resolved: args.resolved }))
 );
 
+export const reanchorCommentThread: MarkdownCommand<ReanchorCommentThreadArgs> = (view, args) => {
+  const { state } = view;
+  const selection = state.selection.main;
+  if (selection.empty) {
+    return false;
+  }
+
+  const markdown = state.doc.toString();
+  const parsed = parseComments(markdown);
+  if (parsed.readOnlyReason || !parsed.threads[args.threadId]) {
+    return false;
+  }
+  if (parsed.metadataBlock && selection.from < parsed.metadataBlock.to && selection.to > parsed.metadataBlock.from) {
+    return false;
+  }
+
+  const selected = state.sliceDoc(selection.from, selection.to);
+  const withoutMarkers = removeCommentMarkers(markdown, args.threadId);
+  const from = adjustPosition(selection.from, withoutMarkers.removedRanges);
+  const to = adjustPosition(selection.to, withoutMarkers.removedRanges);
+  const opening = `<!--c:${args.threadId}-->`;
+  const closing = `<!--/c:${args.threadId}-->`;
+  const withAnchor = `${withoutMarkers.markdown.slice(0, from)}${opening}${selected}${closing}${withoutMarkers.markdown.slice(to)}`;
+  const nextMarkdown = replaceMetadataBlock(withAnchor, parsed.threads);
+  const anchor = from + opening.length;
+  const head = anchor + selected.length;
+
+  view.dispatch({
+    changes: { from: 0, to: state.doc.length, insert: nextMarkdown },
+    selection: { anchor, head },
+    scrollIntoView: true,
+  });
+  view.focus();
+  return true;
+};
+
+export const deleteCommentThread: MarkdownCommand<DeleteCommentThreadArgs> = (view, args) => {
+  const markdown = view.state.doc.toString();
+  const parsed = parseComments(markdown);
+  if (parsed.readOnlyReason) {
+    return false;
+  }
+
+  const { [args.threadId]: _deletedThread, ...threads } = parsed.threads;
+  const withoutMarkers = removeCommentMarkers(markdown, args.threadId);
+  const nextMarkdown = replaceMetadataBlock(withoutMarkers.markdown, threads);
+
+  view.dispatch({
+    changes: { from: 0, to: view.state.doc.length, insert: nextMarkdown },
+  });
+  view.focus();
+  return true;
+};
+
 function updateThread(
   view: EditorView,
   threadId: string,
@@ -114,4 +176,44 @@ function updateThread(
   });
   view.focus();
   return true;
+}
+
+function removeCommentMarkers(markdown: string, threadId: string) {
+  const markerPattern = new RegExp(`<!--/?c:${threadId}-->`, "gu");
+  const parsed = parseComments(markdown);
+  const limit = parsed.metadataBlock?.from ?? markdown.length;
+  const source = markdown.slice(0, limit);
+  const removedRanges: Array<{ from: number; to: number }> = [];
+  let match: RegExpExecArray | null;
+
+  while ((match = markerPattern.exec(source))) {
+    removedRanges.push({ from: match.index, to: match.index + match[0].length });
+  }
+
+  if (removedRanges.length === 0) {
+    return { markdown, removedRanges };
+  }
+
+  let next = "";
+  let cursor = 0;
+  for (const range of removedRanges) {
+    next += markdown.slice(cursor, range.from);
+    cursor = range.to;
+  }
+  next += markdown.slice(cursor);
+  return { markdown: next, removedRanges };
+}
+
+function adjustPosition(position: number, removedRanges: Array<{ from: number; to: number }>) {
+  let offset = 0;
+  for (const range of removedRanges) {
+    if (range.to <= position) {
+      offset += range.to - range.from;
+      continue;
+    }
+    if (range.from < position && position < range.to) {
+      return range.from - offset;
+    }
+  }
+  return position - offset;
 }

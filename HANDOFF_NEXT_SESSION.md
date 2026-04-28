@@ -1,13 +1,18 @@
-# Handoff — auto-update + OSS release shipped, next up: Comments
+# Handoff — local MVP + comments shipped, next up: Cloud collaboration
 
-Status: v0.0.17 is live on GitHub Releases under the `Dede98/markdown`
-project, MIT-licensed, with end-to-end auto-update wired through the
-Tauri updater plugin. The local editor MVP is feature-complete
-(`DECISIONS.md` § 11) and now the distribution loop is too.
+Status: v0.0.19 is the current app version in the repo. The project is
+MIT-licensed, has the Tauri auto-update loop wired through GitHub
+Releases, and the local editor MVP is feature-complete
+(`DECISIONS.md` § 11).
 
-The next active lane is the **Comments and annotations milestone** —
-the first non-built-in feature that drives out the seams in
-`ARCHITECTURE.md` § Decoupling Seams.
+The local Comments and annotations milestone has shipped. It was the
+first non-built-in feature and drove out the toolbar registry,
+`MarkdownCommand`, and `EditorContribution` seams in `ARCHITECTURE.md`
+§ Decoupling Seams.
+
+The next major lane is **Cloud collaboration**: Yjs-backed realtime
+editing, awareness/presence, app-owned persistence, and later history /
+MCP on top of the same mutation paths.
 
 ## What landed in the auto-update + OSS session
 
@@ -94,22 +99,20 @@ also points at the noreply address; global git config is untouched.
 - Branch: `main` (renamed from `spike/editor-core` during the
   auto-update session; the old `spike/editor-core` and the
   pre-rewrite `main` are gone).
-- HEAD: `bab1be7` (the README rewrite that ships in v0.0.17).
+- HEAD before this handoff refresh: `e2ff8c4` (`Document rendered markdown widgets`).
 - Remote: `git@github.com:Dede98/markdown.git`. Repo is **public**
   and MIT-licensed.
-- Working tree: clean.
-- Test baseline: 124 passed / 34 skipped / 0 failed (`pnpm test:e2e`).
-- Typecheck: clean (`tsc -b --noEmit`).
-- Cargo: clean (`cargo check` from `src-tauri/`).
-- Latest published release: v0.0.17 with both Mac architectures, the
-  updater manifest, and signed payloads.
+- Latest local tag: `v0.0.19`.
+- Verify current working tree and checks before relying on this file as a
+  release handoff.
 - App identifier: `io.github.dede98.markdown` (current).
 
-## Comments and annotations milestone (next)
+## Comments and annotations milestone (implemented)
 
-Per `PRODUCT_PLAN.md` § Milestones, the next active milestone.
+Per `PRODUCT_PLAN.md` § Milestones, this milestone is implemented for
+local files.
 
-Storage contract is locked this session. See revised
+Storage contract is locked. See
 `DECISIONS.md` § 6 and `ARCHITECTURE.md` § Comments And Annotations
 for the binding spec. Summary:
 
@@ -157,29 +160,23 @@ and the trailing metadata block stay invisible to readers without
 extra work. Pencil frames in `markdown.pen` show right-side thread
 panel and margin markers — both light and dark variants.
 
-Open UX question (still unresolved, from `DESIGN_BRIEF.md` § Open
-Design Questions): "Should comments be visible as margin markers by
-default or only when the comments panel is open?" Storage is locked;
-this is a purely visual default. Resolve during the architect pass
-or the first implementation slice — it does not block plan
-structure.
+The prior open UX question about margin-marker default visibility is
+resolved for local editing: markers are visible in Normal mode and
+hidden in quiet Zen mode.
 
-The Comments milestone is the first feature that should drive out the
-seams in `ARCHITECTURE.md` § Decoupling Seams:
+The Comments milestone drove out the seams in `ARCHITECTURE.md`
+§ Decoupling Seams:
 
-- Toolbar registry — Comments needs a "comment on selection" toolbar
-  button. Carve the registry as part of this work.
-- `MarkdownCommand` interface — formalize the existing
-  `wrapSelection` / `insertBlock` / `toggleLinePrefix` shape, then add
-  `insertCommentAnchor` against it.
+- Toolbar registry — Comments added a "comment on selection" toolbar
+  button as a first non-formatting toolbar contribution.
+- `MarkdownCommand` interface — existing text mutations were formalized
+  so comment commands use the same editor mutation path.
 - `EditorContribution` shape — Comments contributes CM extensions
-  (decorations for highlighted ranges + margin gutter), a toolbar
-  item, and a keymap entry. Bundle them behind the contribution shape
-  rather than wiring each into `App.tsx` ad hoc.
+  (decorations for highlighted ranges + margin gutter), a toolbar item,
+  and key bindings through one contribution.
 
-The seams are tools, not goals. Carve only what Comments forces out.
-Do not pre-design for collaboration / history / MCP — those will
-refine the seams when they are built.
+The seams are tools, not goals. Cloud collaboration, history, and MCP
+should refine them only where those features force new shape.
 
 ## Release process (carry forward)
 
@@ -240,17 +237,13 @@ refine the seams when they are built.
 
 ## How to start
 
-If picking up the Comments milestone, start in `DECISIONS.md` § 6
-and `ARCHITECTURE.md` § Comments And Annotations for the storage
-contract (locked this session — inline `<!--c:ULID-->...<!--/c:ULID-->`
-anchors plus a trailing `markdown-comments-v1` HTML comment block with
-escaped JSON; no sidecar). Then route directly through `architect`
-for the implementation plan and seam-carving order: toolbar registry
-→ `MarkdownCommand` → `EditorContribution`. The remaining open UX
-question (margin markers default-on or default-off) does not block
-plan structure and can be resolved during the architect pass or the
-first implementation slice.
+If picking up Cloud collaboration, start in `PRODUCT_PLAN.md` § Cloud
+Collaboration and `ARCHITECTURE.md` § Realtime Collaboration /
+§ Cloud Storage. The first useful step is an architecture plan/spike
+for Yjs `Y.Text`, CodeMirror/Yjs binding, awareness presence,
+Hocuspocus or a thin WebSocket server, binary Yjs update persistence,
+and materialized Markdown snapshots.
 
 If picking up an unrelated lane (e.g. notarization with an Apple
-Developer ID or a web deploy), it does not block Comments and can
-land in parallel. The CHANGELOG already shipped in v0.0.18.
+Developer ID or a web deploy), it does not block Cloud collaboration
+and can land in parallel.
