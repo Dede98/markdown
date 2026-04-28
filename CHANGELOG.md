@@ -6,6 +6,12 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Autosave preference in Settings with Off, After edits, and Every
+  interval modes. Autosave is disabled by default and only writes
+  existing file-backed documents.
+
 ## [0.0.20] - 2026-04-28
 
 ### Added

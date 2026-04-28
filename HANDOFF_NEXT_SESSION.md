@@ -1,4 +1,4 @@
-# Handoff — local MVP + comments shipped, next up: Cloud collaboration
+# Handoff — local MVP + comments shipped, QoL polish before Cloud
 
 Status: v0.0.20 is the current app version in the repo. The project is
 MIT-licensed, has the Tauri auto-update loop wired through GitHub
@@ -10,7 +10,12 @@ first non-built-in feature and drove out the toolbar registry,
 `MarkdownCommand`, and `EditorContribution` seams in `ARCHITECTURE.md`
 § Decoupling Seams.
 
-The next major lane is **Cloud collaboration**: Yjs-backed realtime
+The active short lane is **Local QoL polish before Cloud**. Autosave
+is implemented as an opt-in Settings preference. The next candidate is
+PDF export v1 through the rendered Markdown surface and print-quality
+CSS.
+
+The next major lane remains **Cloud collaboration**: Yjs-backed realtime
 editing, awareness/presence, app-owned persistence, and later history /
 MCP on top of the same mutation paths.
 
@@ -102,8 +107,7 @@ also points at the noreply address; global git config is untouched.
 - HEAD before this handoff refresh: `e2ff8c4` (`Document rendered markdown widgets`).
 - Remote: `git@github.com:Dede98/markdown.git`. Repo is **public**
   and MIT-licensed.
-- Latest local tag before release: `v0.0.19`; next release target is
-  `v0.0.20`.
+- Latest local tag: `v0.0.20`.
 - Verify current working tree and checks before relying on this file as a
   release handoff.
 - App identifier: `io.github.dede98.markdown` (current).
@@ -217,6 +221,10 @@ should refine them only where those features force new shape.
 - View-mode prefs (`markdown.raw`, `markdown.zen`) and theme
   (`markdown.theme`) live in `localStorage`; never leak to the
   Markdown body.
+- Autosave prefs (`markdown.autosave.mode`,
+  `markdown.autosave.intervalSeconds`) live in `localStorage`.
+  Autosave is opt-in and writes only existing file-backed documents;
+  untitled files still require explicit Save/Save As once.
 - Web drag-drop `.md` and Tauri `tauri://drag-drop` both funnel through
   `replaceFile` so the dirty-guard prompt and downstream UI behave
   identically regardless of the shell.
@@ -237,6 +245,11 @@ should refine them only where those features force new shape.
   structured plan / verify / ship orchestration.
 
 ## How to start
+
+If continuing QoL polish, start with PDF export v1. Keep the first
+version pragmatic: rendered Markdown + print CSS + browser/Tauri print
+pipeline. Avoid custom pagination, templates, headers/footers, or a
+publishing settings surface until the simple export is useful.
 
 If picking up Cloud collaboration, start in `PRODUCT_PLAN.md` § Cloud
 Collaboration and `ARCHITECTURE.md` § Realtime Collaboration /

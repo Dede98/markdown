@@ -75,6 +75,23 @@ Common formatting support:
 
 Status: feature-complete. See `DECISIONS.md` § 11 and § 12. The implemented local editor keeps `.md` canonical, including rendered tables and Mermaid diagrams. Raw mode remains the escape hatch for verbatim source editing.
 
+## Local QoL Polish
+
+Small local-first polish can land before the Cloud collaboration
+milestone as long as it does not introduce account requirements or a
+new canonical document model.
+
+Current QoL direction:
+
+- Autosave: implemented as an opt-in Settings preference. It is off by
+  default, can save after edits or on a chosen interval, and only writes
+  files that already have a writable handle/path. New untitled files
+  still need an explicit Save once.
+- PDF export: next candidate. Start with a pragmatic v1 that exports
+  the rendered Markdown surface through print-quality CSS and the
+  browser/Tauri print pipeline before considering custom pagination,
+  templates, headers, or publishing controls.
+
 ## Cloud Collaboration
 
 Cloud collaboration is a later milestone.
@@ -120,10 +137,11 @@ MCP goals:
 
 1. Local editor MVP. Implemented.
 2. Comments and annotations model. Implemented for local files.
-3. Cloud collaboration. Next major milestone.
-4. History and snapshots.
-5. MCP integration.
-6. Third-party storage adapters.
+3. Local QoL polish before cloud. In progress.
+4. Cloud collaboration. Next major milestone.
+5. History and snapshots.
+6. MCP integration.
+7. Third-party storage adapters.
 
 ## Later Storage Adapters
 

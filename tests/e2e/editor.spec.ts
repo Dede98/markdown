@@ -1138,6 +1138,66 @@ test.describe("editor core", () => {
     ]);
   });
 
+  test("autosave defaults off and persists its settings", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+
+    const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+    await expect(settingsDialog.getByLabel("Autosave", { exact: true })).toHaveValue("off");
+    await expect(settingsDialog.getByLabel("Autosave interval")).toBeDisabled();
+
+    await settingsDialog.getByLabel("Autosave", { exact: true }).selectOption("interval");
+    await settingsDialog.getByLabel("Autosave interval").selectOption("60");
+
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.autosave.mode"))).toBe("interval");
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.autosave.intervalSeconds"))).toBe("60");
+
+    await page.reload();
+    await page.getByRole("button", { name: "Settings" }).click();
+    await expect(page.getByRole("dialog", { name: "Settings" }).getByLabel("Autosave", { exact: true })).toHaveValue("interval");
+    await expect(page.getByRole("dialog", { name: "Settings" }).getByLabel("Autosave interval")).toHaveValue("60");
+  });
+
+  test("autosave after edits writes existing files without prompting", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await seedAutoSave(page, "after-edit");
+    await installFakeFileAdapter(page, {
+      openFile: { name: "draft.md", contents: "first" },
+    });
+    await page.goto("/");
+
+    await page.evaluate(() => {
+      (window as unknown as { confirm: () => boolean }).confirm = () => true;
+    });
+    await page.getByRole("button", { name: "Open file" }).click();
+    await setEditorText(page, "autosaved body");
+    await expect(page.locator(".documentState")).toHaveText("Unsaved");
+
+    await expect(page.locator(".documentState")).toHaveText("Saved", { timeout: 6000 });
+    const calls = await page.evaluate(() => (window as unknown as { __fileAdapterCalls: unknown[] }).__fileAdapterCalls);
+    expect(calls).toEqual([
+      { kind: "open" },
+      { kind: "save", name: "draft.md", contents: "autosaved body" },
+    ]);
+  });
+
+  test("autosave does not open save-as for a new untitled file", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await seedAutoSave(page, "after-edit");
+    await installFakeFileAdapter(page, {
+      saveAsResult: { name: "autosave.md", handleId: "fs-autosave" },
+    });
+    await page.goto("/");
+
+    await setEditorText(page, "needs a manual first save");
+
+    await expect(page.locator(".documentState")).toHaveText("Unsaved");
+    await page.waitForTimeout(3200);
+    await expect(page.locator(".documentState")).toHaveText("Unsaved");
+    const calls = await page.evaluate(() => (window as unknown as { __fileAdapterCalls: unknown[] }).__fileAdapterCalls);
+    expect(calls).toEqual([]);
+  });
+
   test("mod+s shortcut triggers a save through the adapter", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await installFakeFileAdapter(page, {
@@ -1246,7 +1306,7 @@ test.describe("editor core", () => {
 
     const settingsDialog = page.getByRole("dialog", { name: "Settings" });
     await expect(settingsDialog.getByText("Version")).toBeVisible();
-    await expect(settingsDialog.getByText("v0.0.19")).toBeVisible();
+    await expect(settingsDialog.getByText("v0.0.20")).toBeVisible();
     await expect(settingsDialog.getByRole("button", { name: "Check for updates" })).toBeDisabled();
     await expect(settingsDialog.getByText("Manual update checks are available in the Mac app.")).toBeVisible();
   });
@@ -1792,6 +1852,17 @@ async function seedCommentAuthor(page: Page, name: string) {
       // Storage may be unavailable; first-use prompt coverage exercises fallback.
     }
   }, name);
+}
+
+async function seedAutoSave(page: Page, mode: "off" | "after-edit" | "interval", intervalSeconds = 30) {
+  await page.addInitScript(({ nextMode, nextInterval }) => {
+    try {
+      window.localStorage.setItem("markdown.autosave.mode", nextMode);
+      window.localStorage.setItem("markdown.autosave.intervalSeconds", String(nextInterval));
+    } catch {
+      // Storage may be unavailable; Settings coverage exercises fallback.
+    }
+  }, { nextMode: mode, nextInterval: intervalSeconds });
 }
 
 async function installFakeFileAdapter(page: Page, options: FakeAdapterOptions = {}) {

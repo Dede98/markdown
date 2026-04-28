@@ -545,6 +545,11 @@ button {
   font-size: 12px;
 }
 
+.settingsField select:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
 .settingsOverlay {
   position: absolute;
   inset: 0;

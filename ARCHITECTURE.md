@@ -70,6 +70,25 @@ The current preview pipeline is source-preserving:
 
 All of these preview extensions live behind the raw-mode `Compartment`. Raw mode disables them and shows the `.md` source verbatim; it must remain the canonical recovery/editing path for any rendered widget.
 
+## Save Pipeline
+
+Manual save, keyboard save, native menu save, and autosave all route
+through the same file adapter write path. Autosave is a local
+preference only; it never changes the Markdown body and does not create
+cloud concepts.
+
+Autosave rules:
+
+- Disabled by default.
+- Modes are "after edits" with a short idle debounce and "every
+  interval" with a chosen interval.
+- Autosave writes only when the current file has an existing writable
+  handle/path.
+- Untitled files still require an explicit first Save/Save As so the
+  user chooses the destination.
+- A save that races a file switch must be dropped by the existing
+  `fileVersion` guard rather than updating the wrong file state.
+
 ## Decoupling Seams
 
 Per `DECISIONS.md` § 10 the project does not build a generic plugin API up front. Instead it carves three local decoupling seams as feature work demands them. Together they will absorb the next product milestones (Comments, Realtime collaboration, History, MCP) without locking the codebase into a guessed-at extension contract.

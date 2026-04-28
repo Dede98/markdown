@@ -18,6 +18,15 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
+  AUTOSAVE_AFTER_EDIT_DELAY_MS,
+  AUTOSAVE_INTERVAL_OPTIONS,
+  getStoredAutoSavePreference,
+  storeAutoSavePreference,
+  type AutoSaveInterval,
+  type AutoSaveMode,
+  type AutoSavePreference,
+} from "./autosave";
+import {
   addCommentReply,
   createThreadId,
   deleteCommentThread,
@@ -80,7 +89,7 @@ type FileState = {
   savedContents: string;
 };
 
-type SaveStatus = "idle" | "saving" | "error";
+type SaveStatus = "idle" | "saving" | "autosaving" | "error";
 type UpdateCheckStatus = "idle" | "checking" | "available" | "current" | "error" | "web";
 
 type TauriRuntimeWindow = Window & {
@@ -155,6 +164,14 @@ function formatUpdateVersion(version: string): string {
   return trimmed.toLowerCase().startsWith("v") ? trimmed : `v${trimmed}`;
 }
 
+function formatAutoSaveInterval(seconds: AutoSaveInterval): string {
+  if (seconds < 60) {
+    return `${seconds} seconds`;
+  }
+  const minutes = seconds / 60;
+  return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+}
+
 export function App() {
   const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
@@ -166,6 +183,7 @@ export function App() {
   const [commentAuthor, setCommentAuthor] = useState<CommentAuthor>(() => getStoredCommentAuthor());
   const [commentNameRequired, setCommentNameRequired] = useState(false);
   const [contentWidth, setContentWidth] = useState<ContentWidth>(() => getStoredContentWidth());
+  const [autoSavePreference, setAutoSavePreference] = useState<AutoSavePreference>(() => getStoredAutoSavePreference());
   const [zen, setZen] = useState(() => getStoredZen());
   // Raw mode renders the document as plain monospace text — every markdown
   // mark visible. Orthogonal to zen: a user can be in raw + zen at once.
@@ -192,6 +210,10 @@ export function App() {
   // through the ref guarantees the on-disk content matches what the user sees.
   const markdownRef = useRef(markdown);
   markdownRef.current = markdown;
+  const savedContentsRef = useRef(file.savedContents);
+  savedContentsRef.current = file.savedContents;
+  const saveStatusRef = useRef(saveStatus);
+  saveStatusRef.current = saveStatus;
   const commentAuthorRef = useRef(commentAuthor);
   commentAuthorRef.current = commentAuthor;
   // Mirror `fileVersion` so async save callbacks can detect that the user
@@ -228,6 +250,11 @@ export function App() {
   const handleContentWidthChange = useCallback((value: ContentWidth) => {
     setContentWidth(value);
     storeContentWidth(value);
+  }, []);
+
+  const handleAutoSavePreferenceChange = useCallback((value: AutoSavePreference) => {
+    setAutoSavePreference(value);
+    storeAutoSavePreference(value);
   }, []);
 
   const ensureCommentAuthor = useCallback(() => {
@@ -435,15 +462,17 @@ export function App() {
     }
   }, [file.name]);
 
-  const handleSave = useCallback(async () => {
+  const performSave = useCallback(async (intent: "manual" | "autosave") => {
     const adapter = getActiveAdapter();
 
     if (!file.handle) {
-      await handleSaveAs();
+      if (intent === "manual") {
+        await handleSaveAs();
+      }
       return;
     }
 
-    setSaveStatus("saving");
+    setSaveStatus(intent === "autosave" ? "autosaving" : "saving");
     setSaveError(null);
 
     const contents = markdownRef.current;
@@ -467,6 +496,14 @@ export function App() {
       setSaveError(error instanceof Error ? error.message : "Save failed");
     }
   }, [file.handle, file.name, handleSaveAs]);
+
+  const handleSave = useCallback(async () => {
+    await performSave("manual");
+  }, [performSave]);
+
+  const handleAutoSave = useCallback(async () => {
+    await performSave("autosave");
+  }, [performSave]);
 
   // Load a file by absolute path. Shared by the OS file-open path (Finder
   // double-click, "Open With", drag onto the dock icon) and the in-window
@@ -790,6 +827,40 @@ export function App() {
   // Persist view mode prefs so they survive reload.
   useEffect(() => { storeRaw(raw); }, [raw]);
   useEffect(() => { storeZen(zen); }, [zen]);
+
+  useEffect(() => {
+    if (
+      autoSavePreference.mode !== "after-edit" ||
+      !dirty ||
+      !file.handle ||
+      saveStatusRef.current === "saving" ||
+      saveStatusRef.current === "autosaving"
+    ) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      const isDirty = markdownRef.current !== savedContentsRef.current;
+      const isSaving = saveStatusRef.current === "saving" || saveStatusRef.current === "autosaving";
+      if (isDirty && !isSaving) {
+        void handleAutoSave();
+      }
+    }, AUTOSAVE_AFTER_EDIT_DELAY_MS);
+    return () => window.clearTimeout(timer);
+  }, [autoSavePreference.mode, dirty, file.handle, handleAutoSave, markdown]);
+
+  useEffect(() => {
+    if (autoSavePreference.mode !== "interval" || !file.handle) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      const isDirty = markdownRef.current !== savedContentsRef.current;
+      const isSaving = saveStatusRef.current === "saving" || saveStatusRef.current === "autosaving";
+      if (isDirty && !isSaving) {
+        void handleAutoSave();
+      }
+    }, autoSavePreference.intervalSeconds * 1000);
+    return () => window.clearInterval(timer);
+  }, [autoSavePreference.intervalSeconds, autoSavePreference.mode, file.handle, handleAutoSave]);
 
   const cycleTheme = useCallback(() => {
     setThemePref((current) => {
@@ -1151,6 +1222,7 @@ export function App() {
           commentAuthor={commentAuthor}
           commentNameRequired={commentNameRequired}
           contentWidth={contentWidth}
+          autoSavePreference={autoSavePreference}
           appVersion={__APP_VERSION__}
           canCheckForUpdates={isTauriRuntime()}
           pendingUpdateVersion={pendingUpdate?.version ?? null}
@@ -1158,6 +1230,7 @@ export function App() {
           updateCheckStatus={updateCheckStatus}
           onCommentAuthorNameChange={handleAuthorNameChange}
           onContentWidthChange={handleContentWidthChange}
+          onAutoSavePreferenceChange={handleAutoSavePreferenceChange}
           onCheckForUpdate={handleCheckForUpdate}
           onInstallUpdate={handleInstallUpdate}
           onClose={() => setSettingsOpen(false)}
@@ -1197,6 +1270,9 @@ function describeStatus({
 }): { label: string; tone: "saved" | "unsaved" | "saving" | "error" | "new" } {
   if (saveStatus === "saving") {
     return { label: "Saving…", tone: "saving" };
+  }
+  if (saveStatus === "autosaving") {
+    return { label: "Autosaving…", tone: "saving" };
   }
   if (saveStatus === "error") {
     return { label: "Save failed", tone: "error" };
@@ -1269,6 +1345,7 @@ function SettingsPanel({
   commentAuthor,
   commentNameRequired,
   contentWidth,
+  autoSavePreference,
   appVersion,
   canCheckForUpdates,
   pendingUpdateVersion,
@@ -1276,6 +1353,7 @@ function SettingsPanel({
   updateCheckStatus,
   onCommentAuthorNameChange,
   onContentWidthChange,
+  onAutoSavePreferenceChange,
   onCheckForUpdate,
   onInstallUpdate,
   onClose,
@@ -1283,6 +1361,7 @@ function SettingsPanel({
   commentAuthor: CommentAuthor;
   commentNameRequired: boolean;
   contentWidth: ContentWidth;
+  autoSavePreference: AutoSavePreference;
   appVersion: string;
   canCheckForUpdates: boolean;
   pendingUpdateVersion: string | null;
@@ -1290,6 +1369,7 @@ function SettingsPanel({
   updateCheckStatus: UpdateCheckStatus;
   onCommentAuthorNameChange: (name: string) => void;
   onContentWidthChange: (value: ContentWidth) => void;
+  onAutoSavePreferenceChange: (value: AutoSavePreference) => void;
   onCheckForUpdate: () => void;
   onInstallUpdate: () => void;
   onClose: () => void;
@@ -1323,6 +1403,46 @@ function SettingsPanel({
               <option value="full">Full width</option>
             </select>
           </label>
+          <label className="settingsField">
+            <span>Autosave</span>
+            <select
+              aria-label="Autosave"
+              value={autoSavePreference.mode}
+              onChange={(event) => {
+                onAutoSavePreferenceChange({
+                  ...autoSavePreference,
+                  mode: event.currentTarget.value as AutoSaveMode,
+                });
+              }}
+            >
+              <option value="off">Off</option>
+              <option value="after-edit">After edits</option>
+              <option value="interval">Every interval</option>
+            </select>
+          </label>
+          <label className="settingsField">
+            <span>Autosave interval</span>
+            <select
+              aria-label="Autosave interval"
+              value={String(autoSavePreference.intervalSeconds)}
+              disabled={autoSavePreference.mode !== "interval"}
+              onChange={(event) => {
+                onAutoSavePreferenceChange({
+                  ...autoSavePreference,
+                  intervalSeconds: Number(event.currentTarget.value) as AutoSaveInterval,
+                });
+              }}
+            >
+              {AUTOSAVE_INTERVAL_OPTIONS.map((seconds) => (
+                <option value={seconds} key={seconds}>
+                  {formatAutoSaveInterval(seconds)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <p className="settingsNotice">
+            Autosave writes existing files only. New untitled documents still need Save once.
+          </p>
         </div>
 
         <div className="settingsSection">

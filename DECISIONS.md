@@ -191,3 +191,28 @@ Implications:
 - Raw mode disables rendered widgets and shows the exact `.md` bytes.
 - Saving writes Markdown source only.
 - Any future rendered widget follows the same rule: source first, widget second.
+
+## 13. Autosave Is Opt-In And File-Backed
+
+Decision: Autosave is disabled by default and only writes documents
+that already have a writable local file handle/path.
+
+Reason:
+
+- Local editing must never surprise the user by choosing a destination
+  for a new untitled document.
+- Browser and Tauri save capabilities differ; the file adapter already
+  encodes whether a file can be written in place.
+- Autosave should reduce accidental data loss without changing the
+  `.md` source-of-truth model or introducing cloud sync semantics.
+
+Implications:
+
+- Settings owns the autosave preference. Modes are Off, After edits,
+  and Every interval.
+- After-edits autosave is debounced; interval autosave checks for
+  dirtiness on the configured cadence.
+- Unsaved untitled files stay dirty until the user explicitly saves
+  once. Autosave does not open Save As.
+- Manual save, menu save, keyboard save, and autosave use the same
+  adapter write path and the same file-switch race guard.
