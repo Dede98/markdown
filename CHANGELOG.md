@@ -10,12 +10,16 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 - Detached comment threads can now be re-anchored to the current
   selection or deleted from the sidebar.
+- Settings now show the app version and a Mac-app update check action.
 
 ### Changed
 
 - Planning and handoff docs now reflect that the local MVP, rendered
   Markdown widgets, and local comments milestone have shipped; Cloud
   collaboration is the next major product lane.
+- Content width now defaults to Wide for new users.
+- Adding a comment without a display name opens Settings with a visible
+  prompt instead of failing silently.
 
 ## [0.0.19] - 2026-04-28
 

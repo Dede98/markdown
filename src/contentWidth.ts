@@ -1,16 +1,17 @@
 export type ContentWidth = "focused" | "wide" | "full";
 
 const CONTENT_WIDTH_STORAGE_KEY = "markdown.contentWidth";
+const DEFAULT_CONTENT_WIDTH: ContentWidth = "wide";
 
 export function getStoredContentWidth(): ContentWidth {
   if (typeof window === "undefined") {
-    return "focused";
+    return DEFAULT_CONTENT_WIDTH;
   }
   try {
     const stored = window.localStorage.getItem(CONTENT_WIDTH_STORAGE_KEY);
-    return isContentWidth(stored) ? stored : "focused";
+    return isContentWidth(stored) ? stored : DEFAULT_CONTENT_WIDTH;
   } catch {
-    return "focused";
+    return DEFAULT_CONTENT_WIDTH;
   }
 }
 

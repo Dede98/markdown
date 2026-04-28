@@ -15,6 +15,8 @@ export function storeCommentAuthorName(name: string): CommentAuthor {
   const uuid = readLocalStorage(UUID_KEY) || createAndStoreUuid();
   if (trimmed) {
     writeLocalStorage(NAME_KEY, trimmed);
+  } else {
+    removeLocalStorage(NAME_KEY);
   }
   return { name: trimmed, uuid };
 }
@@ -39,6 +41,16 @@ function writeLocalStorage(key: string, value: string) {
   try {
     if (typeof localStorage !== "undefined") {
       localStorage.setItem(key, value);
+    }
+  } catch {
+    // Local storage can be disabled; comments still work for the session.
+  }
+}
+
+function removeLocalStorage(key: string) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(key);
     }
   } catch {
     // Local storage can be disabled; comments still work for the session.

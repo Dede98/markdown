@@ -191,24 +191,21 @@ test.describe("editor core", () => {
     await expect(page.getByTitle("Add comment")).toBeDisabled();
   });
 
-  test("first comment asks for a display name and general settings can edit it later", async ({ page }) => {
+  test("first comment opens settings when display name is missing", async ({ page }) => {
     await page.goto("/");
     await replaceEditorText(page, "review this phrase");
 
-    page.once("dialog", async (dialog) => {
-      expect(dialog.message()).toContain("Display name");
-      await dialog.accept("Dejan");
-    });
     await page.getByTitle("Add comment").click();
 
-    await expect(page.getByRole("complementary", { name: "Comments" })).toBeVisible();
-    await expect(page.getByLabel("Display name")).toHaveCount(0);
-
-    await page.getByRole("button", { name: "Settings" }).click();
     const settingsDialog = page.getByRole("dialog", { name: "Settings" });
     await expect(settingsDialog).toBeVisible();
     await expect(settingsDialog.getByRole("heading", { name: "Comments" })).toBeVisible();
-    await expect(page.getByLabel("Display name")).toHaveValue("Dejan");
+    await expect(page.getByText("Set a display name before adding a comment.")).toBeVisible();
+    await expect(page.getByLabel("Display name")).toHaveAttribute("aria-invalid", "true");
+
+    await page.getByLabel("Display name").fill("Dejan");
+    await expect(page.getByText("Set a display name before adding a comment.")).toHaveCount(0);
+    expect(await page.evaluate(() => window.localStorage.getItem("markdown.comments.authorName"))).toBe("Dejan");
   });
 
   test("comment replies and resolved state update the metadata block", async ({ page }) => {
@@ -611,6 +608,9 @@ test.describe("editor core", () => {
 
   test("short table cell editor uses the visible row height", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
+    await page.addInitScript(() => {
+      window.localStorage.setItem("markdown.contentWidth", "focused");
+    });
     await page.goto("/");
     await setEditorText(
       page,
@@ -1229,7 +1229,7 @@ test.describe("editor core", () => {
   test("content width setting supports full width and persists", async ({ page }) => {
     await page.goto("/");
 
-    await expect.poll(() => getEditorContentMaxWidth(page)).toBe("700px");
+    await expect.poll(() => getEditorContentMaxWidth(page)).toBe("980px");
     await page.getByRole("button", { name: "Settings" }).click();
     await page.getByLabel("Content width").selectOption("full");
 
@@ -1238,6 +1238,17 @@ test.describe("editor core", () => {
 
     await page.reload();
     await expect.poll(() => getEditorContentMaxWidth(page)).toBe("none");
+  });
+
+  test("settings show app version and web-safe update controls", async ({ page }) => {
+    await page.goto("/");
+    await page.getByRole("button", { name: "Settings" }).click();
+
+    const settingsDialog = page.getByRole("dialog", { name: "Settings" });
+    await expect(settingsDialog.getByText("Version")).toBeVisible();
+    await expect(settingsDialog.getByText("v0.0.19")).toBeVisible();
+    await expect(settingsDialog.getByRole("button", { name: "Check for updates" })).toBeDisabled();
+    await expect(settingsDialog.getByText("Manual update checks are available in the Mac app.")).toBeVisible();
   });
 
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {

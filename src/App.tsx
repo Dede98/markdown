@@ -81,6 +81,7 @@ type FileState = {
 };
 
 type SaveStatus = "idle" | "saving" | "error";
+type UpdateCheckStatus = "idle" | "checking" | "available" | "current" | "error" | "web";
 
 type TauriRuntimeWindow = Window & {
   __TAURI_INTERNALS__?: unknown;
@@ -163,6 +164,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [commentAuthor, setCommentAuthor] = useState<CommentAuthor>(() => getStoredCommentAuthor());
+  const [commentNameRequired, setCommentNameRequired] = useState(false);
   const [contentWidth, setContentWidth] = useState<ContentWidth>(() => getStoredContentWidth());
   const [zen, setZen] = useState(() => getStoredZen());
   // Raw mode renders the document as plain monospace text — every markdown
@@ -183,6 +185,7 @@ export function App() {
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const [installingUpdate, setInstallingUpdate] = useState(false);
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
+  const [updateCheckStatus, setUpdateCheckStatus] = useState<UpdateCheckStatus>("idle");
   const editorRef = useRef<EditorView | null>(null);
   // Latest editor text. Saving from a keyboard shortcut runs in the same tick
   // as `setMarkdown`, so a closure-captured `markdown` would be stale; reading
@@ -215,7 +218,11 @@ export function App() {
   }, []);
 
   const handleAuthorNameChange = useCallback((name: string) => {
-    setCommentAuthor(storeCommentAuthorName(name));
+    const next = storeCommentAuthorName(name);
+    setCommentAuthor(next);
+    if (next.name.trim()) {
+      setCommentNameRequired(false);
+    }
   }, []);
 
   const handleContentWidthChange = useCallback((value: ContentWidth) => {
@@ -228,16 +235,9 @@ export function App() {
     if (current.name.trim()) {
       return current;
     }
-    if (typeof window === "undefined") {
-      return null;
-    }
-    const name = window.prompt("Display name for comments");
-    if (!name?.trim()) {
-      return null;
-    }
-    const next = storeCommentAuthorName(name);
-    setCommentAuthor(next);
-    return next;
+    setCommentNameRequired(true);
+    setSettingsOpen(true);
+    return null;
   }, []);
 
   const handleAddComment = useCallback(() => {
@@ -684,6 +684,27 @@ export function App() {
     }
   }, [pendingUpdate, installingUpdate]);
 
+  const handleCheckForUpdate = useCallback(async () => {
+    if (!isTauriRuntime()) {
+      setUpdateCheckStatus("web");
+      return;
+    }
+    setUpdateCheckStatus("checking");
+    try {
+      const update = await checkForUpdate();
+      if (update) {
+        setPendingUpdate(update);
+        setUpdateCheckStatus("available");
+        return;
+      }
+      setPendingUpdate(null);
+      setUpdateCheckStatus("current");
+    } catch (error) {
+      console.error("Update check failed", error);
+      setUpdateCheckStatus("error");
+    }
+  }, []);
+
   // Tauri drag region: with `titleBarStyle: "Overlay"` the OS no longer reserves
   // a native titlebar, so dragging relies on the explicit drag region attribute
   // plus a JS bridge into `startDragging`. Bind in the capture phase on the
@@ -1128,9 +1149,17 @@ export function App() {
       {settingsOpen && (
         <SettingsPanel
           commentAuthor={commentAuthor}
+          commentNameRequired={commentNameRequired}
           contentWidth={contentWidth}
+          appVersion={__APP_VERSION__}
+          canCheckForUpdates={isTauriRuntime()}
+          pendingUpdateVersion={pendingUpdate?.version ?? null}
+          installingUpdate={installingUpdate}
+          updateCheckStatus={updateCheckStatus}
           onCommentAuthorNameChange={handleAuthorNameChange}
           onContentWidthChange={handleContentWidthChange}
+          onCheckForUpdate={handleCheckForUpdate}
+          onInstallUpdate={handleInstallUpdate}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -1238,17 +1267,35 @@ function renderToolbarItem(
 
 function SettingsPanel({
   commentAuthor,
+  commentNameRequired,
   contentWidth,
+  appVersion,
+  canCheckForUpdates,
+  pendingUpdateVersion,
+  installingUpdate,
+  updateCheckStatus,
   onCommentAuthorNameChange,
   onContentWidthChange,
+  onCheckForUpdate,
+  onInstallUpdate,
   onClose,
 }: {
   commentAuthor: CommentAuthor;
+  commentNameRequired: boolean;
   contentWidth: ContentWidth;
+  appVersion: string;
+  canCheckForUpdates: boolean;
+  pendingUpdateVersion: string | null;
+  installingUpdate: boolean;
+  updateCheckStatus: UpdateCheckStatus;
   onCommentAuthorNameChange: (name: string) => void;
   onContentWidthChange: (value: ContentWidth) => void;
+  onCheckForUpdate: () => void;
+  onInstallUpdate: () => void;
   onClose: () => void;
 }) {
+  const updateStatusText = getUpdateStatusText(updateCheckStatus, pendingUpdateVersion);
+
   return (
     <div className="settingsOverlay">
       <section className="settingsPanel" role="dialog" aria-modal="true" aria-label="Settings">
@@ -1286,12 +1333,70 @@ function SettingsPanel({
               value={commentAuthor.name}
               onChange={(event) => onCommentAuthorNameChange(event.currentTarget.value)}
               placeholder="Your name"
+              aria-invalid={commentNameRequired && !commentAuthor.name.trim()}
+              aria-describedby={commentNameRequired && !commentAuthor.name.trim() ? "comment-name-required" : undefined}
             />
           </label>
+          {commentNameRequired && !commentAuthor.name.trim() && (
+            <p className="settingsNotice settingsNoticeError" id="comment-name-required">
+              Set a display name before adding a comment.
+            </p>
+          )}
+        </div>
+
+        <div className="settingsSection">
+          <h3>App</h3>
+          <div className="settingsInfoRow">
+            <span>Version</span>
+            <strong>{formatUpdateVersion(appVersion)}</strong>
+          </div>
+          <div className="settingsActionRow">
+            <button
+              type="button"
+              className="settingsActionButton"
+              onClick={onCheckForUpdate}
+              disabled={!canCheckForUpdates || updateCheckStatus === "checking" || installingUpdate}
+            >
+              {updateCheckStatus === "checking" ? "Checking..." : "Check for updates"}
+            </button>
+            {pendingUpdateVersion && (
+              <button
+                type="button"
+                className="settingsActionButton settingsActionButtonPrimary"
+                onClick={onInstallUpdate}
+                disabled={installingUpdate}
+              >
+                {installingUpdate ? "Installing..." : `Install ${formatUpdateVersion(pendingUpdateVersion)}`}
+              </button>
+            )}
+          </div>
+          <p className={updateCheckStatus === "error" ? "settingsNotice settingsNoticeError" : "settingsNotice"}>
+            {updateStatusText}
+          </p>
         </div>
       </section>
     </div>
   );
+}
+
+function getUpdateStatusText(status: UpdateCheckStatus, pendingUpdateVersion: string | null) {
+  if (pendingUpdateVersion) {
+    return `Update ${formatUpdateVersion(pendingUpdateVersion)} is available.`;
+  }
+  switch (status) {
+    case "checking":
+      return "Checking GitHub Releases for an update.";
+    case "current":
+      return "You are running the latest available version.";
+    case "error":
+      return "Update check failed. Try again later.";
+    case "web":
+      return "Update checks are available in the Mac app.";
+    case "available":
+    case "idle":
+    default:
+      return "Manual update checks are available in the Mac app.";
+  }
 }
 
 function wordCount(markdown: string) {

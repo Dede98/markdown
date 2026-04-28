@@ -605,6 +605,62 @@ button {
   padding: 0;
 }
 
+.settingsInfoRow,
+.settingsActionRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settingsInfoRow {
+  justify-content: space-between;
+  color: var(--fg-muted);
+  font-size: 12px;
+}
+
+.settingsInfoRow strong {
+  color: var(--fg-strong);
+  font-weight: 650;
+}
+
+.settingsActionRow {
+  flex-wrap: wrap;
+}
+
+.settingsActionButton {
+  height: 30px;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--fg-body);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 0 10px;
+}
+
+.settingsActionButtonPrimary {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: var(--accent-check);
+}
+
+.settingsActionButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.settingsNotice {
+  margin: 0;
+  color: var(--fg-faint);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.settingsNoticeError {
+  color: var(--tone-error-fg);
+}
+
 .editorMount {
   --editor-content-max-width: 700px;
   --editor-content-padding: 32px;
