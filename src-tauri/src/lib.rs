@@ -109,30 +109,45 @@ pub fn run() {
         .expect("error while building tauri application");
 
     app.run(|app_handle, event| {
-        // macOS file association / "Open With" / drag-onto-dock-icon all land
-        // here. The webview may or may not exist yet:
-        //   - cold start: no webview → queue the path, JS drains on mount
-        //   - warm: webview exists → emit live and skip the queue, otherwise
-        //     a stale entry from a previous run would also be re-loaded
-        if let tauri::RunEvent::Opened { urls } = event {
-            let state = app_handle.state::<PendingOpenPaths>();
-            let has_webview = !app_handle.webview_windows().is_empty();
-            for url in urls {
-                let Ok(path) = url.to_file_path() else { continue };
-                // Skip non-UTF-8 paths instead of mangling them with U+FFFD;
-                // a corrupted string would just fail at readTextFile anyway.
-                let Some(path_str) = path.to_str().map(|s| s.to_string()) else {
-                    eprintln!("skipping non-UTF-8 path from RunEvent::Opened");
-                    continue;
-                };
-                if has_webview {
-                    if let Err(err) = app_handle.emit(EVENT_OPEN_PATH, &path_str) {
-                        eprintln!("failed to emit {EVENT_OPEN_PATH}: {err}");
+        #[cfg(target_os = "macos")]
+        {
+            // macOS file association / "Open With" / drag-onto-dock-icon all
+            // land here. Tauri's `RunEvent::Opened` is not exposed on the
+            // Windows/Linux targets this project builds, so keep this path
+            // explicitly Apple-only until those shells get their own verified
+            // open-with plumbing.
+            //
+            // The webview may or may not exist yet:
+            //   - cold start: no webview → queue the path, JS drains on mount
+            //   - warm: webview exists → emit live and skip the queue,
+            //     otherwise a stale entry from a previous run would also be
+            //     re-loaded
+            if let tauri::RunEvent::Opened { urls } = event {
+                let state = app_handle.state::<PendingOpenPaths>();
+                let has_webview = !app_handle.webview_windows().is_empty();
+                for url in urls {
+                    let Ok(path) = url.to_file_path() else { continue };
+                    // Skip non-UTF-8 paths instead of mangling them with
+                    // U+FFFD; a corrupted string would just fail at
+                    // readTextFile anyway.
+                    let Some(path_str) = path.to_str().map(|s| s.to_string()) else {
+                        eprintln!("skipping non-UTF-8 path from RunEvent::Opened");
+                        continue;
+                    };
+                    if has_webview {
+                        if let Err(err) = app_handle.emit(EVENT_OPEN_PATH, &path_str) {
+                            eprintln!("failed to emit {EVENT_OPEN_PATH}: {err}");
+                        }
+                    } else {
+                        state.lock_recover().push(path_str);
                     }
-                } else {
-                    state.lock_recover().push(path_str);
                 }
             }
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let _ = (app_handle, event);
         }
     });
 }
