@@ -6,6 +6,8 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.22] - 2026-04-29
+
 ### Added
 
 - Release workflow now drafts native desktop assets for macOS arm64, macOS
@@ -158,6 +160,7 @@ record):
   table / HTML-comment block detection, replacing earlier regex
   heuristics.
 
+[0.0.22]: https://github.com/Dede98/markdown/releases/tag/v0.0.22
 [0.0.21]: https://github.com/Dede98/markdown/releases/tag/v0.0.21
 [0.0.20]: https://github.com/Dede98/markdown/releases/tag/v0.0.20
 [0.0.19]: https://github.com/Dede98/markdown/releases/tag/v0.0.19
