@@ -117,7 +117,7 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build, sign, and draft release
-        uses: tauri-apps/tauri-action@v1
+        uses: tauri-apps/tauri-action@v0
         env:
           # Signs the updater payload. tauri-action expands these env vars
           # into the `--private-key` and `--private-key-password` flags it
