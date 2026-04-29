@@ -241,8 +241,10 @@ AI-agent participant shape, comment-marker mapping, and deterministic
 Markdown materialization. The mock room is now app-owned: users start it
 explicitly from the collaboration control, the main editor joins the
 room, and leaving the room returns a materialized `.md` snapshot to the
-normal editor buffer. It intentionally does not introduce auth, server
-persistence, or a public plugin API.
+normal editor buffer. Room creation now goes through an internal
+`CloudSessionProvider` contract with an in-memory provider first; app
+code does not construct Yjs room state directly. It intentionally does
+not introduce auth, server persistence, or a public plugin API.
 
 Reason:
 

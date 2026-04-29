@@ -7,33 +7,33 @@ import type { PresenceParticipant } from "../documentSession";
 import { emptyFormat, type ActiveFormat } from "../editorFormat";
 import type { EditorContribution } from "../editorContributions";
 import { MarkdownEditor } from "../MarkdownEditor";
-import type { CloudCollaborationSpikeSession } from "./session";
+import type { CloudRoomHandle } from "./session";
 
 type CloudCollaborationContributionOptions = {
   open: boolean;
-  spike: CloudCollaborationSpikeSession | null;
+  cloudRoom: CloudRoomHandle | null;
   onClose: () => void;
   onLeaveRoom: () => void;
 };
 
 export function createCloudCollaborationContribution({
   open,
-  spike,
+  cloudRoom,
   onClose,
   onLeaveRoom,
 }: CloudCollaborationContributionOptions): AppContribution {
   return {
     id: "cloud-collaboration",
-    panels: open && spike
+    panels: open && cloudRoom
       ? [
           {
-            id: "cloud-collaboration-spike",
-            label: "Collaboration spike",
+            id: "cloud-collaboration-room",
+            label: "Collaboration room",
             placement: "right",
             render: (context) => (
               <CloudCollaborationPanel
                 context={context}
-                spike={spike}
+                cloudRoom={cloudRoom}
                 onClose={onClose}
                 onLeaveRoom={onLeaveRoom}
               />
@@ -56,7 +56,7 @@ export function createCloudCollaborationContribution({
     statusItems: [
       {
         id: "cloud-collaboration",
-        render: () => (spike ? <span>Cloud room</span> : null),
+        render: () => (cloudRoom ? <span>Cloud room</span> : null),
       },
     ],
   };
@@ -77,44 +77,44 @@ export function createCloudRoomEditorContribution({
 
 function CloudCollaborationPanel({
   context,
-  spike,
+  cloudRoom,
   onClose,
   onLeaveRoom,
 }: {
   context: AppContributionContext;
-  spike: CloudCollaborationSpikeSession;
+  cloudRoom: CloudRoomHandle;
   onClose: () => void;
   onLeaveRoom: () => void;
 }) {
-  const [materialized, setMaterialized] = useState(() => spike.materializeMarkdown());
-  const [participants, setParticipants] = useState(() => spike.getPresenceParticipants());
-  const [commentMapping, setCommentMapping] = useState(() => spike.getCommentMappingSummary());
+  const [materialized, setMaterialized] = useState(() => cloudRoom.materializeMarkdown());
+  const [participants, setParticipants] = useState(() => cloudRoom.getPresenceParticipants());
+  const [commentMapping, setCommentMapping] = useState(() => cloudRoom.getCommentMappingSummary());
 
   useEffect(() => {
     const update = () => {
-      setMaterialized(spike.materializeMarkdown());
-      setCommentMapping(spike.getCommentMappingSummary());
+      setMaterialized(cloudRoom.materializeMarkdown());
+      setCommentMapping(cloudRoom.getCommentMappingSummary());
     };
-    spike.ytext.observe(update);
+    cloudRoom.ytext.observe(update);
     return () => {
-      spike.ytext.unobserve(update);
+      cloudRoom.ytext.unobserve(update);
     };
-  }, [spike]);
+  }, [cloudRoom]);
 
   useEffect(() => {
-    const updatePresence = () => setParticipants(spike.getPresenceParticipants());
-    spike.awareness.primary.on("change", updatePresence);
+    const updatePresence = () => setParticipants(cloudRoom.getPresenceParticipants());
+    cloudRoom.awareness.primary.on("change", updatePresence);
     return () => {
-      spike.awareness.primary.off("change", updatePresence);
+      cloudRoom.awareness.primary.off("change", updatePresence);
     };
-  }, [spike]);
+  }, [cloudRoom]);
 
   return (
     <aside className="cloudPanel" aria-label="Collaboration spike">
       <div className="cloudPanelHeader">
         <div>
           <h2>Collaboration</h2>
-          <p>{spike.session.title}</p>
+          <p>{cloudRoom.session.title}</p>
         </div>
         <button className="iconButton" type="button" title="Close collaboration" aria-label="Close collaboration" onClick={onClose}>
           <PanelRightClose size={16} />
@@ -136,9 +136,9 @@ function CloudCollaborationPanel({
       <div className="cloudClientStack">
         <CloudClientEditor
           label="Peer client"
-          participant={spike.participants[1]}
-          ytext={spike.ytext}
-          awareness={spike.awareness.secondary}
+          participant={cloudRoom.participants[1]}
+          ytext={cloudRoom.ytext}
+          awareness={cloudRoom.awareness.secondary}
         />
       </div>
 

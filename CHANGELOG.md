@@ -16,6 +16,9 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
   main editor, sync the main editor with a peer client, and leave the
   room with the materialized Markdown snapshot still in the normal
   editor buffer.
+- Internal `CloudSessionProvider` contract with an in-memory provider
+  that owns Yjs room state, awareness, lifecycle, and Markdown
+  materialization.
 
 ### Changed
 

@@ -26,7 +26,8 @@ markdown-comments-v1
 -->
 `;
 
-export type CloudCollaborationSpikeSession = {
+export type CloudRoomHandle = {
+  providerId: string;
   session: CloudRoomSession;
   ydoc: Y.Doc;
   ytext: Y.Text;
@@ -41,13 +42,35 @@ export type CloudCollaborationSpikeSession = {
   destroy: () => void;
 };
 
+export type CloudRoomStartOptions = {
+  roomId?: string;
+  title?: string;
+  seedMarkdown?: string;
+};
+
+export type CloudSessionProvider = {
+  id: string;
+  label: string;
+  startRoom: (options: CloudRoomStartOptions) => CloudRoomHandle;
+};
+
 export type CommentMappingSummary = {
   anchors: number;
   threads: number;
   orphaned: number;
 };
 
-export function createCloudCollaborationSpikeSession(seedMarkdown?: string): CloudCollaborationSpikeSession {
+export const inMemoryCloudSessionProvider: CloudSessionProvider = {
+  id: "in-memory",
+  label: "In-memory room",
+  startRoom: (options) => createInMemoryCloudRoomSession(options),
+};
+
+function createInMemoryCloudRoomSession({
+  roomId = "mock-cloud-room",
+  title = "Cloud room spike",
+  seedMarkdown,
+}: CloudRoomStartOptions): CloudRoomHandle {
   const ydoc = new Y.Doc();
   const ytext = ydoc.getText("markdown");
   const initial = normalizeSeedMarkdown(seedMarkdown);
@@ -100,13 +123,14 @@ export function createCloudCollaborationSpikeSession(seedMarkdown?: string): Clo
   const materializeMarkdown = () => ytext.toString();
   const session: CloudRoomSession = {
     kind: "cloud-room",
-    roomId: "mock-cloud-room",
-    title: "Cloud room spike",
+    roomId,
+    title,
     presence: { participants },
     materializeMarkdown,
   };
 
   return {
+    providerId: inMemoryCloudSessionProvider.id,
     session,
     ydoc,
     ytext,
