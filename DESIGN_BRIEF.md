@@ -15,7 +15,8 @@ The app should feel focused, quiet, and document-centric. It should not feel lik
 - `.md` files are the canonical document source.
 - The editor is WYSIWYM: Markdown renders while typing, but Markdown syntax remains editable.
 - Local offline use does not require an account.
-- Cloud collaboration requires an account.
+- Cloud collaboration requires an account only when a user explicitly
+  chooses online collaboration.
 - The app has Zen and Normal modes.
 - Future AI agents appear as collaboration participants.
 
@@ -83,6 +84,11 @@ Visual notes from the design:
 
 ## Collaboration
 
+Cloud collaboration is optional. The local editor should never open into
+a login wall, empty cloud dashboard, or online-first workspace. Cloud
+entry points should feel like a first-party capability that can be
+enabled from file sharing, collaboration controls, or account settings.
+
 Collaboration UI should show:
 
 - Active human participants.
@@ -90,6 +96,8 @@ Collaboration UI should show:
 - Remote cursors or selections.
 - Sync/save state.
 - Comment activity when relevant.
+- A clear distinction between local file state and online room state.
+- Account/sign-in UI that is scoped to collaboration, not local editing.
 
 AI-agent presence should make clear which user account owns or authorized the agent.
 

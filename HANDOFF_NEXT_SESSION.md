@@ -1,6 +1,6 @@
-# Handoff — local MVP + comments shipped, QoL polish before Cloud
+# Handoff — Cloud collaboration architecture spike next
 
-Status: v0.0.21 is the current released app version in the repo. The
+Status: v0.0.23 is the current released app version in the repo. The
 project is MIT-licensed, has the Tauri auto-update loop wired through
 GitHub Releases, and the local editor MVP is feature-complete
 (`DECISIONS.md` § 11).
@@ -10,19 +10,20 @@ first non-built-in feature and drove out the toolbar registry,
 `MarkdownCommand`, and `EditorContribution` seams in `ARCHITECTURE.md`
 § Decoupling Seams.
 
-The active short lane is **Local QoL polish before Cloud**. Autosave
-is implemented as an opt-in Settings preference. PDF export v1 is now
-implemented through the rendered Markdown surface, print-quality CSS,
-and the browser/Tauri print dialog.
+The active short lane before Cloud is complete for the current scope:
+autosave is implemented as an opt-in Settings preference, PDF export v1
+is implemented through the rendered Markdown surface and print dialog,
+and Windows/Linux release parity has been reported working after the
+multi-platform v0.0.23 release workflow fix.
 
-The next major lane remains **Cloud collaboration**: Yjs-backed realtime
+The next major lane is **Cloud collaboration**: Yjs-backed realtime
 editing, awareness/presence, app-owned persistence, and later history /
 MCP on top of the same mutation paths.
 
-Windows/Linux native release parity is now implemented in the release
-infrastructure and docs, but still needs CI draft-release validation and
-manual platform smoke testing before publishing. The working checklist is
-`WINDOWS_LINUX_RELEASE_TASK.md`.
+Architecture direction is now locked: Cloud collaboration should be a
+bundled first-party optional extension over explicit core seams. Login
+and online state must not become prerequisites for local `.md` editing.
+Do not build a public plugin API yet.
 
 ## What landed in the auto-update + OSS session
 
@@ -112,7 +113,7 @@ also points at the noreply address; global git config is untouched.
 - HEAD before this handoff refresh: `e2ff8c4` (`Document rendered markdown widgets`).
 - Remote: `git@github.com:Dede98/markdown.git`. Repo is **public**
   and MIT-licensed.
-- Latest local tag before publishing this release: `v0.0.20`.
+- Latest local tag: `v0.0.23`.
 - Verify current working tree and checks before relying on this file as a
   release handoff.
 - App identifier: `io.github.dede98.markdown` (current).
@@ -120,6 +121,8 @@ also points at the noreply address; global git config is untouched.
   AppImage. `.deb`, Flatpak, Snap, store publishing, notarization, and
   Windows code-signing certificates remain out of scope until explicitly
   requested.
+- Next architecture decision anchor: `DECISIONS.md` § 14 says Cloud
+  collaboration is optional first-party extension work.
 
 ## Comments and annotations milestone (implemented)
 
@@ -217,6 +220,10 @@ should refine them only where those features force new shape.
 - Comments are metadata anchored to Markdown, not normal visible
   Markdown content.
 - Local offline use does not require an account.
+- Cloud collaboration is optional first-party extension work. It may
+  register editor extensions, panels, settings, status items, presence,
+  and session lifecycle hooks, but must not force login or online state
+  for local `.md` files.
 - No "document" / "doc id" / "sync" in new code, comments, commit
   messages — use "file" / "handle" / "path" / "save" per
   `AGENTS.md`.
@@ -267,16 +274,25 @@ headers/footers, or a publishing settings surface until the simple
 export proves insufficient.
 
 If picking up Cloud collaboration, start in `PRODUCT_PLAN.md` § Cloud
-Collaboration and `ARCHITECTURE.md` § Realtime Collaboration /
-§ Cloud Storage. The first useful step is an architecture plan/spike
-for Yjs `Y.Text`, CodeMirror/Yjs binding, awareness presence,
-Hocuspocus or a thin WebSocket server, binary Yjs update persistence,
-and materialized Markdown snapshots.
+Collaboration, `DECISIONS.md` § 10 and § 14, and `ARCHITECTURE.md`
+§ Decoupling Seams / § Document Sessions / § Realtime Collaboration /
+§ Cloud Storage. The first useful step is an architecture spike for:
 
-If continuing Windows/Linux native release parity, start with
-`WINDOWS_LINUX_RELEASE_TASK.md`. The local workflow/config/docs pass has
-landed; next verify the CI draft release has macOS, Windows, and Linux
-assets, then manually smoke each platform before publishing.
+- `DocumentSession` separating local-file sessions from cloud-room
+  sessions without leaking room/sync/auth terminology into local file
+  code.
+- `AppContribution` style first-party extension registration for editor
+  extensions, panels, settings, status items, and lifecycle hooks.
+- Yjs `Y.Text` plus CodeMirror/Yjs binding.
+- awareness presence for humans and AI-agent participants.
+- Hocuspocus or a thin WebSocket server.
+- binary Yjs update persistence.
+- materialized Markdown snapshots and `.md` export.
+
+Acceptance for the spike: two editor clients can edit the same Markdown
+text without breaking raw/rendered mode, presence renders for at least
+one human and one AI-agent participant shape, comments remain mappable,
+and the session can materialize deterministic `.md`.
 
 If picking up an unrelated lane (e.g. notarization with an Apple
 Developer ID or a web deploy), it does not block Cloud collaboration

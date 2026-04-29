@@ -11,6 +11,8 @@ The editor should let a user open a `.md` file, edit it in a rendered Markdown w
 - Markdown remains the source of truth.
 - Local offline editing works without an account.
 - Cloud features are optional and only required for collaboration.
+- Login, cloud storage, and online collaboration are optional first-party
+  capabilities, not a prerequisite for opening or editing local `.md` files.
 - The product should stay document-centric and quiet.
 - AI agents should edit through the same collaboration model as humans.
 - Future features must not force a proprietary document format for normal Markdown files.
@@ -96,7 +98,11 @@ Current QoL direction:
 
 ## Cloud Collaboration
 
-Cloud collaboration is a later milestone.
+Cloud collaboration is the next major milestone.
+
+It should be built as a bundled first-party extension over explicit
+core seams, not as a mandatory app mode and not yet as a public plugin
+API. Local editing remains the default product path.
 
 Cloud should add:
 
@@ -108,7 +114,11 @@ Cloud should add:
 - History and snapshots.
 - Export back to `.md`.
 
-Local-only users should not need an account.
+Local-only users should never need an account. The app should not show a
+login wall on launch, should not require online state to open files, and
+should keep local file controls free of cloud terminology. Cloud entry
+points belong in optional collaboration affordances, account settings,
+and explicit "share/collaborate" flows.
 
 ## Comments And Annotations
 
@@ -139,8 +149,10 @@ MCP goals:
 
 1. Local editor MVP. Implemented.
 2. Comments and annotations model. Implemented for local files.
-3. Local QoL polish before cloud. In progress.
-4. Cloud collaboration. Next major milestone.
+3. Local QoL polish before cloud. Implemented for autosave, PDF export,
+   and current native release parity.
+4. Cloud collaboration. Next major milestone, starting with a
+   first-party extension/session architecture spike.
 5. History and snapshots.
 6. MCP integration.
 7. Third-party storage adapters.

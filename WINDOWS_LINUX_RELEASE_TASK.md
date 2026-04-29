@@ -18,12 +18,14 @@ introduce cloud concepts, a proprietary document model, or a plugin API.
 ## Current state
 
 - Current app version: `0.0.23`.
-- Local implementation pass is in progress: `.github/workflows/release.yml`
+- Local implementation pass is complete: `.github/workflows/release.yml`
   now targets macOS arm64, macOS x64, Windows x64, and Linux x64 draft
   release assets; `src-tauri/tauri.conf.json` now deliberately bundles DMG,
   NSIS, and AppImage only.
-- CI draft-release validation and manual platform smoke testing are still
-  required before publishing or calling parity fully verified.
+- CI draft-release validation and manual platform smoke testing were
+  reported working after the v0.0.23 macOS updater-artifact fix. Keep
+  the smoke matrix below as the regression checklist for future release
+  changes.
 - `src-tauri/tauri.conf.json` remains mostly cross-platform: updater artifacts
   are enabled, icons include `.ico`, and file associations are declared for
   `md` / `markdown` / `mdx` / `mdown`.

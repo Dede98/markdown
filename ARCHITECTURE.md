@@ -93,6 +93,31 @@ Autosave rules:
 
 Per `DECISIONS.md` § 10 the project does not build a generic plugin API up front. Instead it carves three local decoupling seams as feature work demands them. Together they will absorb the next product milestones (Comments, Realtime collaboration, History, MCP) without locking the codebase into a guessed-at extension contract.
 
+Cloud collaboration should continue this pattern. It is optional from a
+product perspective, but it is too close to the editor transaction path
+to be treated as a loose third-party plugin. The next milestone should
+introduce first-party extension seams that let Cloud register its editor
+extensions, panels, settings, status items, and session lifecycle hooks
+without making login or online state part of the local file baseline.
+
+Sketch:
+
+```ts
+type AppContribution = {
+  id: string;
+  editor?: EditorContribution;
+  toolbar?: ToolbarItem[];
+  panels?: PanelContribution[];
+  settings?: SettingsContribution[];
+  statusItems?: StatusContribution[];
+  documentLifecycle?: DocumentLifecycleHooks;
+};
+```
+
+The shape should stay internal until at least Comments, Cloud
+collaboration, and one additional first-party consumer have exercised
+it. A public plugin API can be extracted later from those proven seams.
+
 ### Toolbar Item Registry
 
 Goal: replace the hardcoded toolbar JSX in `App.tsx` with a registry of `ToolbarItem` records.
@@ -157,6 +182,57 @@ Properties:
 
 The seams were introduced in the order Comments demanded them: toolbar registry first, then `MarkdownCommand`, then `EditorContribution`. New seams should still wait for a concrete consumer.
 
+The concrete next consumer is Cloud collaboration. Carve only the
+additional seams it needs:
+
+- `DocumentSession` so local files and cloud rooms can share the editor
+  surface while keeping file/save concepts separate from room/sync
+  concepts.
+- contribution points for panels, settings, status items, and
+  lifecycle hooks.
+- presence state that can render humans and AI agents without leaking
+  auth requirements into local mode.
+
+Do not build a generic marketplace/plugin loader before these
+first-party extension seams have been validated.
+
+## Document Sessions
+
+The app should model the active editable thing as a document session,
+while preserving the local-first language at the edges.
+
+Sketch:
+
+```ts
+type DocumentSession =
+  | {
+      kind: "local-file";
+      name: string;
+      handle?: FileSystemFileHandle;
+      path?: string;
+      savedContents: string;
+    }
+  | {
+      kind: "cloud-room";
+      roomId: string;
+      provider: CloudSessionProvider;
+      presence: PresenceState;
+    };
+```
+
+Rules:
+
+- Local file sessions remain the default and require no account.
+- Cloud room sessions are created only by the Cloud collaboration
+  contribution after the user chooses an online collaboration flow.
+- Manual save, keyboard save, autosave, and export must keep their local
+  `.md` behavior for local sessions.
+- Cloud rooms materialize deterministic Markdown snapshots for export
+  and local save/download.
+- Code that only handles local files should continue to use file,
+  handle, path, save, and export terminology. Room, sync, account, and
+  auth terminology belongs behind the Cloud session path.
+
 ## Realtime Collaboration
 
 Preferred future direction:
@@ -165,6 +241,9 @@ Preferred future direction:
 - Represent the Markdown document as `Y.Text`.
 - Use a CodeMirror/Yjs binding for collaborative editing.
 - Use awareness/presence for cursors and participant metadata.
+- Package the Cloud collaboration client as a bundled first-party
+  contribution that registers the Yjs binding, presence UI, cloud
+  settings, status indicators, and room lifecycle hooks.
 
 Server direction:
 
@@ -173,6 +252,12 @@ Server direction:
 - Periodically materialize Markdown snapshots.
 
 Do not store Yjs documents only as JSON snapshots. Binary update/state persistence is needed for correct CRDT behavior.
+
+The first spike should prove the deepest integration points before
+building the whole cloud product: two editor clients bound to the same
+`Y.Text`, raw/rendered mode compatibility, awareness presence for
+humans and an AI-agent participant shape, comment-anchor mapping, and
+materialized Markdown snapshot export.
 
 ## Cloud Storage
 

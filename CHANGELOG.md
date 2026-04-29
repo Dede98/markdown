@@ -6,6 +6,13 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Planning docs now define Cloud collaboration as optional first-party
+  extension work over explicit session/contribution seams, keeping local
+  `.md` editing account-free while avoiding a premature public plugin
+  API.
+
 ## [0.0.23] - 2026-04-29
 
 ### Fixed

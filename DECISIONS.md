@@ -144,12 +144,22 @@ Implications:
 
 - Comments and annotations were built directly, not through a speculative plugin API.
 - Three decoupling seams were carved as the work demanded them: a toolbar item registry, a `MarkdownCommand` interface, and an `EditorContribution` shape (see `ARCHITECTURE.md` § Decoupling Seams).
+- Cloud collaboration should be a bundled first-party extension over
+  core app seams, not a mandatory login/online mode and not a loose
+  third-party plugin. It may register editor extensions, panels,
+  settings, status items, presence, and session lifecycle hooks, but it
+  must not make local file editing depend on auth or network state.
 - A formal third-party plugin API may follow once Comments + Realtime collaboration have both been built and the seams have been validated against two real consumers.
 
 Alternatives considered:
 
 - Build a generic plugin system before the next feature: rejected. The cost of designing for four imagined consumers exceeds the cost of refactoring once real shape is known.
 - Skip decoupling and build features monolithically: rejected. The toolbar/command/contribution seams are local, low-risk, and paid off the first feature (Comments).
+- Treat collaboration as a shallow plugin: rejected. Realtime
+  collaboration touches document text, CodeMirror transactions,
+  selection mapping, undo/redo, comments, presence, save/export, and
+  later AI/MCP edits. It needs first-party depth behind optional
+  product entry points.
 
 ## 11. Local MVP Is Feature-Complete
 
@@ -216,3 +226,33 @@ Implications:
   once. Autosave does not open Save As.
 - Manual save, menu save, keyboard save, and autosave use the same
   adapter write path and the same file-switch race guard.
+
+## 14. Cloud Collaboration Is Optional First-Party Extension Work
+
+Decision: Cloud collaboration is optional for users and first-party for
+the codebase. Login, online storage, and realtime collaboration must be
+activated by explicit collaboration flows, while local `.md` editing
+continues to work without an account.
+
+Reason:
+
+- Local-first editing is the product baseline.
+- Collaboration needs deep integration with editor transactions,
+  comments, presence, snapshots, and future AI/MCP mutation paths.
+- A loose plugin boundary would either duplicate core mutation logic or
+  create fragile synchronization glue.
+
+Implications:
+
+- The next Cloud milestone starts with a `DocumentSession` /
+  `AppContribution` architecture spike before full auth or backend work.
+- Local file sessions and cloud room sessions may share the editor
+  surface, but their names and APIs remain separate.
+- Cloud auth UI belongs to the Cloud contribution, account settings, and
+  explicit share/collaborate flows. It must not appear as an app launch
+  blocker.
+- The Yjs binding, awareness presence, remote cursors, sync status, and
+  cloud comments mapping are registered by the Cloud contribution.
+- Public third-party plugins remain deferred until first-party seams have
+  been validated by Comments, Cloud collaboration, and at least one more
+  real consumer such as History or MCP.
