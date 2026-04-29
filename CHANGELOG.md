@@ -6,6 +6,22 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Release workflow now drafts native desktop assets for macOS arm64, macOS
+  x64, Windows x64, and Linux x64 while keeping Tauri updater payload signing
+  on the existing updater key.
+- Windows/Linux release docs now describe the first installer choices and the
+  expected unsigned-app trust prompts.
+
+### Changed
+
+- Tauri bundling now deliberately ships DMG, NSIS setup, and AppImage targets
+  instead of every supported package format.
+- Native View menu now exposes Raw View and Zen Mode commands, and the macOS
+  titlebar traffic-light spacing is scoped to macOS instead of all Tauri
+  desktop platforms.
+
 ## [0.0.21] - 2026-04-28
 
 ### Added

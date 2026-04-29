@@ -30,7 +30,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["dmg", "nsis", "appimage"],
     "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
@@ -41,7 +41,7 @@
     ],
     "category": "Productivity",
     "shortDescription": "Local-first Markdown editor",
-    "longDescription": "Local-first Markdown editor for Mac and Web. .md files are the canonical source.",
+    "longDescription": "Local-first Markdown editor for Mac, Windows, Linux, and Web. .md files are the canonical source.",
     "fileAssociations": [
       {
         "ext": ["md", "markdown", "mdx", "mdown"],

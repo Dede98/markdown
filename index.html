@@ -24,11 +24,14 @@
         } catch (e) {
           document.documentElement.setAttribute("data-theme", "light");
         }
-        // Mark the document as the Tauri shell so CSS can reserve space for
-        // the macOS traffic-light overlay before first paint. The web build
-        // never sees this attribute.
+        // Mark the document as the Tauri shell before first paint. macOS also
+        // gets a platform marker so CSS can reserve space for the traffic-light
+        // overlay without shifting Windows/Linux chrome.
         if (window.__TAURI_INTERNALS__ || window.__TAURI__) {
           document.documentElement.setAttribute("data-tauri", "1");
+          if (/mac|iphone|ipad/i.test(window.navigator.platform || window.navigator.userAgent || "")) {
+            document.documentElement.setAttribute("data-tauri-platform", "macos");
+          }
         }
       })();
     </script>

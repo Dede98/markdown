@@ -1,8 +1,8 @@
 # Handoff — local MVP + comments shipped, QoL polish before Cloud
 
-Status: v0.0.21 is the current app version in the repo. The project is
-MIT-licensed, has the Tauri auto-update loop wired through GitHub
-Releases, and the local editor MVP is feature-complete
+Status: v0.0.21 is the current released app version in the repo. The
+project is MIT-licensed, has the Tauri auto-update loop wired through
+GitHub Releases, and the local editor MVP is feature-complete
 (`DECISIONS.md` § 11).
 
 The local Comments and annotations milestone has shipped. It was the
@@ -18,6 +18,11 @@ and the browser/Tauri print dialog.
 The next major lane remains **Cloud collaboration**: Yjs-backed realtime
 editing, awareness/presence, app-owned persistence, and later history /
 MCP on top of the same mutation paths.
+
+Windows/Linux native release parity is now implemented in the release
+infrastructure and docs, but still needs CI draft-release validation and
+manual platform smoke testing before publishing. The working checklist is
+`WINDOWS_LINUX_RELEASE_TASK.md`.
 
 ## What landed in the auto-update + OSS session
 
@@ -45,9 +50,9 @@ a85e0b1 Bump bundle to 0.0.16 ahead of first auto-update release
   the user's 1Password and as GitHub Actions secrets
   `TAURI_SIGNING_PRIVATE_KEY` / `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`.
 - **Release workflow** at `.github/workflows/release.yml` —
-  Mac matrix (aarch64 + x86_64), uses `tauri-apps/tauri-action@v0`,
-  drafts the release on a `v*` tag push so a stray push never
-  auto-publishes.
+  originally Mac matrix (aarch64 + x86_64), now extended for macOS,
+  Windows, and Linux desktop assets while preserving draft releases on
+  `v*` tag push so a stray push never auto-publishes.
 - **In-app UI** — `src/updater.ts` wraps `check()` and
   `downloadAndInstall()`; both use `await import(...)` so the heavy
   plugin chunks only load on the Tauri shell. `App.tsx` runs a
@@ -111,6 +116,10 @@ also points at the noreply address; global git config is untouched.
 - Verify current working tree and checks before relying on this file as a
   release handoff.
 - App identifier: `io.github.dede98.markdown` (current).
+- Release target set: macOS DMG, Windows NSIS setup executable, and Linux
+  AppImage. `.deb`, Flatpak, Snap, store publishing, notarization, and
+  Windows code-signing certificates remain out of scope until explicitly
+  requested.
 
 ## Comments and annotations milestone (implemented)
 
@@ -193,8 +202,11 @@ should refine them only where those features force new shape.
    if the lane is small).
 4. Tag and push: `git tag v<version> && git push origin v<version>`.
 5. Wait for the release workflow to draft. Cache hits make subsequent
-   runs ~5 min; no-cache cold runs ~12–15 min.
-6. Open the draft on GitHub, check the assets, click **Publish**.
+   runs ~5 min for macOS-only history; multi-platform cold runs will take
+   longer because Windows and Linux bundle on their own runners.
+6. Open the draft on GitHub, check macOS / Windows / Linux assets and
+   `latest.json`, then run the platform smoke matrix before clicking
+   **Publish**.
 7. Existing v0.0.17+ installs see the badge on next launch and pull
    the update.
 
@@ -229,7 +241,9 @@ should refine them only where those features force new shape.
   `replaceFile` so the dirty-guard prompt and downstream UI behave
   identically regardless of the shell.
 - Auto-update is Tauri-only — the web build short-circuits on
-  `!isTauriRuntime()` and never imports the updater plugin.
+  `!isTauriRuntime()` and never imports the updater plugin. The updater
+  manifest now needs macOS, Windows, and Linux entries from the draft
+  release before platform parity can be called verified.
 - The updater public key in `src-tauri/tauri.conf.json` MUST stay in
   sync with the private key in the GitHub Actions secret. Rotating
   the keypair means existing installs can never auto-update again.
@@ -258,6 +272,11 @@ Collaboration and `ARCHITECTURE.md` § Realtime Collaboration /
 for Yjs `Y.Text`, CodeMirror/Yjs binding, awareness presence,
 Hocuspocus or a thin WebSocket server, binary Yjs update persistence,
 and materialized Markdown snapshots.
+
+If continuing Windows/Linux native release parity, start with
+`WINDOWS_LINUX_RELEASE_TASK.md`. The local workflow/config/docs pass has
+landed; next verify the CI draft release has macOS, Windows, and Linux
+assets, then manually smoke each platform before publishing.
 
 If picking up an unrelated lane (e.g. notarization with an Apple
 Developer ID or a web deploy), it does not block Cloud collaboration

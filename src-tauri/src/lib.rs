@@ -3,9 +3,8 @@
 // Responsibilities of this module:
 // 1. Wire the `fs` and `dialog` plugins so the TauriFileAdapter can read/write
 //    `.md` files and prompt the user for paths via native pickers.
-// 2. Build a native macOS-style menu (App / File / Edit) with File > New /
-//    Open / Save / Save As / Export PDF, and forward those clicks to the
-//    frontend as `menu:*` events.
+// 2. Build a native desktop menu with file, edit, view, and about actions,
+//    then forward menu clicks to the frontend as `menu:*` events.
 // 3. Carry OS-supplied file paths into the webview when the app is launched
 //    via Finder double-click or "Open With" — `RunEvent::Opened` fires before
 //    JS can mount listeners, so paths are queued and the frontend drains them
@@ -25,12 +24,16 @@ const MENU_OPEN: &str = "menu_open";
 const MENU_SAVE: &str = "menu_save";
 const MENU_SAVE_AS: &str = "menu_save_as";
 const MENU_EXPORT_PDF: &str = "menu_export_pdf";
+const MENU_TOGGLE_RAW: &str = "menu_toggle_raw";
+const MENU_TOGGLE_ZEN: &str = "menu_toggle_zen";
 
 const EVENT_NEW: &str = "menu:new";
 const EVENT_OPEN: &str = "menu:open";
 const EVENT_SAVE: &str = "menu:save";
 const EVENT_SAVE_AS: &str = "menu:save-as";
 const EVENT_EXPORT_PDF: &str = "menu:export-pdf";
+const EVENT_TOGGLE_RAW: &str = "menu:toggle-raw";
+const EVENT_TOGGLE_ZEN: &str = "menu:toggle-zen";
 
 const EVENT_OPEN_PATH: &str = "file:open-path";
 
@@ -89,6 +92,8 @@ pub fn run() {
                     MENU_SAVE => Some(EVENT_SAVE),
                     MENU_SAVE_AS => Some(EVENT_SAVE_AS),
                     MENU_EXPORT_PDF => Some(EVENT_EXPORT_PDF),
+                    MENU_TOGGLE_RAW => Some(EVENT_TOGGLE_RAW),
+                    MENU_TOGGLE_ZEN => Some(EVENT_TOGGLE_ZEN),
                     _ => None,
                 };
                 if let Some(name) = event_name {
@@ -149,6 +154,7 @@ fn build_app_menu<R: tauri::Runtime>(
         ..Default::default()
     };
 
+    #[cfg(target_os = "macos")]
     let app_submenu = Submenu::with_items(
         handle,
         "Markdown",
@@ -164,6 +170,18 @@ fn build_app_menu<R: tauri::Runtime>(
             &PredefinedMenuItem::separator(handle)?,
             &PredefinedMenuItem::quit(handle, None)?,
         ],
+    )?;
+
+    #[cfg(not(target_os = "macos"))]
+    let help_submenu = Submenu::with_items(
+        handle,
+        "Help",
+        true,
+        &[&PredefinedMenuItem::about(
+            handle,
+            Some("About Markdown"),
+            Some(app_metadata),
+        )?],
     )?;
 
     let new_item = MenuItem::with_id(handle, MENU_NEW, "New", true, Some("CmdOrCtrl+N"))?;
@@ -216,11 +234,26 @@ fn build_app_menu<R: tauri::Runtime>(
         ],
     )?;
 
+    let toggle_raw_item = MenuItem::with_id(
+        handle,
+        MENU_TOGGLE_RAW,
+        "Raw View",
+        true,
+        Some("CmdOrCtrl+Shift+R"),
+    )?;
+    let toggle_zen_item =
+        MenuItem::with_id(handle, MENU_TOGGLE_ZEN, "Zen Mode", true, Some("CmdOrCtrl+."))?;
+
     let view_submenu = Submenu::with_items(
         handle,
         "View",
         true,
-        &[&PredefinedMenuItem::fullscreen(handle, None)?],
+        &[
+            &toggle_raw_item,
+            &toggle_zen_item,
+            &PredefinedMenuItem::separator(handle)?,
+            &PredefinedMenuItem::fullscreen(handle, None)?,
+        ],
     )?;
 
     let window_submenu = Submenu::with_items(
@@ -235,7 +268,8 @@ fn build_app_menu<R: tauri::Runtime>(
         ],
     )?;
 
-    Menu::with_items(
+    #[cfg(target_os = "macos")]
+    let menu = Menu::with_items(
         handle,
         &[
             &app_submenu,
@@ -244,5 +278,19 @@ fn build_app_menu<R: tauri::Runtime>(
             &view_submenu,
             &window_submenu,
         ],
-    )
+    )?;
+
+    #[cfg(not(target_os = "macos"))]
+    let menu = Menu::with_items(
+        handle,
+        &[
+            &file_submenu,
+            &edit_submenu,
+            &view_submenu,
+            &window_submenu,
+            &help_submenu,
+        ],
+    )?;
+
+    Ok(menu)
 }

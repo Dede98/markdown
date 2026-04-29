@@ -1,8 +1,8 @@
 # Markdown
 
-A local-first Markdown editor for Mac and Web. `.md` files are the canonical
-source, so anything you write here stays readable and editable in any other
-Markdown tool.
+A local-first Markdown editor for Mac, Windows, Linux, and Web. `.md` files
+are the canonical source, so anything you write here stays readable and
+editable in any other Markdown tool.
 
 - WYSIWYM live preview — your formatting renders inline, but the source is
   still plain Markdown the moment you toggle Raw view.
@@ -15,31 +15,29 @@ Markdown tool.
 Realtime collaboration, history, and MCP support are planned for later
 milestones — see [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md).
 
-## Install (macOS)
+## Install (native desktop)
 
-The Mac app is shipped through GitHub Releases. The build is **not signed
-with an Apple Developer ID** (this is a personal open-source project),
-so the first launch needs one extra step to clear macOS Gatekeeper.
-
-### 1. Download the right DMG
+Native desktop builds are shipped through GitHub Releases. The builds are
+unsigned personal open-source releases, so your OS may show trust prompts on
+first launch.
 
 Go to the [latest release](https://github.com/Dede98/markdown/releases/latest)
-and pick the DMG for your CPU:
+and download the asset for your platform.
+
+### macOS
+
+Pick the DMG for your CPU:
 
 - **Apple Silicon** (M1, M2, M3, M4 — most Macs from 2020 onward):
-  `Markdown_<version>_aarch64.dmg`
+  the DMG with `darwin` / `macOS` and `aarch64` in the filename.
 - **Intel Mac**:
-  `Markdown_<version>_x64.dmg`
+  the DMG with `darwin` / `macOS` and `x64` or `x86_64` in the filename.
 
 If you are unsure: open  → About This Mac. "Apple M…" means Apple Silicon;
 "Intel" means Intel.
 
-### 2. Drag the app into /Applications
-
 Double-click the DMG, drag `Markdown.app` to `Applications`, eject the disk
 image.
-
-### 3. Clear the quarantine flag
 
 When you double-click `Markdown.app` for the first time, macOS will refuse
 with **"Apple could not verify…"** because the app is unsigned. Pick one of:
@@ -63,12 +61,34 @@ Then double-click the app normally.
 After either option runs, the OS marks the app as trusted and future launches
 are silent. You only do this once per install.
 
-### 4. Auto-updates
+### Windows
+
+Download the Windows setup executable (`.exe`) with `windows` and `setup` in
+the filename, then run it. The first Windows release uses Tauri's normal NSIS
+installer and is not signed with a code-signing certificate, so Windows
+SmartScreen may warn about an unknown publisher. Choose **More info → Run
+anyway** only if you trust the GitHub release you downloaded.
+
+### Linux
+
+Download the Linux AppImage with `linux` and `.AppImage` in the filename, make
+it executable, then run it:
+
+```sh
+chmod +x Markdown_*.AppImage
+./Markdown_*.AppImage
+```
+
+Some Linux distributions may require FUSE/AppImage runtime support to be
+installed separately. A `.deb`, Flatpak, Snap, or distro repository package is
+not shipped yet.
+
+### Auto-updates
 
 Once the app is running, it checks GitHub on every launch for newer releases.
 When an update is available, a small download badge appears in the topbar —
 click it and the new version installs and restarts automatically. No more
-DMG downloads.
+manual installer downloads.
 
 > Existing v0.0.16 installs will need a one-time manual reinstall to v0.0.17
 > because the bundle identifier changed in that release. From v0.0.17 onward
@@ -94,14 +114,14 @@ Not deployed yet. You can run the web build locally with `pnpm dev` (see
   detached-thread repair, and Raw view access to the underlying metadata.
 - Light, dark, and system theme.
 - Drag a `.md` file onto the window to open it (web and desktop).
-- Native Mac integrations: file associations, Finder open-with, drag onto
-  the dock icon, native menu bar with the standard File / Edit / View /
-  Window menus.
+- Native desktop integrations: file associations, open-with, drag/drop
+  `.md` files, and native File / Edit / View / Window menus.
 
 ## Development
 
-Requires Node 20+ and pnpm. The Mac build also requires Rust + the Tauri
-toolchain — see <https://v2.tauri.app/start/prerequisites/>.
+Requires Node 20+ and pnpm. Native desktop builds also require Rust + the
+platform-specific Tauri prerequisites — see
+<https://v2.tauri.app/start/prerequisites/>.
 
 Install dependencies:
 
@@ -115,7 +135,7 @@ Run the web dev server:
 pnpm dev
 ```
 
-Run the Mac dev build (rebuilds the native shell, slower):
+Run the native dev build (rebuilds the Tauri shell, slower):
 
 ```sh
 pnpm tauri:dev
@@ -132,10 +152,12 @@ pnpm build         # production web bundle
 ## Releasing
 
 Pushing a `v*` tag (e.g. `git tag v0.0.18 && git push origin v0.0.18`) fires
-the GitHub Actions release workflow. It builds for both Mac architectures,
-signs the update payload with the Tauri updater key, generates `latest.json`
+the GitHub Actions release workflow. It builds macOS arm64 DMG, macOS x64 DMG,
+Windows x64 NSIS setup executable, and Linux x64 AppImage assets. The workflow
+signs updater payloads with the Tauri updater key, generates `latest.json`
 (the auto-update manifest), and uploads everything as assets on a draft
-release. Click **Publish release** in the GitHub UI when the assets look right.
+release. Click **Publish release** in the GitHub UI only after the assets and
+manual smoke checks look right.
 
 The signing key + password live in the repo secrets `TAURI_SIGNING_PRIVATE_KEY`
 and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`. Rotating them means existing

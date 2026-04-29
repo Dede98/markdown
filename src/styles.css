@@ -179,14 +179,14 @@ button {
  * don't collide with them, and suppress text selection so a click on the
  * topbar starts a window drag (via the explicit handler in App.tsx) instead
  * of a text-selection gesture. */
-:root[data-tauri="1"] .topbar {
+:root[data-tauri-platform="macos"] .topbar {
   padding-left: 88px;
   user-select: none;
   -webkit-user-select: none;
   cursor: default;
 }
 
-:root[data-tauri="1"] .titleCluster {
+:root[data-tauri-platform="macos"] .titleCluster {
   /* Keep the centered title visually centered against the document column,
    * accounting for the 68px left offset created by the traffic-light reserve. */
   max-width: min(420px, calc(100vw - 360px));

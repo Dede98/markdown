@@ -1081,6 +1081,8 @@ export function App() {
           ["menu:save", () => void handleSave()],
           ["menu:save-as", () => void handleSaveAs()],
           ["menu:export-pdf", () => handleExportPdf()],
+          ["menu:toggle-raw", () => setRaw((value) => !value)],
+          ["menu:toggle-zen", () => setZen((value) => !value)],
         ];
         for (const [event, run] of bindings) {
           const unlisten = await listen(event, run);

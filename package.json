@@ -2,7 +2,7 @@
   "name": "markdown-editor",
   "version": "0.0.21",
   "private": true,
-  "description": "Local-first Markdown editor for Mac and Web.",
+  "description": "Local-first Markdown editor for Mac, Windows, Linux, and Web.",
   "license": "MIT",
   "author": "Dejan Brinker",
   "homepage": "https://github.com/Dede98/markdown",
