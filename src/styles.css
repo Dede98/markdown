@@ -446,6 +446,14 @@ button {
   grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
 }
 
+.workspaceWithCloud {
+  grid-template-columns: minmax(0, 1fr) minmax(420px, 560px);
+}
+
+.workspaceWithCommentsAndCloud {
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 340px) minmax(420px, 560px);
+}
+
 .editorShell {
   min-height: 0;
   overflow: hidden;
@@ -464,6 +472,207 @@ button {
   border-left: 1px solid var(--rule);
   background: var(--bg-chrome);
   flex-direction: column;
+}
+
+.contributionPanelSlot {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cloudPanel {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--rule);
+  background: var(--bg-chrome);
+  flex-direction: column;
+}
+
+.cloudPanelHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 18px 16px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cloudPanelHeader h2,
+.cloudMaterializationHeader h3 {
+  margin: 0;
+  color: var(--fg-strong);
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+.cloudPanelHeader p,
+.cloudMaterializationHeader p {
+  margin: 4px 0 0;
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+.presenceList {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.presenceItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  color: var(--fg-muted);
+  font-size: 11px;
+}
+
+.presenceItem strong {
+  display: block;
+  overflow: hidden;
+  color: var(--fg-strong);
+  font-size: 12px;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presenceItem span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.presenceSwatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg-chrome), 0 0 0 3px var(--rule);
+  flex: none;
+}
+
+.cloudClientStack {
+  display: grid;
+  gap: 12px;
+  overflow: auto;
+  padding: 12px;
+}
+
+.cloudClient {
+  display: grid;
+  min-height: 0;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.cloudClient header,
+.cloudClient footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 10px;
+}
+
+.cloudClient header {
+  border-bottom: 1px solid var(--rule);
+}
+
+.cloudClient header > div {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.cloudClient header strong,
+.cloudClient header span:not(.presenceSwatch),
+.cloudClient footer span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloudClient header strong {
+  color: var(--fg-strong);
+  font-size: 12px;
+}
+
+.cloudClient header span:not(.presenceSwatch),
+.cloudClient footer {
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
+.cloudClientEditor {
+  height: 215px;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.cloudClientEditor .editorMount {
+  height: 100%;
+}
+
+.cloudClientEditor .cm-scroller {
+  font-size: 15px;
+}
+
+.cloudClientEditor .cm-content {
+  padding: 18px 20px;
+}
+
+.cloudMaterialization {
+  display: grid;
+  min-height: 170px;
+  max-height: 260px;
+  margin: 0 12px 12px;
+  overflow: hidden;
+  border: 1px solid var(--rule);
+  border-radius: 8px;
+  background: var(--bg-surface);
+}
+
+.cloudMaterializationHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cloudMaterializationHeader span {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--accent-bg);
+  color: var(--accent-fg);
+}
+
+.cloudMaterialization pre {
+  margin: 0;
+  overflow: auto;
+  padding: 10px;
+  color: var(--fg-muted);
+  font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  white-space: pre-wrap;
+}
+
+.cm-ySelectionInfo {
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font-size: 10px !important;
+  font-weight: 650 !important;
 }
 
 .commentsSidebarHeader {
@@ -950,6 +1159,7 @@ button {
 .appPrintExporting .toolbar,
 .appPrintExporting .statusbar,
 .appPrintExporting .commentsSidebar,
+.appPrintExporting .cloudPanel,
 .appPrintExporting .settingsOverlay,
 .appPrintExporting .zenIndicator,
 .appPrintExporting .cm-gutters,
@@ -960,7 +1170,9 @@ button {
 }
 
 .appPrintExporting .workspace,
-.appPrintExporting .workspaceWithComments {
+.appPrintExporting .workspaceWithComments,
+.appPrintExporting .workspaceWithCloud,
+.appPrintExporting .workspaceWithCommentsAndCloud {
   display: block;
   overflow: visible;
 }
@@ -1028,6 +1240,7 @@ button {
   .toolbar,
   .statusbar,
   .commentsSidebar,
+  .cloudPanel,
   .settingsOverlay,
   .zenIndicator,
   .cm-gutters,
@@ -1038,7 +1251,9 @@ button {
   }
 
   .workspace,
-  .workspaceWithComments {
+  .workspaceWithComments,
+  .workspaceWithCloud,
+  .workspaceWithCommentsAndCloud {
     display: block;
     overflow: visible;
   }
@@ -1653,18 +1868,25 @@ button {
 }
 
 @media (max-width: 860px) {
-  .workspaceWithComments {
+  .workspaceWithComments,
+  .workspaceWithCloud,
+  .workspaceWithCommentsAndCloud {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .commentsSidebar {
+  .commentsSidebar,
+  .cloudPanel {
     position: absolute;
     right: 0;
     bottom: 32px;
     top: 87px;
     z-index: 18;
-    width: min(340px, 88vw);
+    width: min(520px, 92vw);
     box-shadow: -12px 0 32px rgba(0, 0, 0, 0.08);
+  }
+
+  .commentsSidebar {
+    width: min(340px, 88vw);
   }
 
   .toolbar {
@@ -1698,7 +1920,8 @@ button {
     gap: 10px;
   }
 
-  .commentsSidebar {
+  .commentsSidebar,
+  .cloudPanel {
     top: 87px;
     bottom: 32px;
   }

@@ -100,6 +100,14 @@ Current QoL direction:
 
 Cloud collaboration is the next major milestone.
 
+Status: first architecture spike implemented. The app now has a
+bundled first-party Cloud collaboration contribution that can open a
+mock cloud-room panel with two editor clients bound to the same
+Markdown `Y.Text`, mock awareness presence for human and AI-agent
+participants, and deterministic `.md` snapshot materialization. This
+does not add auth, backend persistence, or a login requirement for
+local editing.
+
 It should be built as a bundled first-party extension over explicit
 core seams, not as a mandatory app mode and not yet as a public plugin
 API. Local editing remains the default product path.
@@ -152,7 +160,8 @@ MCP goals:
 3. Local QoL polish before cloud. Implemented for autosave, PDF export,
    and current native release parity.
 4. Cloud collaboration. Next major milestone, starting with a
-   first-party extension/session architecture spike.
+   first-party extension/session architecture spike. Spike implemented;
+   backend sync/auth/history are still future work.
 5. History and snapshots.
 6. MCP integration.
 7. Third-party storage adapters.

@@ -15,6 +15,7 @@ import {
   Save,
   Settings,
   Sun,
+  Users,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
@@ -29,6 +30,15 @@ import {
   type AutoSavePreference,
 } from "./autosave";
 import {
+  collectEditorContributions,
+  collectPanelContributions,
+  collectSettingsContributions,
+  collectStatusContributions,
+  type AppContribution,
+  type AppContributionContext,
+} from "./appContributions";
+import { createCloudCollaborationContribution } from "./cloudCollaboration/contribution";
+import {
   addCommentReply,
   createThreadId,
   deleteCommentThread,
@@ -42,6 +52,7 @@ import { getStoredCommentAuthor, storeCommentAuthorName } from "./comments/ident
 import { parseComments } from "./comments/storage";
 import type { CommentAuthor } from "./comments/types";
 import { getStoredContentWidth, storeContentWidth, type ContentWidth } from "./contentWidth";
+import { createLocalFileSession } from "./documentSession";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
 import type { EditorContribution } from "./editorContributions";
 import {
@@ -185,6 +196,7 @@ export function App() {
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
+  const [cloudPanelOpen, setCloudPanelOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [commentAuthor, setCommentAuthor] = useState<CommentAuthor>(() => getStoredCommentAuthor());
@@ -359,6 +371,18 @@ export function App() {
     view.focus();
   }, []);
 
+  const documentSession = useMemo(() => createLocalFileSession(file), [file]);
+  const appContributionContext = useMemo<AppContributionContext>(
+    () => ({
+      session: documentSession,
+      markdown,
+      raw,
+      zen,
+      dirty,
+    }),
+    [dirty, documentSession, markdown, raw, zen],
+  );
+
   const commentsContribution = useMemo<EditorContribution>(
     () => createCommentsContribution({
       onAddComment: handleAddComment,
@@ -368,7 +392,24 @@ export function App() {
     [handleAddComment, handleSelectCommentThread],
   );
 
-  const editorContributions = useMemo(() => [commentsContribution], [commentsContribution]);
+  const cloudContribution = useMemo(
+    () => createCloudCollaborationContribution({
+      open: cloudPanelOpen,
+      onClose: () => setCloudPanelOpen(false),
+    }),
+    [cloudPanelOpen],
+  );
+  const appContributions = useMemo<AppContribution[]>(
+    () => [
+      { id: "comments", editor: commentsContribution },
+      cloudContribution,
+    ],
+    [cloudContribution, commentsContribution],
+  );
+  const editorContributions = useMemo(() => collectEditorContributions(appContributions), [appContributions]);
+  const panelContributions = useMemo(() => collectPanelContributions(appContributions), [appContributions]);
+  const settingsContributions = useMemo(() => collectSettingsContributions(appContributions), [appContributions]);
+  const statusContributions = useMemo(() => collectStatusContributions(appContributions), [appContributions]);
   const toolbarItems = useMemo(
     () => [...markdownToolbarItems, ...editorContributions.flatMap((contribution) => contribution.toolbarItems ?? [])],
     [editorContributions],
@@ -1115,6 +1156,12 @@ export function App() {
     installingUpdate
       ? ({ "--update-progress": `${updateProgressPercent ?? 0}%` } as CSSProperties)
       : undefined;
+  const workspaceClass = [
+    "workspace",
+    commentsOpen ? "workspaceWithComments" : "",
+    panelContributions.length > 0 ? "workspaceWithCloud" : "",
+    commentsOpen && panelContributions.length > 0 ? "workspaceWithCommentsAndCloud" : "",
+  ].filter(Boolean).join(" ");
 
   return (
     <main
@@ -1212,6 +1259,16 @@ export function App() {
             <MessageSquare size={16} />
           </button>
           <button
+            className={cloudPanelOpen ? "iconButton isActive" : "iconButton"}
+            type="button"
+            title="Collaboration spike"
+            aria-label="Collaboration spike"
+            aria-pressed={cloudPanelOpen}
+            onClick={() => setCloudPanelOpen((value) => !value)}
+          >
+            <Users size={16} />
+          </button>
+          <button
             className={settingsOpen ? "iconButton isActive" : "iconButton"}
             type="button"
             title="Settings"
@@ -1277,7 +1334,7 @@ export function App() {
         </nav>
       )}
 
-      <section className={commentsOpen ? "workspace workspaceWithComments" : "workspace"} aria-label="Editor workspace">
+      <section className={workspaceClass} aria-label="Editor workspace">
         <section className="editorShell" aria-label="Markdown editor">
           <MarkdownEditor
             key={fileVersion}
@@ -1306,6 +1363,11 @@ export function App() {
             canReanchorThread={hasEditorSelection}
           />
         )}
+        {panelContributions.map((panel) => (
+          <div className="contributionPanelSlot" key={panel.id}>
+            {panel.render(appContributionContext)}
+          </div>
+        ))}
       </section>
 
       {settingsOpen && (
@@ -1319,6 +1381,8 @@ export function App() {
           pendingUpdateVersion={pendingUpdate?.version ?? null}
           installingUpdate={installingUpdate}
           updateCheckStatus={updateCheckStatus}
+          contributionContext={appContributionContext}
+          settingsContributions={settingsContributions}
           onCommentAuthorNameChange={handleAuthorNameChange}
           onContentWidthChange={handleContentWidthChange}
           onAutoSavePreferenceChange={handleAutoSavePreferenceChange}
@@ -1343,6 +1407,11 @@ export function App() {
             <span>Markdown</span>
             {raw && <span>{lineCount(markdown).toLocaleString()} lines</span>}
             <span>{markdown.length.toLocaleString()} chars</span>
+            {statusContributions.map((item) => (
+              <span className="statusContribution" key={item.id}>
+                {item.render(appContributionContext)}
+              </span>
+            ))}
           </div>
         </footer>
       )}
@@ -1442,6 +1511,8 @@ function SettingsPanel({
   pendingUpdateVersion,
   installingUpdate,
   updateCheckStatus,
+  contributionContext,
+  settingsContributions,
   onCommentAuthorNameChange,
   onContentWidthChange,
   onAutoSavePreferenceChange,
@@ -1458,6 +1529,8 @@ function SettingsPanel({
   pendingUpdateVersion: string | null;
   installingUpdate: boolean;
   updateCheckStatus: UpdateCheckStatus;
+  contributionContext: AppContributionContext;
+  settingsContributions: ReturnType<typeof collectSettingsContributions>;
   onCommentAuthorNameChange: (name: string) => void;
   onContentWidthChange: (value: ContentWidth) => void;
   onAutoSavePreferenceChange: (value: AutoSavePreference) => void;
@@ -1554,6 +1627,13 @@ function SettingsPanel({
             </p>
           )}
         </div>
+
+        {settingsContributions.map((contribution) => (
+          <div className="settingsSection" key={contribution.id}>
+            <h3>{contribution.title}</h3>
+            {contribution.render(contributionContext)}
+          </div>
+        ))}
 
         <div className="settingsSection">
           <h3>App</h3>

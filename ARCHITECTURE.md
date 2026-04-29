@@ -233,6 +233,19 @@ Rules:
   handle, path, save, and export terminology. Room, sync, account, and
   auth terminology belongs behind the Cloud session path.
 
+Current implementation:
+
+- `src/documentSession.ts` defines the internal `DocumentSession`
+  union. `App.tsx` creates a `local-file` session from the existing
+  file state without moving local save/open/autosave paths away from
+  file terminology.
+- `src/appContributions.ts` defines the internal `AppContribution`
+  shape for editor extensions, panels, settings, status items, and
+  lifecycle hooks. The shape remains first-party/internal.
+- Comments are adapted into this contribution list through their
+  existing `EditorContribution`; Cloud registers a first-party panel,
+  settings row, and status item.
+
 ## Realtime Collaboration
 
 Preferred future direction:
@@ -258,6 +271,21 @@ building the whole cloud product: two editor clients bound to the same
 `Y.Text`, raw/rendered mode compatibility, awareness presence for
 humans and an AI-agent participant shape, comment-anchor mapping, and
 materialized Markdown snapshot export.
+
+Current spike:
+
+- `src/cloudCollaboration/session.ts` creates an in-memory cloud-room
+  session with a shared `Y.Text`, mock awareness, two human editor
+  clients, and one AI-agent participant shape.
+- `src/cloudCollaboration/contribution.tsx` registers the Cloud panel
+  as a bundled first-party contribution. The panel mounts two
+  `MarkdownEditor` clients using the CodeMirror/Yjs binding.
+- The mock room materializes snapshots by reading `Y.Text.toString()`.
+  If the seed Markdown has no comments, the spike room adds a sample
+  inline marker plus trailing `markdown-comments-v1` metadata block so
+  the comments mapping can be inspected without changing the local file.
+- Raw/rendered mode toggles remain per editor client and continue to
+  use the existing CodeMirror preview compartment.
 
 ## Cloud Storage
 

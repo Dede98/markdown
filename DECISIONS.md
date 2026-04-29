@@ -234,6 +234,13 @@ the codebase. Login, online storage, and realtime collaboration must be
 activated by explicit collaboration flows, while local `.md` editing
 continues to work without an account.
 
+Implementation status: the first architecture spike is in place as an
+in-memory bundled contribution. It proves `DocumentSession`,
+`AppContribution`, shared `Y.Text` editing, mock awareness presence,
+AI-agent participant shape, comment-marker mapping, and deterministic
+Markdown materialization. It intentionally does not introduce auth,
+server persistence, or a public plugin API.
+
 Reason:
 
 - Local-first editing is the product baseline.

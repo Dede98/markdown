@@ -1,4 +1,4 @@
-# Handoff — Cloud collaboration architecture spike next
+# Handoff — Cloud collaboration architecture spike landed
 
 Status: v0.0.23 is the current released app version in the repo. The
 project is MIT-licensed, has the Tauri auto-update loop wired through
@@ -16,14 +16,40 @@ is implemented through the rendered Markdown surface and print dialog,
 and Windows/Linux release parity has been reported working after the
 multi-platform v0.0.23 release workflow fix.
 
-The next major lane is **Cloud collaboration**: Yjs-backed realtime
-editing, awareness/presence, app-owned persistence, and later history /
-MCP on top of the same mutation paths.
+The current Cloud collaboration lane has its first architecture spike:
+an internal `DocumentSession` / `AppContribution` layer plus a bundled
+first-party Cloud panel that runs a mock in-memory Yjs room.
 
 Architecture direction is now locked: Cloud collaboration should be a
 bundled first-party optional extension over explicit core seams. Login
 and online state must not become prerequisites for local `.md` editing.
 Do not build a public plugin API yet.
+
+## What landed in the Cloud architecture spike
+
+- `src/documentSession.ts` defines `local-file` and `cloud-room`
+  session shapes. `App.tsx` creates a local-file session from existing
+  file state while leaving local file/open/save/autosave terminology and
+  behavior intact.
+- `src/appContributions.ts` defines internal first-party contribution
+  registration for editor extensions, panels, settings, status items,
+  and lifecycle hooks.
+- `src/cloudCollaboration/session.ts` creates an in-memory Cloud room
+  backed by `Y.Text`, mock awareness, two human participants, one
+  AI-agent participant shape, and deterministic `.md` materialization.
+- `src/cloudCollaboration/contribution.tsx` registers the Cloud
+  collaboration side panel and mounts two `MarkdownEditor` clients with
+  the CodeMirror/Yjs binding.
+- The spike keeps raw/rendered mode compatibility by reusing the
+  existing `MarkdownEditor` raw-mode compartment per client.
+- If the current local file has no comment markers, the mock Cloud room
+  adds an isolated sample `<!--c:ULID-->...<!--/c:ULID-->` range plus a
+  trailing `markdown-comments-v1` block so the cloud comments mapping can
+  be inspected without mutating the local file.
+
+Remaining Cloud work: real auth, room creation/share flow, provider
+connection, server persistence, snapshot/history storage, remote cursor
+identity from real accounts, and Yjs-backed comments storage.
 
 ## What landed in the auto-update + OSS session
 
@@ -122,7 +148,8 @@ also points at the noreply address; global git config is untouched.
   Windows code-signing certificates remain out of scope until explicitly
   requested.
 - Next architecture decision anchor: `DECISIONS.md` § 14 says Cloud
-  collaboration is optional first-party extension work.
+  collaboration is optional first-party extension work; the first spike
+  now validates the core seams but does not add backend sync/auth.
 
 ## Comments and annotations milestone (implemented)
 

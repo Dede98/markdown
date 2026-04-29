@@ -1381,7 +1381,7 @@ test.describe("editor core", () => {
 
     const settingsDialog = page.getByRole("dialog", { name: "Settings" });
     await expect(settingsDialog.getByText("Version")).toBeVisible();
-    await expect(settingsDialog.getByText("v0.0.21")).toBeVisible();
+    await expect(settingsDialog.getByText("v0.0.23")).toBeVisible();
     await expect(settingsDialog.getByRole("button", { name: "Check for updates" })).toBeDisabled();
     await expect(settingsDialog.getByText("Manual update checks are available in the Mac app.")).toBeVisible();
   });

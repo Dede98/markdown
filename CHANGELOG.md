@@ -6,6 +6,13 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Cloud collaboration architecture spike with internal
+  `DocumentSession` / `AppContribution` seams, an in-memory Yjs
+  `Y.Text` room, two bound editor clients, mock human/AI-agent
+  awareness presence, and deterministic Markdown materialization.
+
 ### Changed
 
 - Planning docs now define Cloud collaboration as optional first-party
