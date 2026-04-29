@@ -1,5 +1,5 @@
 import { Bot, Check, FileText, PanelRightClose, Users } from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Y from "yjs";
 import { yCollab, type YAwarenessLike } from "y-codemirror.next";
 import type { AppContribution, AppContributionContext } from "../appContributions";
@@ -7,26 +7,37 @@ import type { PresenceParticipant } from "../documentSession";
 import { emptyFormat, type ActiveFormat } from "../editorFormat";
 import type { EditorContribution } from "../editorContributions";
 import { MarkdownEditor } from "../MarkdownEditor";
-import { createCloudCollaborationSpikeSession, type CloudCollaborationSpikeSession } from "./session";
+import type { CloudCollaborationSpikeSession } from "./session";
 
 type CloudCollaborationContributionOptions = {
   open: boolean;
+  spike: CloudCollaborationSpikeSession | null;
   onClose: () => void;
+  onLeaveRoom: () => void;
 };
 
 export function createCloudCollaborationContribution({
   open,
+  spike,
   onClose,
+  onLeaveRoom,
 }: CloudCollaborationContributionOptions): AppContribution {
   return {
     id: "cloud-collaboration",
-    panels: open
+    panels: open && spike
       ? [
           {
             id: "cloud-collaboration-spike",
             label: "Collaboration spike",
             placement: "right",
-            render: (context) => <CloudCollaborationPanel context={context} onClose={onClose} />,
+            render: (context) => (
+              <CloudCollaborationPanel
+                context={context}
+                spike={spike}
+                onClose={onClose}
+                onLeaveRoom={onLeaveRoom}
+              />
+            ),
           },
         ]
       : [],
@@ -45,7 +56,7 @@ export function createCloudCollaborationContribution({
     statusItems: [
       {
         id: "cloud-collaboration",
-        render: () => (open ? <span>Cloud room spike</span> : null),
+        render: () => (spike ? <span>Cloud room</span> : null),
       },
     ],
   };
@@ -66,16 +77,15 @@ export function createCloudRoomEditorContribution({
 
 function CloudCollaborationPanel({
   context,
+  spike,
   onClose,
+  onLeaveRoom,
 }: {
   context: AppContributionContext;
+  spike: CloudCollaborationSpikeSession;
   onClose: () => void;
+  onLeaveRoom: () => void;
 }) {
-  const spikeRef = useRef<CloudCollaborationSpikeSession | null>(null);
-  if (!spikeRef.current) {
-    spikeRef.current = createCloudCollaborationSpikeSession(context.markdown);
-  }
-  const spike = spikeRef.current;
   const [materialized, setMaterialized] = useState(() => spike.materializeMarkdown());
   const [participants, setParticipants] = useState(() => spike.getPresenceParticipants());
   const [commentMapping, setCommentMapping] = useState(() => spike.getCommentMappingSummary());
@@ -99,8 +109,6 @@ function CloudCollaborationPanel({
     };
   }, [spike]);
 
-  useEffect(() => () => spike.destroy(), [spike]);
-
   return (
     <aside className="cloudPanel" aria-label="Collaboration spike">
       <div className="cloudPanelHeader">
@@ -113,17 +121,21 @@ function CloudCollaborationPanel({
         </button>
       </div>
 
+      <div className="cloudRoomActions">
+        <div>
+          <strong>{context.session.kind === "cloud-room" ? context.session.roomId : "local-file"}</strong>
+          <span>Mock room session · deterministic Markdown snapshots</span>
+        </div>
+        <button type="button" className="settingsActionButton" onClick={onLeaveRoom}>
+          Leave room
+        </button>
+      </div>
+
       <PresenceList participants={participants} />
 
       <div className="cloudClientStack">
         <CloudClientEditor
-          label="Client A"
-          participant={spike.participants[0]}
-          ytext={spike.ytext}
-          awareness={spike.awareness.primary}
-        />
-        <CloudClientEditor
-          label="Client B"
+          label="Peer client"
           participant={spike.participants[1]}
           ytext={spike.ytext}
           awareness={spike.awareness.secondary}

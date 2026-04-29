@@ -521,6 +521,38 @@ button {
   border-bottom: 1px solid var(--rule);
 }
 
+.cloudRoomActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.cloudRoomActions div {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.cloudRoomActions strong,
+.cloudRoomActions span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cloudRoomActions strong {
+  color: var(--fg-strong);
+  font-size: 12px;
+}
+
+.cloudRoomActions span {
+  color: var(--fg-faint);
+  font-size: 11px;
+}
+
 .presenceItem {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;

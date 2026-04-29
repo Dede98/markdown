@@ -238,8 +238,11 @@ Implementation status: the first architecture spike is in place as an
 in-memory bundled contribution. It proves `DocumentSession`,
 `AppContribution`, shared `Y.Text` editing, mock awareness presence,
 AI-agent participant shape, comment-marker mapping, and deterministic
-Markdown materialization. It intentionally does not introduce auth,
-server persistence, or a public plugin API.
+Markdown materialization. The mock room is now app-owned: users start it
+explicitly from the collaboration control, the main editor joins the
+room, and leaving the room returns a materialized `.md` snapshot to the
+normal editor buffer. It intentionally does not introduce auth, server
+persistence, or a public plugin API.
 
 Reason:
 

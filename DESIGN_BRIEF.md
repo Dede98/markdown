@@ -89,9 +89,10 @@ a login wall, empty cloud dashboard, or online-first workspace. Cloud
 entry points should feel like a first-party capability that can be
 enabled from file sharing, collaboration controls, or account settings.
 
-Implementation status: a first architecture spike now exposes a
-compact collaboration side panel from Normal mode. It is an in-memory
-mock room with two editor clients, human presence, AI-agent presence,
+Implementation status: a first architecture spike now exposes an
+explicit Start collaboration room control from Normal mode. It creates
+an in-memory mock room where the main editor and a peer editor share
+the same Markdown `Y.Text`, with human presence, AI-agent presence,
 remote cursor styling from the Yjs binding, and a deterministic
 Markdown snapshot preview. It is a reference implementation for the
 Cloud lane, not the final account/share flow.

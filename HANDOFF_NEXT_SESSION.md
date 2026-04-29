@@ -38,8 +38,12 @@ Do not build a public plugin API yet.
   backed by `Y.Text`, mock awareness, two human participants, one
   AI-agent participant shape, and deterministic `.md` materialization.
 - `src/cloudCollaboration/contribution.tsx` registers the Cloud
-  collaboration side panel and mounts two `MarkdownEditor` clients with
-  the CodeMirror/Yjs binding.
+  collaboration side panel. `App.tsx` owns the active mock room,
+  binds the main editor to the shared `Y.Text`, and the panel mounts a
+  peer `MarkdownEditor` client with the CodeMirror/Yjs binding.
+- The topbar collaboration control starts the mock room explicitly.
+  Leaving the room destroys the in-memory Yjs state after materializing
+  the current `.md` snapshot back into the normal editor buffer.
 - The spike keeps raw/rendered mode compatibility by reusing the
   existing `MarkdownEditor` raw-mode compartment per client.
 - If the current local file has no comment markers, the mock Cloud room

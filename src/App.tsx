@@ -37,7 +37,14 @@ import {
   type AppContribution,
   type AppContributionContext,
 } from "./appContributions";
-import { createCloudCollaborationContribution } from "./cloudCollaboration/contribution";
+import {
+  createCloudCollaborationContribution,
+  createCloudRoomEditorContribution,
+} from "./cloudCollaboration/contribution";
+import {
+  createCloudCollaborationSpikeSession,
+  type CloudCollaborationSpikeSession,
+} from "./cloudCollaboration/session";
 import {
   addCommentReply,
   createThreadId,
@@ -197,6 +204,7 @@ export function App() {
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [cloudPanelOpen, setCloudPanelOpen] = useState(false);
+  const [cloudSpike, setCloudSpike] = useState<CloudCollaborationSpikeSession | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [commentAuthor, setCommentAuthor] = useState<CommentAuthor>(() => getStoredCommentAuthor());
@@ -242,6 +250,8 @@ export function App() {
   // in-flight save would clobber the freshly-opened file's name/handle/savedContents.
   const fileVersionRef = useRef(fileVersion);
   fileVersionRef.current = fileVersion;
+  const cloudSpikeRef = useRef(cloudSpike);
+  cloudSpikeRef.current = cloudSpike;
 
   const dirty = markdown !== file.savedContents;
   const commentsParse = useMemo(() => parseComments(markdown), [markdown]);
@@ -371,7 +381,7 @@ export function App() {
     view.focus();
   }, []);
 
-  const documentSession = useMemo(() => createLocalFileSession(file), [file]);
+  const documentSession = useMemo(() => cloudSpike?.session ?? createLocalFileSession(file), [cloudSpike, file]);
   const appContributionContext = useMemo<AppContributionContext>(
     () => ({
       session: documentSession,
@@ -392,19 +402,67 @@ export function App() {
     [handleAddComment, handleSelectCommentThread],
   );
 
+  const cloudEditorContribution = useMemo<EditorContribution | null>(
+    () =>
+      cloudSpike
+        ? createCloudRoomEditorContribution({
+            ytext: cloudSpike.ytext,
+            awareness: cloudSpike.awareness.primary,
+          })
+        : null,
+    [cloudSpike],
+  );
+
+  const handleStartCloudRoom = useCallback(() => {
+    if (cloudSpikeRef.current) {
+      setCloudPanelOpen(true);
+      return;
+    }
+    const spike = createCloudCollaborationSpikeSession(markdownRef.current);
+    setCloudSpike(spike);
+    setMarkdown(spike.materializeMarkdown());
+    setCloudPanelOpen(true);
+    setFileVersion((value) => value + 1);
+  }, []);
+
+  const handleLeaveCloudRoom = useCallback(() => {
+    const spike = cloudSpikeRef.current;
+    if (!spike) {
+      return;
+    }
+    const snapshot = spike.materializeMarkdown();
+    spike.destroy();
+    setCloudSpike(null);
+    setCloudPanelOpen(false);
+    setMarkdown(snapshot);
+    setFileVersion((value) => value + 1);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      cloudSpikeRef.current?.destroy();
+    };
+  }, []);
+
   const cloudContribution = useMemo(
     () => createCloudCollaborationContribution({
       open: cloudPanelOpen,
+      spike: cloudSpike,
       onClose: () => setCloudPanelOpen(false),
+      onLeaveRoom: handleLeaveCloudRoom,
     }),
-    [cloudPanelOpen],
+    [cloudPanelOpen, cloudSpike, handleLeaveCloudRoom],
   );
   const appContributions = useMemo<AppContribution[]>(
-    () => [
-      { id: "comments", editor: commentsContribution },
-      cloudContribution,
-    ],
-    [cloudContribution, commentsContribution],
+    () => {
+      const contributions: AppContribution[] = [{ id: "comments", editor: commentsContribution }];
+      if (cloudEditorContribution) {
+        contributions.push({ id: "cloud-room-editor", editor: cloudEditorContribution });
+      }
+      contributions.push(cloudContribution);
+      return contributions;
+    },
+    [cloudContribution, cloudEditorContribution, commentsContribution],
   );
   const editorContributions = useMemo(() => collectEditorContributions(appContributions), [appContributions]);
   const panelContributions = useMemo(() => collectPanelContributions(appContributions), [appContributions]);
@@ -1261,10 +1319,16 @@ export function App() {
           <button
             className={cloudPanelOpen ? "iconButton isActive" : "iconButton"}
             type="button"
-            title="Collaboration spike"
-            aria-label="Collaboration spike"
+            title={cloudSpike ? "Collaboration room" : "Start collaboration room"}
+            aria-label={cloudSpike ? "Collaboration room" : "Start collaboration room"}
             aria-pressed={cloudPanelOpen}
-            onClick={() => setCloudPanelOpen((value) => !value)}
+            onClick={() => {
+              if (cloudSpike) {
+                setCloudPanelOpen((value) => !value);
+              } else {
+                handleStartCloudRoom();
+              }
+            }}
           >
             <Users size={16} />
           </button>
@@ -1338,7 +1402,7 @@ export function App() {
         <section className="editorShell" aria-label="Markdown editor">
           <MarkdownEditor
             key={fileVersion}
-            value={file.savedContents}
+            value={markdown}
             zen={zen}
             raw={raw}
             contentWidth={contentWidth}

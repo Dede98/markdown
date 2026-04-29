@@ -278,12 +278,17 @@ Current spike:
   session with a shared `Y.Text`, mock awareness, two human editor
   clients, and one AI-agent participant shape.
 - `src/cloudCollaboration/contribution.tsx` registers the Cloud panel
-  as a bundled first-party contribution. The panel mounts two
-  `MarkdownEditor` clients using the CodeMirror/Yjs binding.
+  as a bundled first-party contribution. `App.tsx` owns the active
+  mock room session, binds the main editor to it using the
+  CodeMirror/Yjs contribution, and the panel mounts a peer
+  `MarkdownEditor` client against the same `Y.Text`.
 - The mock room materializes snapshots by reading `Y.Text.toString()`.
   If the seed Markdown has no comments, the spike room adds a sample
   inline marker plus trailing `markdown-comments-v1` metadata block so
   the comments mapping can be inspected without changing the local file.
+- Starting a room is explicit from the collaboration control. Leaving
+  the room destroys the in-memory Yjs state after materializing the
+  Markdown snapshot back into the app's normal editor buffer.
 - Raw/rendered mode toggles remain per editor client and continue to
   use the existing CodeMirror preview compartment.
 

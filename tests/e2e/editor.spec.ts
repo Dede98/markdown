@@ -1386,6 +1386,30 @@ test.describe("editor core", () => {
     await expect(settingsDialog.getByText("Manual update checks are available in the Mac app.")).toBeVisible();
   });
 
+  test("collaboration room syncs the main editor with a peer client", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await replaceEditorText(page, "# Room seed\n\nStart here");
+
+    await page.getByLabel("Start collaboration room").click();
+    await expect(page.getByRole("complementary", { name: "Collaboration spike" })).toBeVisible();
+    await expect(page.getByLabel("Presence").getByText("Review Agent", { exact: true })).toBeVisible();
+
+    const peerEditor = page.locator(".cloudClient .cm-content");
+    await setEditorText(page, "# Room seed\n\nMain edit");
+    await expect(peerEditor).toContainText("Main edit");
+
+    await peerEditor.click();
+    await page.keyboard.type("Peer ");
+    await expect(page.locator(".editorShell .cm-content")).toContainText("Peer");
+    await expect(page.locator(".cloudMaterialization pre")).toContainText("Peer");
+
+    await page.getByRole("button", { name: "Leave room" }).click();
+    await expect(page.getByRole("complementary", { name: "Collaboration spike" })).toHaveCount(0);
+    await expectEditorSource(page, "Peer");
+    await expect(page.getByLabel("Start collaboration room")).toBeVisible();
+  });
+
   test("zen mode hides the toolbar and keeps the document", async ({ page }, testInfo) => {
     await page.goto("/");
 

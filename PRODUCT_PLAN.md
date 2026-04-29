@@ -102,11 +102,12 @@ Cloud collaboration is the next major milestone.
 
 Status: first architecture spike implemented. The app now has a
 bundled first-party Cloud collaboration contribution that can open a
-mock cloud-room panel with two editor clients bound to the same
-Markdown `Y.Text`, mock awareness presence for human and AI-agent
-participants, and deterministic `.md` snapshot materialization. This
-does not add auth, backend persistence, or a login requirement for
-local editing.
+mock cloud-room session from the local editor surface. The main editor
+and a peer client bind to the same Markdown `Y.Text`, mock awareness
+presence renders human and AI-agent participants, and leaving the room
+materializes a deterministic `.md` snapshot back into the normal editor
+buffer. This does not add auth, backend persistence, or a login
+requirement for local editing.
 
 It should be built as a bundled first-party extension over explicit
 core seams, not as a mandatory app mode and not yet as a public plugin

@@ -12,6 +12,10 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
   `DocumentSession` / `AppContribution` seams, an in-memory Yjs
   `Y.Text` room, two bound editor clients, mock human/AI-agent
   awareness presence, and deterministic Markdown materialization.
+- Explicit mock room lifecycle: start a cloud-room session from the
+  main editor, sync the main editor with a peer client, and leave the
+  room with the materialized Markdown snapshot still in the normal
+  editor buffer.
 
 ### Changed
 
