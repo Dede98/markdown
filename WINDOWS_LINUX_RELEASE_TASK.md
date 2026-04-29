@@ -17,7 +17,7 @@ introduce cloud concepts, a proprietary document model, or a plugin API.
 
 ## Current state
 
-- Current app version: `0.0.22`.
+- Current app version: `0.0.23`.
 - Local implementation pass is in progress: `.github/workflows/release.yml`
   now targets macOS arm64, macOS x64, Windows x64, and Linux x64 draft
   release assets; `src-tauri/tauri.conf.json` now deliberately bundles DMG,

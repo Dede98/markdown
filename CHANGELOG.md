@@ -6,6 +6,13 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.23] - 2026-04-29
+
+### Fixed
+
+- macOS release builds now include both the `.app` updater payload and the DMG
+  installer so `latest.json` can include `darwin-*` updater entries.
+
 ## [0.0.22] - 2026-04-29
 
 ### Added
@@ -160,6 +167,7 @@ record):
   table / HTML-comment block detection, replacing earlier regex
   heuristics.
 
+[0.0.23]: https://github.com/Dede98/markdown/releases/tag/v0.0.23
 [0.0.22]: https://github.com/Dede98/markdown/releases/tag/v0.0.22
 [0.0.21]: https://github.com/Dede98/markdown/releases/tag/v0.0.21
 [0.0.20]: https://github.com/Dede98/markdown/releases/tag/v0.0.20

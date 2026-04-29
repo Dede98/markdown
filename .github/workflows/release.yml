@@ -40,14 +40,18 @@ jobs:
           - {
               os: macos-latest,
               label: macOS arm64,
-              args: '--target aarch64-apple-darwin --bundles dmg',
+              # `app` creates the .app.tar.gz updater payload; `dmg` is the
+              # human installer. Both are required for macOS parity.
+              args: '--target aarch64-apple-darwin --bundles app,dmg',
               rustTargets: aarch64-apple-darwin
             }
           # Intel. Older Macs still ship updates.
           - {
               os: macos-latest,
               label: macOS x64,
-              args: '--target x86_64-apple-darwin --bundles dmg',
+              # `app` creates the .app.tar.gz updater payload; `dmg` is the
+              # human installer. Both are required for macOS parity.
+              args: '--target x86_64-apple-darwin --bundles app,dmg',
               rustTargets: x86_64-apple-darwin
             }
           # Windows x64. Produces the NSIS setup executable.
