@@ -1495,6 +1495,7 @@ test.describe("editor core", () => {
     await peerEditor.click();
     await page.keyboard.type("Peer ");
     await expect(page.locator(".editorShell .cm-content")).toContainText("Peer");
+    await expect.poll(() => peerSelectionHighlightCount(page)).toBe(0);
     await expect(page.locator(".cloudMaterialization pre")).toContainText("Peer");
 
     await page.getByRole("button", { name: "Leave room" }).click();
@@ -2015,6 +2016,15 @@ async function getEditorContentMaxWidth(page: Page) {
       throw new Error("CodeMirror content element is not available");
     }
     return getComputedStyle(content).maxWidth;
+  });
+}
+
+async function peerSelectionHighlightCount(page: Page) {
+  return page.evaluate(() => {
+    const peerSelectionColor = "rgba(143, 63, 113, 0.18)";
+    return Array.from(document.querySelectorAll<HTMLElement>(".editorShell .cm-ySelection")).filter((element) =>
+      element.getAttribute("style")?.includes(peerSelectionColor),
+    ).length;
   });
 }
 

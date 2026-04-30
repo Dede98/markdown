@@ -1,3 +1,4 @@
+import { EditorView } from "@codemirror/view";
 import { Bot, Check, FileText, PanelRightClose, Users } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import * as Y from "yjs";
@@ -74,8 +75,27 @@ export function createCloudRoomEditorContribution({
 }): EditorContribution {
   return {
     id: "cloud-room-yjs",
-    extensions: [yCollab(ytext, awareness, { undoManager: false })],
+    extensions: [yCollab(ytext, awareness, { undoManager: false }), publishAwarenessCursor(ytext, awareness)],
   };
+}
+
+function publishAwarenessCursor(ytext: Y.Text, awareness: YAwarenessLike) {
+  return EditorView.updateListener.of((update) => {
+    if (!update.docChanged && !update.selectionSet && !update.focusChanged) {
+      return;
+    }
+
+    const localState = awareness.getLocalState();
+    if (!localState || !update.view.hasFocus || !update.view.dom.ownerDocument.hasFocus()) {
+      return;
+    }
+
+    const selection = update.state.selection.main;
+    awareness.setLocalStateField("cursor", {
+      anchor: Y.createRelativePositionFromTypeIndex(ytext, selection.anchor),
+      head: Y.createRelativePositionFromTypeIndex(ytext, selection.head),
+    });
+  });
 }
 
 function CloudCollaborationPanel({
