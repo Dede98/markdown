@@ -1496,6 +1496,7 @@ test.describe("editor core", () => {
     await page.keyboard.type("Peer ");
     await expect(page.locator(".editorShell .cm-content")).toContainText("Peer");
     await expect.poll(() => peerSelectionHighlightCount(page)).toBe(0);
+    await expect.poll(() => remoteCaretDotOffset(page)).toBeLessThanOrEqual(2);
     await expect(page.locator(".cloudMaterialization pre")).toContainText("Peer");
 
     await page.getByRole("button", { name: "Leave room" }).click();
@@ -2025,6 +2026,22 @@ async function peerSelectionHighlightCount(page: Page) {
     return Array.from(document.querySelectorAll<HTMLElement>(".editorShell .cm-ySelection")).filter((element) =>
       element.getAttribute("style")?.includes(peerSelectionColor),
     ).length;
+  });
+}
+
+async function remoteCaretDotOffset(page: Page) {
+  return page.evaluate(() => {
+    const caret = document.querySelector<HTMLElement>(".editorShell .cm-ySelectionCaret");
+    const dot = caret?.querySelector<HTMLElement>(".cm-ySelectionCaretDot");
+    if (!caret || !dot) {
+      throw new Error("Remote caret dot is not available");
+    }
+
+    const caretRect = caret.getBoundingClientRect();
+    const dotRect = dot.getBoundingClientRect();
+    const x = Math.abs(dotRect.left + dotRect.width / 2 - caretRect.left);
+    const y = Math.abs(dotRect.top + dotRect.height / 2 - caretRect.top);
+    return Math.round(Math.max(x, y));
   });
 }
 
