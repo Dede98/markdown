@@ -12,6 +12,7 @@ import type { CloudRoomHandle } from "./session";
 type CloudCollaborationContributionOptions = {
   open: boolean;
   cloudRoom: CloudRoomHandle | null;
+  peerRoom: CloudRoomHandle | null;
   onClose: () => void;
   onLeaveRoom: () => void;
 };
@@ -19,6 +20,7 @@ type CloudCollaborationContributionOptions = {
 export function createCloudCollaborationContribution({
   open,
   cloudRoom,
+  peerRoom,
   onClose,
   onLeaveRoom,
 }: CloudCollaborationContributionOptions): AppContribution {
@@ -34,6 +36,7 @@ export function createCloudCollaborationContribution({
               <CloudCollaborationPanel
                 context={context}
                 cloudRoom={cloudRoom}
+                peerRoom={peerRoom}
                 onClose={onClose}
                 onLeaveRoom={onLeaveRoom}
               />
@@ -78,11 +81,13 @@ export function createCloudRoomEditorContribution({
 function CloudCollaborationPanel({
   context,
   cloudRoom,
+  peerRoom,
   onClose,
   onLeaveRoom,
 }: {
   context: AppContributionContext;
   cloudRoom: CloudRoomHandle;
+  peerRoom: CloudRoomHandle | null;
   onClose: () => void;
   onLeaveRoom: () => void;
 }) {
@@ -103,9 +108,9 @@ function CloudCollaborationPanel({
 
   useEffect(() => {
     const updatePresence = () => setParticipants(cloudRoom.getPresenceParticipants());
-    cloudRoom.awareness.primary.on("change", updatePresence);
+    cloudRoom.awareness.on("change", updatePresence);
     return () => {
-      cloudRoom.awareness.primary.off("change", updatePresence);
+      cloudRoom.awareness.off("change", updatePresence);
     };
   }, [cloudRoom]);
 
@@ -124,7 +129,7 @@ function CloudCollaborationPanel({
       <div className="cloudRoomActions">
         <div>
           <strong>{context.session.kind === "cloud-room" ? context.session.roomId : "local-file"}</strong>
-          <span>Mock room session · deterministic Markdown snapshots</span>
+          <span>{cloudRoom.providerId} provider · {cloudRoom.connection.status} · deterministic Markdown snapshots</span>
         </div>
         <button type="button" className="settingsActionButton" onClick={onLeaveRoom}>
           Leave room
@@ -134,12 +139,14 @@ function CloudCollaborationPanel({
       <PresenceList participants={participants} />
 
       <div className="cloudClientStack">
-        <CloudClientEditor
-          label="Peer client"
-          participant={cloudRoom.participants[1]}
-          ytext={cloudRoom.ytext}
-          awareness={cloudRoom.awareness.secondary}
-        />
+        {peerRoom ? (
+          <CloudClientEditor
+            label="Peer client"
+            participant={peerRoom.participant}
+            ytext={peerRoom.ytext}
+            awareness={peerRoom.awareness}
+          />
+        ) : null}
       </div>
 
       <div className="cloudMaterialization">

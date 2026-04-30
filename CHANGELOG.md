@@ -19,6 +19,9 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 - Internal `CloudSessionProvider` contract with an in-memory provider
   that owns Yjs room state, awareness, lifecycle, and Markdown
   materialization.
+- Explicit Cloud provider `createRoom` / `joinRoom` lifecycle plus a
+  `RealtimeRoomConnection` shape so the mock peer client joins the same
+  room through the provider boundary a real transport would implement.
 
 ### Changed
 

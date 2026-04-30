@@ -1481,7 +1481,11 @@ test.describe("editor core", () => {
     await replaceEditorText(page, "# Room seed\n\nStart here");
 
     await page.getByLabel("Start collaboration room").click();
-    await expect(page.getByRole("complementary", { name: "Collaboration spike" })).toBeVisible();
+    const collaborationPanel = page.getByRole("complementary", { name: "Collaboration spike" });
+    await expect(collaborationPanel).toBeVisible();
+    await expect(collaborationPanel.getByText("in-memory provider · connected")).toBeVisible();
+    await expect(page.getByLabel("Presence").getByText("Ava", { exact: true })).toBeVisible();
+    await expect(page.getByLabel("Presence").getByText("Mina", { exact: true })).toBeVisible();
     await expect(page.getByLabel("Presence").getByText("Review Agent", { exact: true })).toBeVisible();
 
     const peerEditor = page.locator(".cloudClient .cm-content");

@@ -38,8 +38,8 @@ Do not build a public plugin API yet.
   backed by `Y.Text`, mock awareness, two human participants, one
   AI-agent participant shape, and deterministic `.md` materialization.
   It now exposes this through the internal `CloudSessionProvider` /
-  `CloudRoomHandle` contract, with `inMemoryCloudSessionProvider` as the
-  only implementation.
+  `RealtimeRoomConnection` / `CloudRoomHandle` contract, with
+  `inMemoryCloudSessionProvider` as the only implementation.
 - `src/cloudCollaboration/contribution.tsx` registers the Cloud
   collaboration side panel. `App.tsx` owns the active mock room,
   binds the main editor to the shared `Y.Text`, and the panel mounts a

@@ -209,6 +209,7 @@ export function App() {
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [cloudPanelOpen, setCloudPanelOpen] = useState(false);
   const [activeCloudRoom, setActiveCloudRoom] = useState<CloudRoomHandle | null>(null);
+  const [peerCloudRoom, setPeerCloudRoom] = useState<CloudRoomHandle | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [selectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [commentAuthor, setCommentAuthor] = useState<CommentAuthor>(() => getStoredCommentAuthor());
@@ -255,6 +256,8 @@ export function App() {
   fileVersionRef.current = fileVersion;
   const activeCloudRoomRef = useRef(activeCloudRoom);
   activeCloudRoomRef.current = activeCloudRoom;
+  const peerCloudRoomRef = useRef(peerCloudRoom);
+  peerCloudRoomRef.current = peerCloudRoom;
 
   const dirty = markdown !== file.savedContents;
   const commentsParse = useMemo(() => parseComments(markdown), [markdown]);
@@ -410,7 +413,7 @@ export function App() {
       activeCloudRoom
         ? createCloudRoomEditorContribution({
             ytext: activeCloudRoom.ytext,
-            awareness: activeCloudRoom.awareness.primary,
+            awareness: activeCloudRoom.awareness,
           })
         : null,
     [activeCloudRoom],
@@ -421,10 +424,15 @@ export function App() {
       setCloudPanelOpen(true);
       return;
     }
-    const cloudRoom = inMemoryCloudSessionProvider.startRoom({
+    const cloudRoom = inMemoryCloudSessionProvider.createRoom({
       seedMarkdown: markdownRef.current,
     });
+    const peerRoom = inMemoryCloudSessionProvider.joinRoom({
+      roomId: cloudRoom.roomId,
+      participantId: "human-secondary",
+    });
     setActiveCloudRoom(cloudRoom);
+    setPeerCloudRoom(peerRoom);
     setMarkdown(cloudRoom.materializeMarkdown());
     setCloudPanelOpen(true);
     setFileVersion((value) => value + 1);
@@ -436,8 +444,10 @@ export function App() {
       return;
     }
     const snapshot = cloudRoom.materializeMarkdown();
+    peerCloudRoomRef.current?.destroy();
     cloudRoom.destroy();
     setActiveCloudRoom(null);
+    setPeerCloudRoom(null);
     setCloudPanelOpen(false);
     setMarkdown(snapshot);
     setFileVersion((value) => value + 1);
@@ -445,6 +455,7 @@ export function App() {
 
   useEffect(() => {
     return () => {
+      peerCloudRoomRef.current?.destroy();
       activeCloudRoomRef.current?.destroy();
     };
   }, []);
@@ -453,10 +464,11 @@ export function App() {
     () => createCloudCollaborationContribution({
       open: cloudPanelOpen,
       cloudRoom: activeCloudRoom,
+      peerRoom: peerCloudRoom,
       onClose: () => setCloudPanelOpen(false),
       onLeaveRoom: handleLeaveCloudRoom,
     }),
-    [cloudPanelOpen, activeCloudRoom, handleLeaveCloudRoom],
+    [cloudPanelOpen, activeCloudRoom, peerCloudRoom, handleLeaveCloudRoom],
   );
   const appContributions = useMemo<AppContribution[]>(
     () => {

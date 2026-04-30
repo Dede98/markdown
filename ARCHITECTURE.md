@@ -253,26 +253,30 @@ contract. This is a first-party seam, not a public plugin API.
 
 Contract:
 
-- `startRoom({ seedMarkdown, roomId, title })` returns a cloud room
-  handle.
-- The provider owns `Y.Doc`, `Y.Text`, awareness clients, room identity,
-  participant seed state, and room teardown.
-- The returned handle exposes the `DocumentSession`, the shared
-  `Y.Text`, awareness handles used by editor contributions, current
-  presence, deterministic Markdown materialization, comment mapping
-  summary, and `destroy()`.
-- App code may start or leave a room, but it should not construct Yjs
-  documents directly.
+- `createRoom({ seedMarkdown, roomId, title, participantId })` creates
+  a room and returns the creator's joined room handle.
+- `joinRoom({ roomId, participantId })` joins an existing room and
+  returns a second joined room handle.
+- The provider owns `Y.Doc`, `Y.Text`, room awareness state, room
+  identity, participant seed state, and room teardown.
+- Each returned handle exposes the `DocumentSession`, a
+  `RealtimeRoomConnection`, the shared `Y.Text`, the joined client's
+  awareness handle used by editor contributions, current presence,
+  deterministic Markdown materialization, comment mapping summary, and
+  `destroy()`.
+- App code may create, join, or leave a room through the provider, but
+  it should not construct Yjs documents directly.
 - Local file save/open/autosave flows keep using file adapter language
   and do not depend on any provider.
 
 Current implementation:
 
 - `src/cloudCollaboration/session.ts` defines `CloudSessionProvider`,
-  `CloudRoomHandle`, and `inMemoryCloudSessionProvider`.
+  `RealtimeRoomConnection`, `CloudRoomHandle`, and
+  `inMemoryCloudSessionProvider`.
 - `inMemoryCloudSessionProvider` is the only provider. It has no auth,
-  network, or persistence, but it exercises the same provider boundary a
-  future Hocuspocus/WebSocket provider should implement.
+  network, or persistence, but it exercises the same create/join/leave
+  lifecycle a future Hocuspocus/WebSocket provider should implement.
 - Backend transport, auth, permissions, persistence, and provider
   selection UI remain out of scope for this spike.
 
