@@ -40,6 +40,11 @@ Do not build a public plugin API yet.
   It now exposes this through the internal `CloudSessionProvider` /
   `RealtimeRoomConnection` / `CloudRoomHandle` contract, with
   `inMemoryCloudSessionProvider` as the only implementation.
+- `CLOUD_COLLABORATION_API.md` documents the internal provider and
+  transport API. `src/cloudCollaboration/transport.ts` defines the
+  realtime transport contract, and
+  `src/cloudCollaboration/webSocketCloudSessionProvider.ts` is a
+  non-wired stub for future backend work.
 - `src/cloudCollaboration/contribution.tsx` registers the Cloud
   collaboration side panel. `App.tsx` owns the active mock room,
   binds the main editor to the shared `Y.Text`, and the panel mounts a

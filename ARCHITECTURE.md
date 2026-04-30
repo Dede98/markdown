@@ -250,6 +250,7 @@ Current implementation:
 
 Cloud room creation sits behind an internal `CloudSessionProvider`
 contract. This is a first-party seam, not a public plugin API.
+The detailed contract lives in `CLOUD_COLLABORATION_API.md`.
 
 Contract:
 
@@ -257,8 +258,8 @@ Contract:
   a room and returns the creator's joined room handle.
 - `joinRoom({ roomId, participantId })` joins an existing room and
   returns a second joined room handle.
-- The provider owns `Y.Doc`, `Y.Text`, room awareness state, room
-  identity, participant seed state, and room teardown.
+- The provider owns room lifecycle and delegates low-level realtime
+  connection work to a `CloudRoomTransport`.
 - Each returned handle exposes the `DocumentSession`, a
   `RealtimeRoomConnection`, the shared `Y.Text`, the joined client's
   awareness handle used by editor contributions, current presence,
@@ -272,11 +273,15 @@ Contract:
 Current implementation:
 
 - `src/cloudCollaboration/session.ts` defines `CloudSessionProvider`,
-  `RealtimeRoomConnection`, `CloudRoomHandle`, and
-  `inMemoryCloudSessionProvider`.
+  `CloudRoomHandle`, and `inMemoryCloudSessionProvider`.
+- `src/cloudCollaboration/transport.ts` defines `CloudRoomTransport`
+  and `RealtimeRoomConnection`.
 - `inMemoryCloudSessionProvider` is the only provider. It has no auth,
   network, or persistence, but it exercises the same create/join/leave
   lifecycle a future Hocuspocus/WebSocket provider should implement.
+- `src/cloudCollaboration/webSocketCloudSessionProvider.ts` is a
+  non-wired contract stub. It must not be exposed in UI until a real
+  transport implementation exists.
 - Backend transport, auth, permissions, persistence, and provider
   selection UI remain out of scope for this spike.
 

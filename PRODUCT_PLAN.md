@@ -107,9 +107,10 @@ and a peer client bind to the same Markdown `Y.Text`, mock awareness
 presence renders human and AI-agent participants, and leaving the room
 materializes a deterministic `.md` snapshot back into the normal editor
 buffer. Room creation and joining are behind an internal
-`CloudSessionProvider` contract with an in-memory provider first. This
-does not add auth, backend persistence, or a login requirement for local
-editing.
+`CloudSessionProvider` contract with an in-memory provider first. The
+provider/transport API is documented in `CLOUD_COLLABORATION_API.md` so
+backend work has a stable implementation target. This does not add
+auth, backend persistence, or a login requirement for local editing.
 
 It should be built as a bundled first-party extension over explicit
 core seams, not as a mandatory app mode and not yet as a public plugin

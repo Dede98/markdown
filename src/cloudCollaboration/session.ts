@@ -2,6 +2,8 @@ import * as Y from "yjs";
 import type { CloudRoomSession, PresenceParticipant } from "../documentSession";
 import { parseComments } from "../comments/storage";
 import { MockAwareness, MockAwarenessRoom, type MockAwarenessState } from "./awareness";
+import type { CloudRoomTransport, RealtimeRoomConnection } from "./transport";
+import type { YAwarenessLike } from "y-codemirror.next";
 
 const DEFAULT_CLOUD_MARKDOWN = `# Cloud Collaboration Spike
 
@@ -33,26 +35,12 @@ export type CloudRoomHandle = {
   session: CloudRoomSession;
   ydoc: Y.Doc;
   ytext: Y.Text;
-  awareness: MockAwareness;
+  awareness: YAwarenessLike;
   participant: PresenceParticipant;
   participants: PresenceParticipant[];
   getPresenceParticipants: () => PresenceParticipant[];
   materializeMarkdown: () => string;
   getCommentMappingSummary: () => CommentMappingSummary;
-  destroy: () => void;
-};
-
-export type RealtimeRoomConnectionStatus = "connecting" | "connected" | "reconnecting" | "offline" | "closed" | "error";
-
-export type RealtimeRoomConnection = {
-  providerId: string;
-  roomId: string;
-  status: RealtimeRoomConnectionStatus;
-  ydoc: Y.Doc;
-  ytext: Y.Text;
-  awareness: MockAwareness;
-  getPresenceParticipants: () => PresenceParticipant[];
-  materializeMarkdown: () => string;
   destroy: () => void;
 };
 
@@ -84,8 +72,39 @@ export type CommentMappingSummary = {
 export const inMemoryCloudSessionProvider: CloudSessionProvider = {
   id: "in-memory",
   label: "In-memory room",
-  createRoom: (options) => inMemoryCloudRooms.createRoom(options),
-  joinRoom: (options) => inMemoryCloudRooms.joinRoom(options),
+  createRoom: ({ roomId = "mock-cloud-room", title = "Cloud room spike", seedMarkdown, participantId }) => {
+    const participants = createMockParticipants();
+    const participant = findParticipant(participants, participantId ?? "human-primary");
+    return createCloudRoomHandle({
+      title,
+      participant,
+      participants,
+      connection: inMemoryRoomTransport.connect({
+        roomId,
+        title,
+        seedMarkdown,
+        participant,
+        participants,
+        createIfMissing: true,
+      }),
+    });
+  },
+  joinRoom: ({ roomId, participantId }) => {
+    const entry = inMemoryCloudRooms.getRoom(roomId);
+    const participant = findParticipant(entry.participants, participantId ?? "human-secondary");
+    return createCloudRoomHandle({
+      title: entry.title,
+      participant,
+      participants: entry.participants,
+      connection: inMemoryRoomTransport.connect({
+        roomId,
+        title: entry.title,
+        participant,
+        participants: entry.participants,
+        createIfMissing: false,
+      }),
+    });
+  },
 };
 
 type InMemoryRoomEntry = {
@@ -96,53 +115,76 @@ type InMemoryRoomEntry = {
   awarenessRoom: MockAwarenessRoom;
   participants: PresenceParticipant[];
   nextClientId: number;
-  handles: Set<CloudRoomHandle>;
+  connections: Set<RealtimeRoomConnection>;
 };
 
 const inMemoryCloudRooms = createInMemoryRoomRegistry();
+
+const inMemoryRoomTransport: CloudRoomTransport = {
+  id: "in-memory-room-transport",
+  label: "In-memory room transport",
+  connect: ({ roomId, title, seedMarkdown, participant, participants, createIfMissing }) =>
+    inMemoryCloudRooms.connect({ roomId, title, seedMarkdown, participant, participants, createIfMissing }),
+};
 
 function createInMemoryRoomRegistry() {
   const rooms = new Map<string, InMemoryRoomEntry>();
 
   return {
-    createRoom({ roomId = "mock-cloud-room", title = "Cloud room spike", seedMarkdown, participantId }: CloudRoomCreateOptions) {
-      if (rooms.has(roomId)) {
-        throw new Error(`Cloud room already exists: ${roomId}`);
-      }
-
-      const ydoc = new Y.Doc();
-      const ytext = ydoc.getText("markdown");
-      const initial = normalizeSeedMarkdown(seedMarkdown);
-      ytext.insert(0, initial);
-
-      const participants = createMockParticipants();
-      const entry: InMemoryRoomEntry = {
-        roomId,
-        title,
-        ydoc,
-        ytext,
-        awarenessRoom: new MockAwarenessRoom(),
-        participants,
-        nextClientId: ydoc.clientID * 10,
-        handles: new Set(),
-      };
-
-      seedAgentPresence(entry, initial);
-      rooms.set(roomId, entry);
-      return joinEntry(entry, participantId ?? "human-primary");
-    },
-
-    joinRoom({ roomId, participantId }: CloudRoomJoinOptions) {
+    getRoom(roomId: string) {
       const entry = rooms.get(roomId);
       if (!entry) {
         throw new Error(`Cloud room does not exist: ${roomId}`);
       }
-      return joinEntry(entry, participantId ?? "human-secondary");
+      return entry;
+    },
+
+    connect({ roomId, title, seedMarkdown, participant, participants, createIfMissing }: Parameters<CloudRoomTransport["connect"]>[0]) {
+      const entry = rooms.get(roomId) ?? (createIfMissing ? createEntry({ roomId, title, seedMarkdown, participants }) : null);
+      if (!entry) {
+        throw new Error(`Cloud room does not exist: ${roomId}`);
+      }
+      return connectEntry(entry, participant);
     },
   };
 
-  function joinEntry(entry: InMemoryRoomEntry, participantId: string): CloudRoomHandle {
-    const participant = findParticipant(entry.participants, participantId);
+  function createEntry({
+    roomId,
+    title,
+    seedMarkdown,
+    participants,
+  }: {
+    roomId: string;
+    title: string;
+    seedMarkdown?: string;
+    participants: PresenceParticipant[];
+  }) {
+    if (rooms.has(roomId)) {
+      throw new Error(`Cloud room already exists: ${roomId}`);
+    }
+
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText("markdown");
+    const initial = normalizeSeedMarkdown(seedMarkdown);
+    ytext.insert(0, initial);
+
+    const entry: InMemoryRoomEntry = {
+      roomId,
+      title,
+      ydoc,
+      ytext,
+      awarenessRoom: new MockAwarenessRoom(),
+      participants,
+      nextClientId: ydoc.clientID * 10,
+      connections: new Set(),
+    };
+
+    seedAgentPresence(entry, initial);
+    rooms.set(roomId, entry);
+    return entry;
+  }
+
+  function connectEntry(entry: InMemoryRoomEntry, participant: PresenceParticipant): RealtimeRoomConnection {
     const awareness = new MockAwareness(entry.awarenessRoom, nextClientId(entry));
     awareness.setLocalState({
       user: toAwarenessUser(participant),
@@ -151,9 +193,10 @@ function createInMemoryRoomRegistry() {
 
     const materializeMarkdown = () => entry.ytext.toString();
     const getPresenceParticipants = () => participantsFromStates(entry.awarenessRoom.states);
-    let handle: CloudRoomHandle | null = null;
-    const connection: RealtimeRoomConnection = {
+    let connection: RealtimeRoomConnection | null = null;
+    connection = {
       providerId: inMemoryCloudSessionProvider.id,
+      transportId: inMemoryRoomTransport.id,
       roomId: entry.roomId,
       status: "connected",
       ydoc: entry.ydoc,
@@ -161,43 +204,56 @@ function createInMemoryRoomRegistry() {
       awareness,
       getPresenceParticipants,
       materializeMarkdown,
-      destroy: () => handle?.destroy(),
-    };
-    const session: CloudRoomSession = {
-      kind: "cloud-room",
-      roomId: entry.roomId,
-      title: entry.title,
-      presence: { participants: entry.participants },
-      materializeMarkdown,
-    };
-    handle = {
-      providerId: inMemoryCloudSessionProvider.id,
-      roomId: entry.roomId,
-      connection,
-      session,
-      ydoc: entry.ydoc,
-      ytext: entry.ytext,
-      awareness,
-      participant,
-      participants: entry.participants,
-      getPresenceParticipants,
-      materializeMarkdown,
-      getCommentMappingSummary: () => summarizeCommentMapping(materializeMarkdown()),
       destroy: () => {
-        if (!handle || !entry.handles.delete(handle)) {
+        if (!connection || !entry.connections.delete(connection)) {
           return;
         }
         connection.status = "closed";
         awareness.destroy();
-        if (entry.handles.size === 0) {
+        if (entry.connections.size === 0) {
           rooms.delete(entry.roomId);
           entry.ydoc.destroy();
         }
       },
     };
-    entry.handles.add(handle);
-    return handle;
+    entry.connections.add(connection);
+    return connection;
   }
+}
+
+function createCloudRoomHandle({
+  title,
+  participant,
+  participants,
+  connection,
+}: {
+  title: string;
+  participant: PresenceParticipant;
+  participants: PresenceParticipant[];
+  connection: RealtimeRoomConnection;
+}): CloudRoomHandle {
+  const session: CloudRoomSession = {
+    kind: "cloud-room",
+    roomId: connection.roomId,
+    title,
+    presence: { participants },
+    materializeMarkdown: connection.materializeMarkdown,
+  };
+  return {
+    providerId: connection.providerId,
+    roomId: connection.roomId,
+    connection,
+    session,
+    ydoc: connection.ydoc,
+    ytext: connection.ytext,
+    awareness: connection.awareness,
+    participant,
+    participants,
+    getPresenceParticipants: connection.getPresenceParticipants,
+    materializeMarkdown: connection.materializeMarkdown,
+    getCommentMappingSummary: () => summarizeCommentMapping(connection.materializeMarkdown()),
+    destroy: connection.destroy,
+  };
 }
 
 function createMockParticipants(): PresenceParticipant[] {

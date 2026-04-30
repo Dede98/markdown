@@ -245,7 +245,9 @@ normal editor buffer. Room creation and joining now go through an
 internal `CloudSessionProvider` contract with an in-memory provider
 first; app code does not construct Yjs room state directly. It
 intentionally does not introduce auth, server persistence, or a public
-plugin API.
+plugin API. The internal provider/transport contract is documented in
+`CLOUD_COLLABORATION_API.md`, and the WebSocket provider remains a
+non-wired stub until a real backend transport exists.
 
 Reason:
 
