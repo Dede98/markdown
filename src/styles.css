@@ -1171,47 +1171,125 @@ button {
   background: var(--accent);
 }
 
-.appPrintExporting,
-.appPrintExporting .workspace,
-.appPrintExporting .editorShell,
-.appPrintExporting .editorMount,
-.appPrintExporting .cm-editor,
-.appPrintExporting .cm-scroller {
-  height: auto !important;
-  min-height: 0 !important;
-  max-height: none !important;
-  overflow: visible !important;
-}
-
-.appPrintExporting {
-  display: block;
-}
-
-.appPrintExporting .topbar,
-.appPrintExporting .toolbar,
-.appPrintExporting .statusbar,
-.appPrintExporting .commentsSidebar,
-.appPrintExporting .cloudPanel,
-.appPrintExporting .settingsOverlay,
-.appPrintExporting .zenIndicator,
-.appPrintExporting .cm-gutters,
-.appPrintExporting .cm-cursorLayer,
-.appPrintExporting .cm-selectionLayer,
-.appPrintExporting .cm-md-mermaid-controls {
-  display: none !important;
-}
-
-.appPrintExporting .workspace,
-.appPrintExporting .workspaceWithComments,
-.appPrintExporting .workspaceWithCloud,
-.appPrintExporting .workspaceWithCommentsAndCloud {
-  display: block;
+.printExportSurface {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  width: 170mm;
+  height: auto;
   overflow: visible;
+  visibility: hidden;
+  pointer-events: none;
+  background: #ffffff;
 }
 
-.appPrintExporting .editorShell,
-.appPrintExporting.appZen .editorShell {
+.printMarkdown {
+  contain: none !important;
+  position: static !important;
+  transform: none !important;
+  max-width: 170mm !important;
+  width: 100% !important;
+  margin: 0 auto !important;
+  padding: 0 0 6mm !important;
+  color: var(--fg-body);
+  font-family: Charter, "Iowan Old Style", "New York", Georgia, serif;
+  font-size: 11pt;
+  line-height: 1.5;
+}
+
+.printMarkdown h1,
+.printMarkdown h2,
+.printMarkdown h3,
+.printMarkdown h4,
+.printMarkdown h5,
+.printMarkdown h6 {
+  color: var(--fg-strong);
+  font-weight: 700;
+  line-height: 1.18;
+}
+
+.printMarkdown h1 {
+  font-size: 2.34em;
+  margin: 0 0 0.5em;
+}
+
+.printMarkdown h2 {
+  font-size: 1.34em;
+  margin: 1em 0 0.35em;
+}
+
+.printMarkdown h3 {
+  font-size: 1.12em;
+  margin: 0.85em 0 0.3em;
+}
+
+.printMarkdown h4,
+.printMarkdown h5,
+.printMarkdown h6 {
+  font-size: 1em;
+  margin: 0.75em 0 0.25em;
+}
+
+.printMarkdown p,
+.printMarkdown ul,
+.printMarkdown ol,
+.printMarkdown blockquote,
+.printMarkdown pre {
+  margin: 0 0 0.85em;
+}
+
+.printMarkdown ul,
+.printMarkdown ol {
+  padding-left: 1.4em;
+}
+
+.printMarkdown blockquote {
+  padding-left: 1em;
+  border-left: 3px solid var(--rule);
+  color: var(--fg-muted);
+}
+
+.printMarkdown code {
+  border: 1px solid var(--code-border-inline);
+  border-radius: 4px;
+  background: var(--code-bg-inline);
+  color: var(--code-fg);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 0.88em;
+  padding: 0.05em 0.25em;
+}
+
+.printMarkdown pre {
+  overflow: visible;
+  border: 1px solid var(--rule);
+  border-radius: 6px;
+  background: var(--code-bg-block);
+  padding: 0.85em 1em;
+  white-space: pre-wrap;
+}
+
+.printMarkdown pre code {
+  border: 0;
+  background: transparent;
   padding: 0;
+}
+
+.printMarkdown a {
+  color: var(--accent-fg);
+}
+
+.printTaskItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45em;
+}
+
+.printTaskItem input {
+  margin-top: 0.32em;
+}
+
+.printMermaidBlock {
+  break-inside: avoid;
 }
 
 @media print {
@@ -1248,16 +1326,18 @@ button {
   body,
   #root,
   .app,
-  .workspace,
-  .editorShell,
-  .editorMount,
-  .cm-editor,
-  .cm-scroller {
+  .printExportSurface,
+  .printMarkdown {
     height: auto !important;
     min-height: 0 !important;
     max-height: none !important;
     overflow: visible !important;
     background: #ffffff !important;
+  }
+
+  html,
+  body {
+    width: auto !important;
   }
 
   body {
@@ -1268,41 +1348,34 @@ button {
     display: block;
   }
 
-  .topbar,
-  .toolbar,
-  .statusbar,
-  .commentsSidebar,
-  .cloudPanel,
-  .settingsOverlay,
-  .zenIndicator,
-  .cm-gutters,
-  .cm-cursorLayer,
-  .cm-selectionLayer,
-  .cm-md-mermaid-controls {
+  .app > :not(.printExportSurface) {
     display: none !important;
   }
 
-  .workspace,
-  .workspaceWithComments,
-  .workspaceWithCloud,
-  .workspaceWithCommentsAndCloud {
-    display: block;
-    overflow: visible;
+  .printExportSurface {
+    position: static !important;
+    left: auto !important;
+    top: auto !important;
+    width: auto !important;
+    visibility: visible !important;
   }
 
-  .editorShell,
-  .appZen .editorShell {
-    padding: 0;
-  }
-
-  .cm-content {
-    max-width: 720px !important;
+  .printMarkdown {
+    contain: none !important;
+    position: static !important;
+    transform: none !important;
+    font-size: 11pt !important;
+    line-height: 1.5 !important;
+    max-width: 170mm !important;
     width: 100% !important;
     margin: 0 auto !important;
-    padding: 0 !important;
+    /* Give print engines a real tail box so the final content page is kept
+       even when the last rendered line lands exactly on a page boundary. */
+    padding: 0 0 6mm !important;
   }
 
-  .cm-line,
+  /* Keep only whole block widgets together. Text lines should remain free to
+     fragment normally, otherwise long documents can hit pagination edge cases. */
   .cm-md-table-wrapper,
   .cm-md-mermaid,
   .cm-md-code-line,

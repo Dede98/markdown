@@ -69,6 +69,7 @@ import {
   type LocalFile,
 } from "./fileAdapter";
 import { MarkdownEditor } from "./MarkdownEditor";
+import { MarkdownPrintDocument } from "./MarkdownPrintDocument";
 import { isMarkdownPath, openMarkdownFromPath, tauriFileAdapter } from "./tauriFileAdapter";
 import {
   applyTheme,
@@ -197,6 +198,9 @@ function toPdfTitle(name: string): string {
   return `${trimmed.replace(/\.(md|markdown|mdx|mdown|txt)$/i, "")}.pdf`;
 }
 
+const PRINT_RESTORE_FALLBACK_MS = 30_000;
+const PRINT_RESTORE_AFTER_FOCUS_MS = 500;
+
 export function App() {
   const [file, setFile] = useState<FileState>(initialFile);
   const [markdown, setMarkdown] = useState(initialMarkdown);
@@ -244,7 +248,6 @@ export function App() {
   saveStatusRef.current = saveStatus;
   const commentAuthorRef = useRef(commentAuthor);
   commentAuthorRef.current = commentAuthor;
-  const printRestoreRawRef = useRef(false);
   // Mirror `fileVersion` so async save callbacks can detect that the user
   // switched files mid-save (replaceFile bumps fileVersion). Without this an
   // in-flight save would clobber the freshly-opened file's name/handle/savedContents.
@@ -619,10 +622,6 @@ export function App() {
     document.title = previousTitle;
     flushSync(() => {
       setPrintExporting(false);
-      if (printRestoreRawRef.current) {
-        setRaw(true);
-        printRestoreRawRef.current = false;
-      }
     });
   }, []);
 
@@ -633,18 +632,13 @@ export function App() {
 
     const previousTitle = document.title;
     document.title = toPdfTitle(file.name || DEFAULT_NEW_FILE_NAME);
-    printRestoreRawRef.current = raw;
 
     let finished = false;
     let fallbackTimer: number | undefined;
     const preparePrint = () => {
       flushSync(() => {
         setPrintExporting(true);
-        if (raw) {
-          setRaw(false);
-        }
       });
-      editorRef.current?.requestMeasure();
     };
     const finish = () => {
       if (finished) {
@@ -656,23 +650,37 @@ export function App() {
       }
       window.removeEventListener("beforeprint", preparePrint);
       window.removeEventListener("afterprint", finish);
+      window.removeEventListener("focus", finishAfterFocus);
       finishPrintExport(previousTitle);
+    };
+    const scheduleFallback = (delay: number) => {
+      if (fallbackTimer !== undefined) {
+        window.clearTimeout(fallbackTimer);
+      }
+      fallbackTimer = window.setTimeout(finish, delay);
+    };
+    const finishAfterFocus = () => {
+      scheduleFallback(PRINT_RESTORE_AFTER_FOCUS_MS);
     };
 
     window.addEventListener("beforeprint", preparePrint);
     window.addEventListener("afterprint", finish);
+    window.addEventListener("focus", finishAfterFocus);
     try {
+      preparePrint();
       window.print();
       // Some webviews do not reliably fire `afterprint` when the user
-      // cancels. By this point the print snapshot has already been handed to
-      // the system dialog, so restore the live editor quickly if no event
-      // arrives.
-      fallbackTimer = window.setTimeout(finish, 250);
+      // cancels. Keep the print layout alive while the dialog/preview is open:
+      // some PDF pipelines save from the live webview after preview has
+      // rendered. Focus returning is the earliest safe fallback signal.
+      if (!finished) {
+        scheduleFallback(PRINT_RESTORE_FALLBACK_MS);
+      }
     } catch (error) {
       console.error("PDF export print failed", error);
       finish();
     }
-  }, [file.name, finishPrintExport, raw]);
+  }, [file.name, finishPrintExport]);
 
   // Load a file by absolute path. Shared by the OS file-open path (Finder
   // double-click, "Open With", drag onto the dock icon) and the in-window
@@ -1480,6 +1488,12 @@ export function App() {
             ))}
           </div>
         </footer>
+      )}
+
+      {printExporting && (
+        <section className="printExportSurface" aria-hidden="true">
+          <MarkdownPrintDocument markdown={markdown} />
+        </section>
       )}
     </main>
   );

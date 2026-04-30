@@ -1060,18 +1060,31 @@ test.describe("editor core", () => {
           hasRenderedTable: boolean;
           hasRawTableSource: boolean;
           title: string;
+          maxWidth: string;
+          fontSize: string;
+          hasDistantRenderedTable: boolean;
+          hasDistantRawTableSource: boolean;
+          printSurfaceVisibility: string;
         };
       };
       win.__printCalls = 0;
       window.print = () => {
         window.dispatchEvent(new Event("beforeprint"));
-        const content = document.querySelector(".cm-content")?.textContent ?? "";
+        const printSurface = document.querySelector<HTMLElement>(".printExportSurface");
+        const contentEl = document.querySelector<HTMLElement>(".printExportSurface .printMarkdown");
+        const content = contentEl?.textContent ?? "";
+        const contentStyle = contentEl ? getComputedStyle(contentEl) : null;
         win.__printCalls += 1;
         win.__printSnapshot = {
           appPrintExporting: Boolean(document.querySelector(".appPrintExporting")),
-          hasRenderedTable: Boolean(document.querySelector(".cm-md-table")),
+          hasRenderedTable: Boolean(document.querySelector(".printExportSurface .cm-md-table")),
           hasRawTableSource: content.includes("| A | B |"),
           title: document.title,
+          maxWidth: contentStyle?.maxWidth ?? "",
+          fontSize: contentStyle?.fontSize ?? "",
+          hasDistantRenderedTable: Boolean(document.querySelector(".printExportSurface [data-print-check='distant']")),
+          hasDistantRawTableSource: content.includes("| Distant | Table |"),
+          printSurfaceVisibility: printSurface ? getComputedStyle(printSurface).visibility : "",
         };
         window.dispatchEvent(new Event("afterprint"));
       };
@@ -1095,6 +1108,11 @@ test.describe("editor core", () => {
           hasRenderedTable: boolean;
           hasRawTableSource: boolean;
           title: string;
+          maxWidth: string;
+          fontSize: string;
+          hasDistantRenderedTable: boolean;
+          hasDistantRawTableSource: boolean;
+          printSurfaceVisibility: string;
         };
       }
     ).__printSnapshot);
@@ -1103,12 +1121,71 @@ test.describe("editor core", () => {
       hasRenderedTable: true,
       hasRawTableSource: false,
       title: "untitled.pdf",
+      maxWidth: "642.52px",
+      fontSize: "14.6667px",
+      hasDistantRenderedTable: false,
+      hasDistantRawTableSource: false,
+      printSurfaceVisibility: "hidden",
     });
     await expect.poll(() => getEditorSource(page)).toBe(sourceBeforeExport);
     await expect(page.getByRole("button", { name: "Rendered", exact: true })).toBeVisible();
   });
 
-  test("pdf export restores the editor if afterprint does not fire", async ({ page }) => {
+  test("pdf export statically renders markdown after the editor viewport", async ({ page }) => {
+    await page.addInitScript(() => {
+      const win = window as unknown as {
+        __printSnapshot?: {
+          hasTailHeading: boolean;
+          hasRenderedTailTable: boolean;
+          hasRawTailTableSource: boolean;
+        };
+      };
+      window.print = () => {
+        window.dispatchEvent(new Event("beforeprint"));
+        const content = document.querySelector<HTMLElement>(".printExportSurface .printMarkdown")?.textContent ?? "";
+        win.__printSnapshot = {
+          hasTailHeading: content.includes("Tail Section"),
+          hasRenderedTailTable: Boolean(document.querySelector(".printExportSurface .cm-md-table[data-print-table='tail']")),
+          hasRawTailTableSource: content.includes("| Tail | Table |"),
+        };
+        window.dispatchEvent(new Event("afterprint"));
+      };
+    });
+    await page.goto("/");
+    await setEditorText(
+      page,
+      [
+        "# Long export",
+        "",
+        ...Array.from({ length: 180 }, (_, index) => `Paragraph ${index + 1} with **bold** text.`),
+        "",
+        "## Tail Section",
+        "",
+        "| Tail | Table |",
+        "| --- | --- |",
+        "| **Rendered** | `Code` |",
+      ].join("\n"),
+    );
+
+    await page.getByRole("button", { name: "Export rendered PDF" }).click();
+
+    const snapshot = await page.evaluate(() => (
+      window as unknown as {
+        __printSnapshot?: {
+          hasTailHeading: boolean;
+          hasRenderedTailTable: boolean;
+          hasRawTailTableSource: boolean;
+        };
+      }
+    ).__printSnapshot);
+    expect(snapshot).toEqual({
+      hasTailHeading: true,
+      hasRenderedTailTable: true,
+      hasRawTailTableSource: false,
+    });
+  });
+
+  test("pdf export keeps the print layout until focus returns if afterprint does not fire", async ({ page }) => {
     await page.addInitScript(() => {
       const win = window as unknown as { __printCalls: number };
       win.__printCalls = 0;
@@ -1119,9 +1196,21 @@ test.describe("editor core", () => {
     });
     await page.goto("/");
 
+    const workspaceRectBefore = await page.locator(".workspace").evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    });
     await page.getByRole("button", { name: "Export rendered PDF" }).click();
 
     await expect.poll(() => page.evaluate(() => (window as unknown as { __printCalls: number }).__printCalls)).toBe(1);
+    await expect(page.locator(".appPrintExporting")).toHaveCount(1);
+    await expect.poll(() => page.locator(".workspace").evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+    })).toEqual(workspaceRectBefore);
+    await page.evaluate(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
     await expect(page.locator(".appPrintExporting")).toHaveCount(0);
   });
 
