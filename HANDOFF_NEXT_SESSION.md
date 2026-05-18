@@ -69,6 +69,18 @@ Remaining Cloud work: real auth, room creation/share flow, provider
 connection, server persistence, snapshot/history storage, remote cursor
 identity from real accounts, and Yjs-backed comments storage.
 
+The first backend contract spike is now represented by
+`src/cloudCollaboration/backendContract.ts`. It is intentionally
+in-memory and not wired into the editor UI, but its tests prove the
+backend-facing room lifecycle contract: anonymous temporary room
+creation without login, account-owned room creation with auth,
+password gates for anonymous and account rooms, anonymous room claim
+flow, signed-in-only AI sessions, deterministic `.md` materialization,
+comment mapping, and encrypted persistence boundary refs for Yjs
+checkpoints, Yjs update archives, and materialized Markdown snapshots.
+Local `.md` sessions remain account-free and separate from this Cloud
+contract.
+
 ## What landed in the auto-update + OSS session
 
 ### Auto-update lane (5 commits, v0.0.16)

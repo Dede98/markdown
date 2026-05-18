@@ -1,6 +1,10 @@
 # Cloud Backend Architecture
 
 Status: accepted direction for the first real Cloud collaboration backend.
+The first backend contract spike is test-backed in
+`src/cloudCollaboration/backendContract.ts`; it models room
+create/join/claim/password/AI gates and encrypted persistence boundary
+metadata in memory before a production database exists.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -304,6 +308,12 @@ Runtime rules:
   dropped.
 
 ## Implementation Sequence
+
+Completed pre-step: add an in-memory backend room contract spike for
+anonymous/account rooms, password gates, anonymous claim flow,
+signed-in-only AI usage, deterministic `.md` materialization, and
+encrypted persistence boundary refs. Implemented in
+`src/cloudCollaboration/backendContract.ts`.
 
 1. Add backend package/service skeleton.
 2. Add Postgres schema for rooms, memberships, invites, versions,

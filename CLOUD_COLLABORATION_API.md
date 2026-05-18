@@ -91,10 +91,47 @@ A real backend should:
 The accepted backend architecture and implementation sequence are in
 `CLOUD_BACKEND_ARCHITECTURE.md`.
 
+## Backend Room Contract Spike
+
+Source: `src/cloudCollaboration/backendContract.ts`
+
+The first backend-facing contract spike models the HTTP/session side of
+the room lifecycle without requiring a production database. It is an
+in-memory, test-backed contract for the API shapes described in
+`CLOUD_BACKEND_ARCHITECTURE.md`.
+
+Contract:
+
+- `createRoom({ mode, source, seedMarkdown, title, auth?, password? })`
+  creates either an anonymous temporary room or an account-owned room.
+- `mode: "anonymous"` does not require auth and returns an owner
+  capability secret plus an expiry timestamp.
+- `mode: "account"` requires signed-in account auth and creates owner
+  membership.
+- `joinRoom({ roomId, access, password? })` enforces password gates for
+  both anonymous and account rooms.
+- `claimAnonymousRoom({ roomId, auth, ownerSecret })` converts an
+  anonymous temporary room into an account-owned room.
+- `requestAiSession({ roomId, auth, agentId, displayName })` requires a
+  signed-in account and existing room membership.
+- Room tickets expose deterministic `.md` materialization and comment
+  mapping summary, but persistence is represented as encrypted blob refs
+  for Yjs checkpoints, Yjs update archives, and materialized Markdown
+  snapshots.
+
+This module is not wired into the editor UI yet. The existing local file
+session, file open/save/autosave paths, and mock collaboration panel
+remain account-free unless the user explicitly starts Cloud
+collaboration work.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
   auth, network, or persistence.
+- `createInMemoryCloudRoomBackend()` is the test-backed backend room
+  contract spike. It models auth/password/claim/AI/persistence
+  boundaries in memory and is intentionally not a production storage
+  implementation.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.
