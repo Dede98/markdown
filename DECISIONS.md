@@ -252,9 +252,12 @@ non-wired stub until a real backend transport exists.
 Follow-up backend decision: use Hocuspocus for the first real Cloud
 backend, persist Yjs binary updates/checkpoints as runtime
 collaboration state, and materialize deterministic `.md` snapshots as
-the user-facing export/version artifact. The full backend architecture,
-API, permissions, storage, comments, and AI-agent model are documented
-in `CLOUD_BACKEND_ARCHITECTURE.md`.
+the user-facing export/version artifact. The plan supports anonymous
+temporary rooms that can be claimed by signing in, password gates for
+anonymous and account rooms, encrypted-at-rest document blobs, and
+signed-in-only AI usage. The full backend architecture, API,
+permissions, storage, comments, and AI-agent model are documented in
+`CLOUD_BACKEND_ARCHITECTURE.md`.
 
 Reason:
 

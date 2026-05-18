@@ -113,8 +113,9 @@ backend work has a stable implementation target. This does not add
 auth, backend persistence, or a login requirement for local editing.
 The accepted backend architecture is documented in
 `CLOUD_BACKEND_ARCHITECTURE.md`: Hocuspocus first, Yjs binary runtime
-state, deterministic `.md` snapshots, explicit room auth, and visible
-AI-agent participants.
+state, deterministic `.md` snapshots, anonymous temporary rooms with
+claim flow, room passwords, encrypted-at-rest storage, explicit room
+auth, and visible AI-agent participants.
 
 It should be built as a bundled first-party extension over explicit
 core seams, not as a mandatory app mode and not yet as a public plugin

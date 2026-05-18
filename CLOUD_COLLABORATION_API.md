@@ -81,6 +81,12 @@ A real backend should:
 - Route AI/MCP edits through the same Yjs mutation path as human edits.
 - Keep local file open/save/autosave terminology separate from
   room/sync/auth terminology.
+- Support anonymous temporary rooms that can later be claimed by a
+  signed-in user.
+- Support room password gates for both anonymous and account-owned
+  rooms.
+- Encrypt Yjs blobs and materialized Markdown snapshots at rest.
+- Require sign-in for AI usage.
 
 The accepted backend architecture and implementation sequence are in
 `CLOUD_BACKEND_ARCHITECTURE.md`.

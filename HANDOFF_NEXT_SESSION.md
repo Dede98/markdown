@@ -47,8 +47,10 @@ Do not build a public plugin API yet.
   non-wired stub for future backend work.
 - `CLOUD_BACKEND_ARCHITECTURE.md` documents the accepted backend
   direction: Hocuspocus first, Yjs binary runtime persistence,
-  deterministic `.md` snapshots, explicit HTTP/WebSocket auth boundary,
-  room permissions, comments mapping, and AI-agent identity/audit.
+  deterministic `.md` snapshots, anonymous temporary rooms with claim
+  flow, room passwords, encrypted-at-rest document storage, explicit
+  HTTP/WebSocket auth boundary, room permissions, comments mapping, and
+  AI-agent identity/audit.
 - `src/cloudCollaboration/contribution.tsx` registers the Cloud
   collaboration side panel. `App.tsx` owns the active mock room,
   binds the main editor to the shared `Y.Text`, and the panel mounts a
