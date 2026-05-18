@@ -81,6 +81,15 @@ checkpoints, Yjs update archives, and materialized Markdown snapshots.
 Local `.md` sessions remain account-free and separate from this Cloud
 contract.
 
+The follow-up route skeleton is in
+`src/cloudCollaboration/backendService.ts`. It wraps the same in-memory
+contract with HTTP-shaped routes for `POST /v1/rooms`,
+`POST /v1/rooms/:roomId/join`, `POST /v1/rooms/:roomId/claim`,
+`POST /v1/rooms/:roomId/ai-sessions`, and `GET /v1/rooms/:roomId`.
+It returns `{ status, body }` responses and keeps auth at the service
+boundary so the route behavior is testable before choosing a server
+framework or adding Postgres.
+
 ## What landed in the auto-update + OSS session
 
 ### Auto-update lane (5 commits, v0.0.16)

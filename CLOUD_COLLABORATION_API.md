@@ -124,6 +124,31 @@ session, file open/save/autosave paths, and mock collaboration panel
 remain account-free unless the user explicitly starts Cloud
 collaboration work.
 
+## Backend Service Route Skeleton
+
+Source: `src/cloudCollaboration/backendService.ts`
+
+The first service skeleton wraps the in-memory backend contract in an
+HTTP-shaped route adapter. It is still not a production server and does
+not introduce database storage, but it fixes the route names and
+auth/body boundary that the future app backend should preserve.
+
+Routes:
+
+- `POST /v1/rooms` creates anonymous or account rooms. Account auth is
+  supplied at the service boundary, not by local editor state.
+- `POST /v1/rooms/:roomId/join` joins a room with account auth or
+  explicit anonymous access and applies password checks.
+- `POST /v1/rooms/:roomId/claim` requires signed-in auth plus the
+  anonymous owner secret.
+- `POST /v1/rooms/:roomId/ai-sessions` requires signed-in account auth
+  and returns a visible `ai-agent` participant session.
+- `GET /v1/rooms/:roomId` returns room metadata only.
+
+The service returns HTTP-like `{ status, body }` responses so tests can
+lock route behavior before a framework, database, or real auth provider
+is selected.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
@@ -132,6 +157,9 @@ collaboration work.
   contract spike. It models auth/password/claim/AI/persistence
   boundaries in memory and is intentionally not a production storage
   implementation.
+- `createInMemoryCloudBackendService()` is the test-backed route
+  skeleton over that contract. It models the HTTP route boundary in
+  memory and is intentionally not wired into the UI.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.

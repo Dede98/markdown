@@ -5,6 +5,8 @@ The first backend contract spike is test-backed in
 `src/cloudCollaboration/backendContract.ts`; it models room
 create/join/claim/password/AI gates and encrypted persistence boundary
 metadata in memory before a production database exists.
+`src/cloudCollaboration/backendService.ts` wraps that contract in an
+HTTP-shaped service skeleton for the initial `/v1/rooms` route surface.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -315,7 +317,10 @@ signed-in-only AI usage, deterministic `.md` materialization, and
 encrypted persistence boundary refs. Implemented in
 `src/cloudCollaboration/backendContract.ts`.
 
-1. Add backend package/service skeleton.
+1. Add backend package/service skeleton. Initial route adapter
+   implemented in `src/cloudCollaboration/backendService.ts`; future
+   work should move this route surface into a real backend package or
+   service runtime.
 2. Add Postgres schema for rooms, memberships, invites, versions,
    snapshots, update refs, and audit events.
 3. Add Hocuspocus server with `onAuthenticate`, load/store hooks, and
