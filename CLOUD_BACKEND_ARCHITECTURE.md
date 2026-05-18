@@ -7,6 +7,12 @@ create/join/claim/password/AI gates and encrypted persistence boundary
 metadata in memory before a production database exists.
 `src/cloudCollaboration/backendService.ts` wraps that contract in an
 HTTP-shaped service skeleton for the initial `/v1/rooms` route surface.
+`src/cloudCollaboration/backendSchema.ts` defines the Postgres metadata
+schema for the same lifecycle (rooms, memberships, invites, password
+verifiers, encrypted Yjs checkpoint refs, encrypted Yjs update archive
+refs, encrypted Markdown snapshot refs, versions, and audit events) as
+typed table descriptors plus a `renderSchemaSql()` emitter; it is
+schema-only and does not require a production database runtime.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -105,29 +111,45 @@ Anonymous room mode:
 
 Persist Yjs binary updates, not JSON snapshots.
 
-Recommended storage model:
+Recommended storage model (the typed schema definition lives in
+`src/cloudCollaboration/backendSchema.ts`):
 
+- `tenants`
+  - tenant/workspace boundary, even when v1 only has personal workspaces
+- `users`
+  - account identity for Cloud collaboration only
 - `documents`
-  - logical document metadata
+  - logical document/room metadata
   - owner account id for claimed/account rooms
   - anonymous owner capability hash for unclaimed temporary rooms
-  - retention/expiry policy
+  - retention/expiry policy, claim timestamp
+- `document_memberships`
+  - per-user role: owner, admin, editor, commenter, viewer
+- `document_invites`
+  - hashed invite secret, role, max uses, expiry, revoked timestamp
+- `document_password_verifiers`
+  - Argon2id-style verifier metadata per room, never plaintext password
 - `document_yjs_checkpoints`
   - encrypted compacted current-state blob reference
   - state vector
   - key id / wrapped document key reference
-  - created timestamp
-- `document_yjs_updates`
-  - append-only update segments until compacted
+  - byte length, created timestamp
+- `document_yjs_update_archives`
+  - append-only encrypted update segment refs until compacted
   - may start in Postgres `bytea` for small/recent updates, but larger
     archives should move to object storage
+- `document_markdown_snapshots`
+  - encrypted deterministic `.md` blob refs and metadata
+  - materialization reason: `manual`, `autosnapshot`, `before_ai_edit`,
+    `restore`, `room_close`
 - `document_versions`
   - user-facing version rows
-  - references a Yjs checkpoint/blob and a materialized `.md` snapshot
-  - includes reason: `manual`, `autosnapshot`, `before_ai_edit`,
-    `restore`, `room_close`
-- `document_snapshots`
-  - encrypted deterministic `.md` object refs and metadata
+  - references a Yjs checkpoint and a materialized `.md` snapshot
+  - same reason enum as snapshots, optional created-by user/agent
+- `document_audit_events`
+  - room lifecycle, membership, invite, password, AI-session, snapshot,
+    and version events with separate human/anonymous/AI-agent actor
+    fields and an `authorized_by_user_id` for delegated AI actions
 
 Encryption at rest:
 
@@ -322,7 +344,10 @@ encrypted persistence boundary refs. Implemented in
    work should move this route surface into a real backend package or
    service runtime.
 2. Add Postgres schema for rooms, memberships, invites, versions,
-   snapshots, update refs, and audit events.
+   snapshots, update refs, and audit events. Typed schema definition
+   and SQL emitter implemented in
+   `src/cloudCollaboration/backendSchema.ts`; future work should wire
+   this into a real migration runner.
 3. Add Hocuspocus server with `onAuthenticate`, load/store hooks, and
    room context.
 4. Implement binary Yjs checkpoint/update persistence.

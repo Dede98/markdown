@@ -149,6 +149,44 @@ The service returns HTTP-like `{ status, body }` responses so tests can
 lock route behavior before a framework, database, or real auth provider
 is selected.
 
+## Backend Postgres Schema
+
+Source: `src/cloudCollaboration/backendSchema.ts`
+
+The typed Postgres schema definition models the cloud collaboration
+metadata side of the same lifecycle that the in-memory contract and
+service skeleton expose. It is intentionally schema-only: the module
+exports table descriptors plus a `renderSchemaSql()` emitter and does
+not require a database driver, migration runner, or production database
+to be installed in the repo.
+
+Tables:
+
+- `tenants` and `users` provide the workspace/account boundary.
+- `documents` model cloud rooms with `mode` (`anonymous` or `account`),
+  optional `owner_user_id`, anonymous owner capability hash, expiry,
+  and claim timestamp.
+- `document_memberships` model account roles per room.
+- `document_invites` store hashed invite secrets with role, expiry,
+  max uses, and revocation metadata.
+- `document_password_verifiers` store Argon2id-style verifier metadata
+  per room and never plaintext passwords.
+- `document_yjs_checkpoints`, `document_yjs_update_archives`, and
+  `document_markdown_snapshots` store encrypted blob refs plus
+  `wrapped_key_id`, byte length, and encryption mode; plaintext Yjs
+  body and plaintext Markdown body are never stored in these metadata
+  tables.
+- `document_versions` reference a Yjs checkpoint and a Markdown
+  snapshot with a materialization reason and optional human or AI-agent
+  author.
+- `document_audit_events` carry separate human, anonymous-guest, and
+  AI-agent actor fields plus `authorized_by_user_id` for delegated AI
+  actions.
+
+Every cloud-scoped table carries a `tenant_id`, even though v1 only
+ships personal workspaces. This keeps the schema ready for pooled
+multi-tenant deployment with row-level security later.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
@@ -160,6 +198,9 @@ is selected.
 - `createInMemoryCloudBackendService()` is the test-backed route
   skeleton over that contract. It models the HTTP route boundary in
   memory and is intentionally not wired into the UI.
+- `cloudBackendSchema` and `renderSchemaSql()` are the test-backed
+  Postgres metadata schema draft. The schema is consumed by structural
+  tests only and is not yet wired into a migration runner.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.
