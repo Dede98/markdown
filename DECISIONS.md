@@ -249,6 +249,13 @@ plugin API. The internal provider/transport contract is documented in
 `CLOUD_COLLABORATION_API.md`, and the WebSocket provider remains a
 non-wired stub until a real backend transport exists.
 
+Follow-up backend decision: use Hocuspocus for the first real Cloud
+backend, persist Yjs binary updates/checkpoints as runtime
+collaboration state, and materialize deterministic `.md` snapshots as
+the user-facing export/version artifact. The full backend architecture,
+API, permissions, storage, comments, and AI-agent model are documented
+in `CLOUD_BACKEND_ARCHITECTURE.md`.
+
 Reason:
 
 - Local-first editing is the product baseline.

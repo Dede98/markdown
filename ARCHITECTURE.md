@@ -299,11 +299,13 @@ Preferred future direction:
 
 Server direction:
 
-- Use Hocuspocus or a thin Yjs WebSocket server.
+- Use Hocuspocus for the first real backend.
 - Persist Yjs updates as binary data.
 - Periodically materialize Markdown snapshots.
 
 Do not store Yjs documents only as JSON snapshots. Binary update/state persistence is needed for correct CRDT behavior.
+The accepted backend architecture is documented in
+`CLOUD_BACKEND_ARCHITECTURE.md`.
 
 The first spike should prove the deepest integration points before
 building the whole cloud product: two editor clients bound to the same

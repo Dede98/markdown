@@ -111,6 +111,10 @@ buffer. Room creation and joining are behind an internal
 provider/transport API is documented in `CLOUD_COLLABORATION_API.md` so
 backend work has a stable implementation target. This does not add
 auth, backend persistence, or a login requirement for local editing.
+The accepted backend architecture is documented in
+`CLOUD_BACKEND_ARCHITECTURE.md`: Hocuspocus first, Yjs binary runtime
+state, deterministic `.md` snapshots, explicit room auth, and visible
+AI-agent participants.
 
 It should be built as a bundled first-party extension over explicit
 core seams, not as a mandatory app mode and not yet as a public plugin

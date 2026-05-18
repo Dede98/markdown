@@ -25,6 +25,9 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 - Internal `CloudRoomTransport` contract, non-wired WebSocket provider
   stub, and `CLOUD_COLLABORATION_API.md` so future backend work has a
   documented provider/transport API.
+- Accepted Cloud backend architecture in `CLOUD_BACKEND_ARCHITECTURE.md`
+  covering Hocuspocus, Yjs binary persistence, Markdown snapshots,
+  room APIs, auth, permissions, comments, and AI-agent identity.
 
 ### Changed
 

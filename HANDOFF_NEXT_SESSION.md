@@ -45,6 +45,10 @@ Do not build a public plugin API yet.
   realtime transport contract, and
   `src/cloudCollaboration/webSocketCloudSessionProvider.ts` is a
   non-wired stub for future backend work.
+- `CLOUD_BACKEND_ARCHITECTURE.md` documents the accepted backend
+  direction: Hocuspocus first, Yjs binary runtime persistence,
+  deterministic `.md` snapshots, explicit HTTP/WebSocket auth boundary,
+  room permissions, comments mapping, and AI-agent identity/audit.
 - `src/cloudCollaboration/contribution.tsx` registers the Cloud
   collaboration side panel. `App.tsx` owns the active mock room,
   binds the main editor to the shared `Y.Text`, and the panel mounts a
@@ -312,26 +316,13 @@ browser/Tauri print pipeline. Avoid custom pagination, templates,
 headers/footers, or a publishing settings surface until the simple
 export proves insufficient.
 
-If picking up Cloud collaboration, start in `PRODUCT_PLAN.md` § Cloud
-Collaboration, `DECISIONS.md` § 10 and § 14, and `ARCHITECTURE.md`
-§ Decoupling Seams / § Document Sessions / § Realtime Collaboration /
-§ Cloud Storage. The first useful step is an architecture spike for:
-
-- `DocumentSession` separating local-file sessions from cloud-room
-  sessions without leaking room/sync/auth terminology into local file
-  code.
-- `AppContribution` style first-party extension registration for editor
-  extensions, panels, settings, status items, and lifecycle hooks.
-- Yjs `Y.Text` plus CodeMirror/Yjs binding.
-- awareness presence for humans and AI-agent participants.
-- Hocuspocus or a thin WebSocket server.
-- binary Yjs update persistence.
-- materialized Markdown snapshots and `.md` export.
-
-Acceptance for the spike: two editor clients can edit the same Markdown
-text without breaking raw/rendered mode, presence renders for at least
-one human and one AI-agent participant shape, comments remain mappable,
-and the session can materialize deterministic `.md`.
+If picking up Cloud collaboration, start in `CLOUD_BACKEND_ARCHITECTURE.md`,
+`CLOUD_COLLABORATION_API.md`, `PRODUCT_PLAN.md` § Cloud Collaboration,
+`DECISIONS.md` § 10 and § 14, and `ARCHITECTURE.md` § Decoupling Seams /
+§ Document Sessions / § Cloud Session Provider / § Realtime Collaboration /
+§ Cloud Storage. The client architecture spike is complete; the next
+major implementation lane is the first backend skeleton against the
+documented provider/transport contracts.
 
 If picking up an unrelated lane (e.g. notarization with an Apple
 Developer ID or a web deploy), it does not block Cloud collaboration

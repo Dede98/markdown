@@ -82,6 +82,9 @@ A real backend should:
 - Keep local file open/save/autosave terminology separate from
   room/sync/auth terminology.
 
+The accepted backend architecture and implementation sequence are in
+`CLOUD_BACKEND_ARCHITECTURE.md`.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
