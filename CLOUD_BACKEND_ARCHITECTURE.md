@@ -20,6 +20,11 @@ memberships, password verifiers, anonymous owner capability, tenant
 scope, encrypted checkpoint/update replay, compaction, Markdown
 snapshot materialization, and signed-in-only AI authorization without
 requiring a running WebSocket server.
+`src/cloudCollaboration/backendHocuspocusAdapter.ts` wraps those hooks
+in a thin Hocuspocus-shaped adapter boundary (`authenticate`,
+`loadDocument` / `load`, `onStoreDocument` / `store`) and preserves the
+same room context without requiring a running Hocuspocus server,
+transport, database driver, or migration runner.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -358,7 +363,9 @@ encrypted persistence boundary refs. Implemented in
 3. Add Hocuspocus-shaped `onAuthenticate`, load/store hooks, and room
    context. Initial in-memory hook contract implemented in
    `src/cloudCollaboration/backendHooks.ts`; future work should mount
-   the same contract in a real Hocuspocus server.
+   the same contract in a real Hocuspocus server. The thin adapter
+   boundary over that contract is implemented in
+   `src/cloudCollaboration/backendHocuspocusAdapter.ts`.
 4. Implement binary Yjs checkpoint/update persistence. Initial
    in-memory encrypted checkpoint/update row contract implemented in
    `src/cloudCollaboration/backendHooks.ts`; future work should replace

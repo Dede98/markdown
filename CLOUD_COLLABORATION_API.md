@@ -221,6 +221,30 @@ names. The encryption layer is a local shim with explicit `wrapKey`,
 bodies are reconstructed in memory only and are not stored in metadata
 rows.
 
+## Backend Hocuspocus Adapter Boundary
+
+Source: `src/cloudCollaboration/backendHocuspocusAdapter.ts`
+
+The first adapter slice wraps the realtime hook contract in
+Hocuspocus-shaped hook names without requiring a running Hocuspocus
+server, WebSocket transport, database driver, or migration runner.
+
+Contract:
+
+- `authenticate(payload)` maps the provider token and optional
+  `password` request parameter to `hooks.onAuthenticate(...)` and
+  returns the same `CloudRealtimeRoomContext` that later hooks receive.
+- `loadDocument(payload)` / `load(payload)` require that room context
+  and map Hocuspocus `documentName` to `hooks.load(...)`.
+- `onStoreDocument(payload)` / `store(payload)` require the room context,
+  encode or forward Yjs state, and map persistence to `hooks.store(...)`.
+- Adapter errors are explicit `HocuspocusAdapterError` instances with a
+  hook name, code, and original hook failure message.
+
+The adapter also verifies that the authenticated room context is scoped
+to the Hocuspocus `documentName`. It does not change local file
+open/save/autosave behavior and is not wired into the editor UI.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
@@ -239,6 +263,9 @@ rows.
   hook contract. It models Hocuspocus auth/load/store behavior in
   memory and is not wired into a real server, transport, database, or
   the local editor UI.
+- `createHocuspocusAdapterHooks()` is the test-backed adapter over the
+  realtime hook contract. It reserves the Hocuspocus hook boundary in
+  memory and is not wired into a running server.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.

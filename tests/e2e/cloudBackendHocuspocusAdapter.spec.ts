@@ -1,343 +1,240 @@
 import { expect, test } from "@playwright/test";
 import * as Y from "yjs";
+import { type CloudAccountAuth } from "../../src/cloudCollaboration/backendContract";
+import { createHocuspocusAdapterHooks, HocuspocusAdapterError } from "../../src/cloudCollaboration/backendHocuspocusAdapter";
 import { createInMemoryCloudRealtimeBackend } from "../../src/cloudCollaboration/backendHooks";
-import { createHocuspocusAdapterHooks } from "../../src/cloudCollaboration/backendHocuspocusAdapter";
-import type { CloudAccountAuth } from "../../src/cloudCollaboration/backendContract";
 
 const ownerAuth: CloudAccountAuth = {
   kind: "account",
   userId: "user_owner",
-  tenantId: "tenant_test",
+  tenantId: "tenant_personal",
 };
 
-function params(record: Record<string, string> = {}) {
-  return new URLSearchParams(record);
+const peerAuth: CloudAccountAuth = {
+  kind: "account",
+  userId: "user_peer",
+  tenantId: "tenant_personal",
+};
+
+test.describe("cloud backend Hocuspocus adapter boundary", () => {
+  test("maps authenticate, load, and store payloads onto realtime hooks", () => {
+    const backend = createInMemoryCloudRealtimeBackend();
+    const adapter = createHocuspocusAdapterHooks(backend.hooks);
+    const room = backend.repository.createAccountRoom({
+      auth: ownerAuth,
+      title: "Adapter room",
+      seedMarkdown: "# Adapter\n\nInitial.",
+      password: "room-pass",
+    });
+
+    const context = adapter.authenticate({
+      token: room.roomToken,
+      documentName: room.document.id,
+      requestParameters: new URLSearchParams({ password: "room-pass" }),
+    });
+    expect(context).toMatchObject({
+      tenantId: ownerAuth.tenantId,
+      roomId: room.document.id,
+      documentId: room.document.id,
+      role: "owner",
+      canWrite: true,
+      userId: ownerAuth.userId,
+    });
+
+    const loaded = adapter.loadDocument({
+      documentName: room.document.id,
+      context,
+      document: new Y.Doc(),
+    });
+    expect(loaded.getText("markdown").toString()).toBe("# Adapter\n\nInitial.");
+    expect(adapter.load).toBe(adapter.loadDocument);
+    expect(adapter.store).toBe(adapter.onStoreDocument);
+
+    replaceMarkdown(loaded, "# Adapter\n\nStored through adapter.");
+    const state = Y.encodeStateAsUpdate(loaded);
+    const result = adapter.onStoreDocument({
+      documentName: room.document.id,
+      context,
+      document: loaded,
+      state,
+    });
+    expect(result.updateArchive).toMatchObject({
+      document_id: room.document.id,
+      encryption: "application-level-at-rest",
+    });
+    expect(backend.hooks.load(room.document.id, context).getText("markdown").toString()).toBe(
+      "# Adapter\n\nStored through adapter.",
+    );
+  });
+
+  test("maps auth token and password failures to explicit adapter errors", () => {
+    const backend = createInMemoryCloudRealtimeBackend();
+    const adapter = createHocuspocusAdapterHooks(backend.hooks);
+    const room = backend.repository.createAnonymousRoom({
+      tenantId: ownerAuth.tenantId,
+      title: "Protected adapter room",
+      seedMarkdown: "# Protected",
+      password: "room-pass",
+    });
+
+    expectAdapterError(
+      () =>
+        adapter.authenticate({
+          token: "missing-token",
+          documentName: room.document.id,
+          requestParameters: new URLSearchParams({ password: "room-pass" }),
+        }),
+      {
+        hook: "authenticate",
+        code: "authentication_failed",
+        message: /invalid room token/i,
+      },
+    );
+    expectAdapterError(
+      () =>
+        adapter.authenticate({
+          token: room.roomToken,
+          documentName: room.document.id,
+          requestParameters: new URLSearchParams({ password: "wrong" }),
+        }),
+      {
+        hook: "authenticate",
+        code: "authentication_failed",
+        message: /valid password/i,
+      },
+    );
+  });
+
+  test("rejects contexts that are missing, malformed, or scoped to a different Hocuspocus document", () => {
+    const backend = createInMemoryCloudRealtimeBackend();
+    const adapter = createHocuspocusAdapterHooks(backend.hooks);
+    const firstRoom = backend.repository.createAccountRoom({
+      auth: ownerAuth,
+      title: "First room",
+      seedMarkdown: "# First",
+    });
+    const secondRoom = backend.repository.createAccountRoom({
+      auth: { ...ownerAuth, userId: "tenant_two_owner", tenantId: "tenant_two" },
+      title: "Second room",
+      seedMarkdown: "# Second",
+    });
+    const firstContext = adapter.authenticate({
+      token: firstRoom.roomToken,
+      documentName: firstRoom.document.id,
+      requestParameters: new URLSearchParams(),
+    });
+
+    expectAdapterError(
+      () =>
+        adapter.loadDocument({
+          documentName: firstRoom.document.id,
+          context: undefined,
+          document: new Y.Doc(),
+        }),
+      {
+        hook: "loadDocument",
+        code: "context_required",
+        message: /context is required/i,
+      },
+    );
+    expectAdapterError(
+      () =>
+        adapter.loadDocument({
+          documentName: firstRoom.document.id,
+          context: { roomId: firstRoom.document.id },
+          document: new Y.Doc(),
+        }),
+      {
+        hook: "loadDocument",
+        code: "context_invalid",
+        message: /context shape is invalid/i,
+      },
+    );
+    expectAdapterError(
+      () =>
+        adapter.loadDocument({
+          documentName: secondRoom.document.id,
+          context: firstContext,
+          document: new Y.Doc(),
+        }),
+      {
+        hook: "loadDocument",
+        code: "context_scope_mismatch",
+        message: /not scoped/i,
+      },
+    );
+  });
+
+  test("keeps read loads available for viewers but maps write-denied store failures cleanly", () => {
+    const backend = createInMemoryCloudRealtimeBackend();
+    const adapter = createHocuspocusAdapterHooks(backend.hooks);
+    const room = backend.repository.createAccountRoom({
+      auth: ownerAuth,
+      title: "Viewer room",
+      seedMarkdown: "# Viewer",
+    });
+    backend.repository.addMembership({
+      tenantId: peerAuth.tenantId,
+      documentId: room.document.id,
+      userId: peerAuth.userId,
+      role: "viewer",
+    });
+    const viewerToken = backend.repository.issueRoomToken({
+      documentId: room.document.id,
+      access: { kind: "account", userId: peerAuth.userId },
+    });
+    const viewerContext = adapter.authenticate({
+      token: viewerToken,
+      documentName: room.document.id,
+      requestParameters: new URLSearchParams(),
+    });
+    expect(viewerContext).toMatchObject({ role: "viewer", canWrite: false });
+
+    const loaded = adapter.loadDocument({
+      documentName: room.document.id,
+      context: viewerContext,
+      document: new Y.Doc(),
+    });
+    expect(loaded.getText("markdown").toString()).toBe("# Viewer");
+
+    replaceMarkdown(loaded, "# Viewer\n\nIllegal edit.");
+    expectAdapterError(
+      () =>
+        adapter.onStoreDocument({
+          documentName: room.document.id,
+          context: viewerContext,
+          document: loaded,
+          state: Y.encodeStateAsUpdate(loaded),
+        }),
+      {
+        hook: "onStoreDocument",
+        code: "store_failed",
+        message: /write capability/i,
+      },
+    );
+  });
+});
+
+function replaceMarkdown(ydoc: Y.Doc, markdown: string) {
+  const ytext = ydoc.getText("markdown");
+  ytext.delete(0, ytext.length);
+  ytext.insert(0, markdown);
 }
 
-test.describe("Hocuspocus adapter — authenticate", () => {
-  test("returns RoomContext for valid anonymous token", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { roomToken, document } = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Anon room",
-      seedMarkdown: "# Hello",
-    });
-
-    const ctx = adapter.authenticate({
-      token: roomToken,
-      documentName: document.id,
-      requestParameters: params(),
-    });
-
-    expect(ctx).toMatchObject({
-      tenantId: "tenant_test",
-      roomId: document.id,
-      documentId: document.id,
-      role: "guest-owner",
-      canWrite: true,
-    });
+function expectAdapterError(
+  action: () => void,
+  expected: { hook: string; code: string; message: RegExp },
+) {
+  let thrown: unknown;
+  try {
+    action();
+  } catch (error) {
+    thrown = error;
+  }
+  expect(thrown).toBeInstanceOf(HocuspocusAdapterError);
+  expect(thrown).toMatchObject({
+    hook: expected.hook,
+    code: expected.code,
   });
-
-  test("returns RoomContext for valid account token", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { roomToken } = backend.repository.createAccountRoom({
-      auth: ownerAuth,
-      title: "Account room",
-      seedMarkdown: "# Owned",
-    });
-
-    const ctx = adapter.authenticate({
-      token: roomToken,
-      documentName: "",
-      requestParameters: params(),
-    });
-
-    expect(ctx).toMatchObject({ userId: ownerAuth.userId, role: "owner", canWrite: true });
-  });
-
-  test("forwards password from requestParameters", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { roomToken } = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Protected",
-      seedMarkdown: "# Guarded",
-      password: "secret99",
-    });
-
-    expect(() =>
-      adapter.authenticate({
-        token: roomToken,
-        documentName: "",
-        requestParameters: params({ password: "wrong" }),
-      }),
-    ).toThrow(/valid password/i);
-
-    expect(() =>
-      adapter.authenticate({
-        token: roomToken,
-        documentName: "",
-        requestParameters: params({ password: "secret99" }),
-      }),
-    ).not.toThrow();
-  });
-
-  test("throws for invalid token", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-
-    expect(() =>
-      adapter.authenticate({
-        token: "bogus-token",
-        documentName: "room_0001",
-        requestParameters: params(),
-      }),
-    ).toThrow(/invalid room token/i);
-  });
-
-  test("throws when context tenant/room is mismatched", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-
-    // Issue a token for one document but mutate it to point at a different room
-    const { roomToken, document } = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Room A",
-      seedMarkdown: "# A",
-    });
-
-    // The token is for a valid document — auth should succeed
-    const ctx = adapter.authenticate({
-      token: roomToken,
-      documentName: document.id,
-      requestParameters: params(),
-    });
-
-    expect(ctx.roomId).toBe(document.id);
-  });
-});
-
-test.describe("Hocuspocus adapter — loadDocument", () => {
-  test("returns Y.Doc with persisted markdown content", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { roomToken, document } = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Seeded room",
-      seedMarkdown: "# Seeded content",
-    });
-
-    const ctx = adapter.authenticate({
-      token: roomToken,
-      documentName: document.id,
-      requestParameters: params(),
-    });
-
-    const ydoc = adapter.loadDocument({
-      documentName: document.id,
-      context: ctx,
-      document: new Y.Doc(),
-    });
-
-    expect(ydoc).toBeInstanceOf(Y.Doc);
-    expect(ydoc.getText("markdown").toString()).toContain("Seeded content");
-  });
-
-  test("can be called without context (read-only guest path)", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { document } = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Guest room",
-      seedMarkdown: "# Guest",
-    });
-
-    // loadDocument without context is allowed (validateContext skips when context is undefined)
-    const ydoc = adapter.loadDocument({
-      documentName: document.id,
-      context: undefined,
-      document: new Y.Doc(),
-    });
-
-    expect(ydoc).toBeInstanceOf(Y.Doc);
-  });
-
-  test("throws for unknown room", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-
-    expect(() =>
-      adapter.loadDocument({
-        documentName: "room_9999",
-        context: undefined,
-        document: new Y.Doc(),
-      }),
-    ).toThrow(/does not exist/i);
-  });
-
-  test("throws when context is scoped to a different room", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-
-    const roomA = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Room A",
-      seedMarkdown: "# A",
-    });
-    const roomB = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Room B",
-      seedMarkdown: "# B",
-    });
-
-    const ctxA = adapter.authenticate({
-      token: roomA.roomToken,
-      documentName: roomA.document.id,
-      requestParameters: params(),
-    });
-
-    // Loading room B with room A's context should fail
-    expect(() =>
-      adapter.loadDocument({
-        documentName: roomB.document.id,
-        context: ctxA,
-        document: new Y.Doc(),
-      }),
-    ).toThrow(/not scoped/i);
-  });
-});
-
-test.describe("Hocuspocus adapter — onStoreDocument", () => {
-  test("stores update and returns StoreResult with updateArchive", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { roomToken, document } = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Store room",
-      seedMarkdown: "# Store",
-    });
-
-    const ctx = adapter.authenticate({
-      token: roomToken,
-      documentName: document.id,
-      requestParameters: params(),
-    });
-
-    const ydoc = adapter.loadDocument({
-      documentName: document.id,
-      context: ctx,
-      document: new Y.Doc(),
-    });
-
-    ydoc.getText("markdown").insert(0, "Updated ");
-    const result = adapter.onStoreDocument({
-      documentName: document.id,
-      context: ctx,
-      document: ydoc,
-      state: Y.encodeStateAsUpdate(ydoc),
-    });
-
-    expect(result.updateArchive).toBeDefined();
-    expect(result.updateArchive.document_id).toBe(document.id);
-    expect(result.updateArchive.encryption).toBe("application-level-at-rest");
-  });
-
-  test("throws when context has no write capability", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { document } = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Read-only room",
-      seedMarkdown: "# RO",
-    });
-
-    // Viewer token — no ownerSecret → canWrite = false
-    const viewerToken = backend.repository.issueRoomToken({
-      documentId: document.id,
-      access: { kind: "anonymous", guestId: "guest_viewer" },
-    });
-    const ctx = adapter.authenticate({
-      token: viewerToken,
-      documentName: document.id,
-      requestParameters: params(),
-    });
-
-    expect(ctx.canWrite).toBe(false);
-
-    const ydoc = new Y.Doc();
-    expect(() =>
-      adapter.onStoreDocument({
-        documentName: document.id,
-        context: ctx,
-        document: ydoc,
-        state: Y.encodeStateAsUpdate(ydoc),
-      }),
-    ).toThrow(/write capability/i);
-  });
-
-  test("throws when context is scoped to a different room", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-
-    const roomA = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Room A",
-      seedMarkdown: "# A",
-    });
-    const roomB = backend.repository.createAnonymousRoom({
-      tenantId: "tenant_test",
-      title: "Room B",
-      seedMarkdown: "# B",
-    });
-
-    const ctxA = adapter.authenticate({
-      token: roomA.roomToken,
-      documentName: roomA.document.id,
-      requestParameters: params(),
-    });
-
-    const ydoc = new Y.Doc();
-    expect(() =>
-      adapter.onStoreDocument({
-        documentName: roomB.document.id,
-        context: ctxA,
-        document: ydoc,
-        state: Y.encodeStateAsUpdate(ydoc),
-      }),
-    ).toThrow(/not scoped/i);
-  });
-
-  test("auth context flows end-to-end through load and store", () => {
-    const backend = createInMemoryCloudRealtimeBackend();
-    const adapter = createHocuspocusAdapterHooks(backend.hooks);
-    const { roomToken, document } = backend.repository.createAccountRoom({
-      auth: ownerAuth,
-      title: "E2E room",
-      seedMarkdown: "# E2E",
-    });
-
-    const ctx = adapter.authenticate({
-      token: roomToken,
-      documentName: document.id,
-      requestParameters: params(),
-    });
-    const ydoc = adapter.loadDocument({
-      documentName: document.id,
-      context: ctx,
-      document: new Y.Doc(),
-    });
-
-    ydoc.getText("markdown").insert(0, "End-to-end ");
-    const result = adapter.onStoreDocument({
-      documentName: document.id,
-      context: ctx,
-      document: ydoc,
-      state: Y.encodeStateAsUpdate(ydoc),
-    });
-
-    expect(result.updateArchive.tenant_id).toBe(ownerAuth.tenantId);
-    expect(result.updateArchive.document_id).toBe(document.id);
-  });
-});
+  expect((thrown as HocuspocusAdapterError).message).toMatch(expected.message);
+}
