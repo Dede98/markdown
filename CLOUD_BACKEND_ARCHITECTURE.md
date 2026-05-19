@@ -13,6 +13,13 @@ verifiers, encrypted Yjs checkpoint refs, encrypted Yjs update archive
 refs, encrypted Markdown snapshot refs, versions, and audit events) as
 typed table descriptors plus a `renderSchemaSql()` emitter; it is
 schema-only and does not require a production database runtime.
+`src/cloudCollaboration/backendHooks.ts` models the first
+Hocuspocus-shaped auth/load/store hook contract against in-memory rows
+whose keys match the schema columns. It validates room tokens,
+memberships, password verifiers, anonymous owner capability, tenant
+scope, encrypted checkpoint/update replay, compaction, Markdown
+snapshot materialization, and signed-in-only AI authorization without
+requiring a running WebSocket server.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -348,12 +355,22 @@ encrypted persistence boundary refs. Implemented in
    and SQL emitter implemented in
    `src/cloudCollaboration/backendSchema.ts`; future work should wire
    this into a real migration runner.
-3. Add Hocuspocus server with `onAuthenticate`, load/store hooks, and
-   room context.
-4. Implement binary Yjs checkpoint/update persistence.
+3. Add Hocuspocus-shaped `onAuthenticate`, load/store hooks, and room
+   context. Initial in-memory hook contract implemented in
+   `src/cloudCollaboration/backendHooks.ts`; future work should mount
+   the same contract in a real Hocuspocus server.
+4. Implement binary Yjs checkpoint/update persistence. Initial
+   in-memory encrypted checkpoint/update row contract implemented in
+   `src/cloudCollaboration/backendHooks.ts`; future work should replace
+   the in-memory repository/blob store with Postgres/object storage.
 5. Implement application-level encryption at rest for Yjs blobs and
-   `.md` snapshots.
-6. Implement `.md` materialization worker.
+   `.md` snapshots. Initial `wrapKey` / `encryptBlob` / `decryptBlob`
+   boundaries are present as an in-memory shim; future work should
+   replace them with a real key manager/KMS and object storage.
+6. Implement `.md` materialization worker. Initial lifecycle-triggered
+   deterministic Markdown snapshot rows are implemented in the hook
+   contract; future work should move materialization to a backend
+   worker.
 7. Implement HTTP room/create/join/claim/invite/password APIs.
 8. Implement WebSocket provider behind `CloudRoomTransport`.
 9. Add anonymous temporary room expiry, owner capability, and claim

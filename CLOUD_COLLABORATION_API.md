@@ -187,6 +187,40 @@ Every cloud-scoped table carries a `tenant_id`, even though v1 only
 ships personal workspaces. This keeps the schema ready for pooled
 multi-tenant deployment with row-level security later.
 
+## Backend Realtime Hook Contract
+
+Source: `src/cloudCollaboration/backendHooks.ts`
+
+The first Hocuspocus-shaped backend hook slice models realtime room
+authentication and encrypted persistence without running a Hocuspocus
+server or real WebSocket transport. It is still in-memory and
+test-backed.
+
+Contract:
+
+- `onAuthenticate({ roomToken, password? })` validates the room token,
+  tenant/document scope, current membership or anonymous owner
+  capability, and password verifier metadata. It returns a room context
+  with `tenantId`, `roomId`, `documentId`, `role`, `userId` or
+  `guestId`, and `canWrite`.
+- `load(roomId, context?)` reconstructs a `Y.Doc` by decrypting the
+  latest Yjs checkpoint and replaying encrypted update archive
+  segments after that checkpoint.
+- `store(roomId, update, options?)` appends an encrypted Yjs update
+  archive row, can compact into a new encrypted checkpoint, and can
+  materialize an encrypted deterministic Markdown snapshot for
+  lifecycle reasons (`manual`, `autosnapshot`, `before_ai_edit`,
+  `restore`, `room_close`).
+- `authorizeAiSession({ roomToken, password?, agentId, displayName })`
+  requires a signed-in user with active room membership and returns the
+  visible AI-agent authorization context.
+
+The repository row keys intentionally match `cloudBackendSchema` column
+names. The encryption layer is a local shim with explicit `wrapKey`,
+`encryptBlob`, and `decryptBlob` boundaries; plaintext Yjs and Markdown
+bodies are reconstructed in memory only and are not stored in metadata
+rows.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
@@ -201,6 +235,10 @@ multi-tenant deployment with row-level security later.
 - `cloudBackendSchema` and `renderSchemaSql()` are the test-backed
   Postgres metadata schema draft. The schema is consumed by structural
   tests only and is not yet wired into a migration runner.
+- `createInMemoryCloudRealtimeBackend()` is the test-backed realtime
+  hook contract. It models Hocuspocus auth/load/store behavior in
+  memory and is not wired into a real server, transport, database, or
+  the local editor UI.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.
