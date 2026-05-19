@@ -90,6 +90,42 @@ It returns `{ status, body }` responses and keeps auth at the service
 boundary so the route behavior is testable before choosing a server
 framework or adding Postgres.
 
+The backend realtime slices now cover schema, hooks, adapter, server
+mount, and token bridging:
+
+- `src/cloudCollaboration/backendSchema.ts` defines the schema-only
+  Postgres metadata model for rooms, memberships, invites, password
+  verifiers, encrypted Yjs refs, Markdown snapshot refs, versions, and
+  audit events.
+- `src/cloudCollaboration/backendHooks.ts` implements the in-memory
+  Hocuspocus-shaped authenticate/load/store/AI hook contract over
+  encrypted persistence rows.
+- `src/cloudCollaboration/backendHocuspocusAdapter.ts` maps the hook
+  contract into Hocuspocus-shaped `authenticate`, `loadDocument` /
+  `load`, and `onStoreDocument` / `store` hooks.
+- `src/cloudCollaboration/backendRealtimeServer.ts` exposes the
+  non-wired Hocuspocus server mount/configuration boundary.
+- `src/cloudCollaboration/backendTokenBridge.ts` connects backend room
+  creation/join tickets to the realtime mount. It includes a direct
+  test harness (`createCloudTokenBridge`) plus
+  `createCloudRouteRealtimeBridge(...)`, which adapts
+  `backendService` onto the realtime repository so route-created and
+  route-joined room tokens authenticate through the server mount.
+
+Latest backend verification for this lane:
+
+- `pnpm typecheck`
+- `pnpm build`
+- `pnpm exec playwright test tests/e2e/cloudBackend*.spec.ts --project=chrome-desktop`
+  passed with 45 backend specs.
+
+Next backend slice: expand the HTTP-shaped service with invite and
+password management routes (`POST /v1/rooms/:roomId/invites`,
+`POST /v1/rooms/:roomId/password`) and prove those route permissions
+and issued tokens still work through the realtime mount. Keep it
+backend-only; do not add a real WebSocket server, DB driver, migration
+runner, auth UI, editor UI, or local file flow wiring.
+
 ## What landed in the auto-update + OSS session
 
 ### Auto-update lane (5 commits, v0.0.16)

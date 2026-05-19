@@ -30,6 +30,11 @@ non-wired server mount/configuration boundary over that adapter. It
 binds the Hocuspocus-shaped authenticate/load/store hooks into a server
 mount object and keeps token issuance inside the backend hook/repository
 boundary.
+`src/cloudCollaboration/backendTokenBridge.ts` adapts direct backend
+create/join calls and the HTTP-shaped backend service route contract
+onto that same realtime repository/hook backend so route-created and
+route-joined room tokens can authenticate through the non-wired
+Hocuspocus server mount.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -372,7 +377,8 @@ encrypted persistence boundary refs. Implemented in
    boundary over that contract is implemented in
    `src/cloudCollaboration/backendHocuspocusAdapter.ts`. The non-wired
    server mount/configuration slice is implemented in
-   `src/cloudCollaboration/backendRealtimeServer.ts`.
+   `src/cloudCollaboration/backendRealtimeServer.ts`. The token bridge
+   is implemented in `src/cloudCollaboration/backendTokenBridge.ts`.
 4. Implement binary Yjs checkpoint/update persistence. Initial
    in-memory encrypted checkpoint/update row contract implemented in
    `src/cloudCollaboration/backendHooks.ts`; future work should replace

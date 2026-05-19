@@ -273,6 +273,36 @@ Contract:
   codes so auth failure, password failure, document/context mismatch,
   and write-denied store behavior remain testable.
 
+## Backend Token Bridge
+
+Source: `src/cloudCollaboration/backendTokenBridge.ts`
+
+The token bridge connects backend-issued route tickets to the realtime
+mount. It keeps room token issuance inside backend-owned boundaries
+while proving that tokens returned from room create/join paths
+authenticate through the Hocuspocus-shaped server mount.
+
+Contract:
+
+- `createCloudTokenBridge(realtime?)` exposes a small direct backend
+  create/join harness over the shared realtime repository and
+  `createCloudRealtimeServerMount(...)`.
+- `createCloudRouteRealtimeBridge(realtime)` returns a
+  `CloudRoomBackendContract` for
+  `createInMemoryCloudBackendService(...)`, so HTTP-shaped route
+  responses issue realtime-authenticatable room tokens.
+- Room creation uses the realtime repository to create anonymous or
+  account rooms and returns the short-lived room token accepted by
+  `createCloudRealtimeServerMount(...)`.
+- Room joins issue a realtime repository token, immediately validate
+  password/access through `hooks.onAuthenticate(...)`, and return the
+  authenticated role in the route ticket.
+- Route tickets preserve deterministic Markdown materialization,
+  comment mapping summary, and opaque encrypted persistence refs.
+- The bridge remains backend-only and does not start a WebSocket
+  server, add a database driver, or touch local file open/save/autosave
+  flows.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
@@ -298,6 +328,11 @@ Contract:
   contract over the adapter. It reserves the Hocuspocus server
   configuration boundary in memory and is not wired into a running
   WebSocket server.
+- `createCloudTokenBridge()` and `createCloudRouteRealtimeBridge()` are
+  the test-backed token bridge helpers. They adapt direct backend
+  create/join calls and `backendService` route responses onto the
+  realtime backend so issued room tokens authenticate against the
+  non-wired server mount.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.
