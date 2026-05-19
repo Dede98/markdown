@@ -245,6 +245,34 @@ The adapter also verifies that the authenticated room context is scoped
 to the Hocuspocus `documentName`. It does not change local file
 open/save/autosave behavior and is not wired into the editor UI.
 
+## Backend Realtime Server Mount
+
+Source: `src/cloudCollaboration/backendRealtimeServer.ts`
+
+The server mount slice models the non-wired Hocuspocus server
+configuration that would bind the adapter into a real realtime service.
+It still does not start a server, open a WebSocket, require a database
+driver, or touch local file flows.
+
+Contract:
+
+- `createCloudRealtimeServerMount({ hooks })` creates
+  `createHocuspocusAdapterHooks(hooks)` internally and exposes a
+  Hocuspocus-shaped config hook bag.
+- `config.hooks.authenticate(...)` maps connection tokens and optional
+  password request parameters to `adapter.authenticate(...)`.
+- `config.hooks.loadDocument(...)` / `load(...)` delegate to
+  `adapter.loadDocument(...)`.
+- `config.hooks.onStoreDocument(...)` / `store(...)` delegate to
+  `adapter.onStoreDocument(...)`.
+- `createConnectionParameters(...)` is a small bridge from a room id,
+  room token, and optional password into the Hocuspocus-shaped
+  authenticate payload. Token issuance remains owned by the backend
+  hook/repository/service boundaries.
+- Server mount errors preserve explicit hook names and adapter error
+  codes so auth failure, password failure, document/context mismatch,
+  and write-denied store behavior remain testable.
+
 ## Current Implementations
 
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
@@ -266,6 +294,10 @@ open/save/autosave behavior and is not wired into the editor UI.
 - `createHocuspocusAdapterHooks()` is the test-backed adapter over the
   realtime hook contract. It reserves the Hocuspocus hook boundary in
   memory and is not wired into a running server.
+- `createCloudRealtimeServerMount()` is the test-backed server mount
+  contract over the adapter. It reserves the Hocuspocus server
+  configuration boundary in memory and is not wired into a running
+  WebSocket server.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.

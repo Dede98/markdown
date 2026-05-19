@@ -25,6 +25,11 @@ in a thin Hocuspocus-shaped adapter boundary (`authenticate`,
 `loadDocument` / `load`, `onStoreDocument` / `store`) and preserves the
 same room context without requiring a running Hocuspocus server,
 transport, database driver, or migration runner.
+`src/cloudCollaboration/backendRealtimeServer.ts` models the next
+non-wired server mount/configuration boundary over that adapter. It
+binds the Hocuspocus-shaped authenticate/load/store hooks into a server
+mount object and keeps token issuance inside the backend hook/repository
+boundary.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -365,7 +370,9 @@ encrypted persistence boundary refs. Implemented in
    `src/cloudCollaboration/backendHooks.ts`; future work should mount
    the same contract in a real Hocuspocus server. The thin adapter
    boundary over that contract is implemented in
-   `src/cloudCollaboration/backendHocuspocusAdapter.ts`.
+   `src/cloudCollaboration/backendHocuspocusAdapter.ts`. The non-wired
+   server mount/configuration slice is implemented in
+   `src/cloudCollaboration/backendRealtimeServer.ts`.
 4. Implement binary Yjs checkpoint/update persistence. Initial
    in-memory encrypted checkpoint/update row contract implemented in
    `src/cloudCollaboration/backendHooks.ts`; future work should replace
