@@ -43,6 +43,11 @@ authentication. Deterministic Markdown snapshot download is exposed
 through the HTTP-shaped service while encrypted snapshot refs remain
 opaque in repository metadata.
 
+The HTTP-shaped backend service now validates route request bodies
+before delegating to the in-memory backend contract, so malformed
+bodies, invalid enum values, and malformed access contexts fail as
+explicit `400` route errors at the service boundary.
+
 `src/cloudCollaboration/backendHttpClient.ts` adds the first typed
 client boundary over that route shape. It maps backend client methods to
 encoded HTTP-shaped requests, adapts the in-memory service as a

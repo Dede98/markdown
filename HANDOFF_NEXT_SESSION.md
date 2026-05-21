@@ -161,11 +161,20 @@ now consumes route tickets through `CloudBackendHttpClient`, while
 `createCloudBackendServiceTransport(...)` keeps the in-memory route
 harness usable for backend tests.
 
+The route request-validation slice has landed. `backendService.ts` now
+parses HTTP-shaped route bodies into typed backend-contract bodies
+before delegating, and malformed bodies, invalid route enum values, or
+malformed access objects return explicit `400` route errors. The slice
+stays backend-only and does not wire UI, auth UI, provider UI, or local
+file flows.
+
 Next backend slice: continue the backend/client contract toward a real
 runtime boundary only if explicitly requested. Reasonable next steps
-would be a fetch-backed transport contract or route schema validation,
-still without a real WebSocket server, DB driver, migration runner,
-auth UI, editor UI, provider UI, or local file flow wiring.
+would be a fetch-backed transport contract, client-side response shape
+validation, or stronger shared route body contracts between
+`backendService.ts` and `backendHttpClient.ts`, still without a real
+WebSocket server, DB driver, migration runner, auth UI, editor UI,
+provider UI, or local file flow wiring.
 
 ## What landed in the auto-update + OSS session
 

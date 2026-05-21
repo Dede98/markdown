@@ -163,6 +163,11 @@ The service returns HTTP-like `{ status, body }` responses so tests can
 lock route behavior before a framework, database, or real auth provider
 is selected.
 
+The service also owns route-level request body validation for this
+HTTP-shaped boundary. Malformed route bodies, invalid enum values, and
+malformed access objects return explicit `400` route errors before the
+request reaches the in-memory backend contract.
+
 ## Backend HTTP Client Boundary
 
 Source: `src/cloudCollaboration/backendHttpClient.ts`

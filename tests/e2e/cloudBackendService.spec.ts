@@ -154,6 +154,62 @@ test.describe("cloud backend service skeleton", () => {
     });
   });
 
+  test("rejects malformed route request bodies before delegating to the backend contract", () => {
+    const service = createInMemoryCloudBackendService();
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: "/v1/rooms",
+        body: {
+          mode: "workspace",
+          source: "local-file",
+          title: "Invalid mode",
+          seedMarkdown: "# Invalid",
+        },
+      }),
+    ).toMatchObject({
+      status: 400,
+      body: { error: expect.stringMatching(/field "mode".*anonymous, account/i) },
+    });
+
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: accountAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Validation route",
+        seedMarkdown: "# Validation",
+      },
+    });
+    const roomId = String((create.body as { roomId: string }).roomId);
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${roomId}/invites`,
+        auth: accountAuth,
+        body: { role: "owner" },
+      }),
+    ).toMatchObject({
+      status: 400,
+      body: { error: expect.stringMatching(/field "role".*admin, editor, commenter, viewer/i) },
+    });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${roomId}/join`,
+        body: { access: { kind: "anonymous" } },
+      }),
+    ).toMatchObject({
+      status: 400,
+      body: { error: expect.stringMatching(/field "guestId".*non-empty string/i) },
+    });
+  });
+
   test("creates invites and manages passwords through explicit owner routes", () => {
     const service = createInMemoryCloudBackendService();
     const create = service.handle({
