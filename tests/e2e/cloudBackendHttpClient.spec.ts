@@ -28,6 +28,16 @@ test.describe("cloud backend HTTP client boundary", () => {
       transport: {
         request(request) {
           requests.push(request);
+          if (request.method === "DELETE") {
+            return {
+              status: 200,
+              body: {
+                roomId: "room_with_path",
+                userId: "user_with_path",
+                revoked: true,
+              },
+            };
+          }
           return { status: 200, body: ticketFor("room_with_path") };
         },
       },
@@ -92,6 +102,92 @@ test.describe("cloud backend HTTP client boundary", () => {
     expect((thrown as CloudBackendHttpClientError).message).toMatch(/valid password/i);
   });
 
+  test("rejects malformed successful response bodies before returning them", () => {
+    const client = createCloudBackendHttpClient({
+      transport: {
+        request() {
+          return {
+            status: 200,
+            body: {
+              roomId: "room_0001",
+              websocketUrl: "wss://cloud.local/rooms/room_0001/realtime",
+              roomToken: "token_room_0001",
+              role: "superuser",
+            },
+          };
+        },
+      },
+    });
+
+    const thrown = captureError(() =>
+      client.createRoom({
+        mode: "anonymous",
+        source: "local-file",
+        title: "Malformed ticket",
+        seedMarkdown: "# Malformed",
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(CloudBackendHttpClientError);
+    expect(thrown).toMatchObject({
+      routeId: "create-room",
+      method: "POST",
+      path: "/v1/rooms",
+      status: 200,
+      code: "invalid_response",
+    });
+    expect((thrown as CloudBackendHttpClientError).message).toMatch(/field "role".*owner.*guest-owner/i);
+  });
+
+  test("rejects malformed route error responses from the transport", () => {
+    const client = createCloudBackendHttpClient({
+      transport: {
+        request() {
+          return { status: 403, body: { message: "Forbidden without route error shape." } };
+        },
+      },
+    });
+
+    const thrown = captureError(() =>
+      client.joinRoom({
+        roomId: "room_0001",
+        access: { kind: "anonymous", guestId: "guest_1" },
+      }),
+    );
+
+    expect(thrown).toBeInstanceOf(CloudBackendHttpClientError);
+    expect(thrown).toMatchObject({
+      routeId: "join-room",
+      method: "POST",
+      path: "/v1/rooms/room_0001/join",
+      status: 403,
+      code: "invalid_response",
+    });
+    expect((thrown as CloudBackendHttpClientError).message).toMatch(/field "error".*non-empty string/i);
+  });
+
+  test("rejects malformed transport envelopes", () => {
+    const client = createCloudBackendHttpClient({
+      transport: {
+        request() {
+          return null as never;
+        },
+      },
+    });
+
+    const thrown = captureError(() => client.getRoomMetadata("room_0001"));
+
+    expect(thrown).toBeInstanceOf(CloudBackendHttpClientError);
+    expect(thrown).toMatchObject({
+      routeId: "get-room",
+      method: "GET",
+      path: "/v1/rooms/room_0001",
+      status: 0,
+      code: "invalid_response",
+    });
+    expect((thrown as CloudBackendHttpClientError).message).toMatch(/response must be an object/i);
+  });
+
   test("lets the WebSocket provider consume route tickets through the client boundary", () => {
     const realtime = createInMemoryCloudRealtimeBackend();
     const mount = createCloudRealtimeServerMount({ hooks: realtime.hooks });
@@ -144,6 +240,15 @@ function ticketFor(roomId: string): CloudRoomTicket {
     materializeMarkdown: () => "# Mock",
     getCommentMappingSummary: () => ({ anchors: 0, threads: 0, orphaned: 0 }),
   };
+}
+
+function captureError(action: () => unknown) {
+  try {
+    action();
+  } catch (error) {
+    return error;
+  }
+  throw new Error("Expected action to throw.");
 }
 
 function encryptedRef(purpose: "yjs-checkpoint" | "yjs-update-archive" | "markdown-snapshot") {

@@ -168,13 +168,22 @@ malformed access objects return explicit `400` route errors. The slice
 stays backend-only and does not wire UI, auth UI, provider UI, or local
 file flows.
 
+The client response-validation slice has landed. `backendHttpClient.ts`
+now validates transport envelopes, non-2xx route error bodies, and each
+successful route response body before returning typed values. Malformed
+success responses, malformed route error payloads, and malformed
+transport envelopes fail as explicit `invalid_response`
+`CloudBackendHttpClientError`s instead of being cast into provider
+types. The focused HTTP-client tests cover those failure modes while
+keeping the existing WebSocket provider route-ticket path intact.
+
 Next backend slice: continue the backend/client contract toward a real
 runtime boundary only if explicitly requested. Reasonable next steps
-would be a fetch-backed transport contract, client-side response shape
-validation, or stronger shared route body contracts between
-`backendService.ts` and `backendHttpClient.ts`, still without a real
-WebSocket server, DB driver, migration runner, auth UI, editor UI,
-provider UI, or local file flow wiring.
+would be stronger shared route body/response contracts between
+`backendService.ts` and `backendHttpClient.ts`, or a fetch-backed
+transport contract once the shared contract shape is pinned, still
+without a real WebSocket server, DB driver, migration runner, auth UI,
+editor UI, provider UI, or local file flow wiring.
 
 ## What landed in the auto-update + OSS session
 

@@ -188,10 +188,17 @@ Contract:
   in-memory `CloudBackendService` route harness into that client
   transport contract.
 - `CloudBackendHttpClientError` preserves the route id, method, path,
-  status, and route error text for provider-level error mapping.
+  status, error code, and route error text for provider-level error
+  mapping. It distinguishes non-2xx route failures from malformed
+  transport or response bodies.
 - `webSocketCloudSessionProvider.ts` consumes this client boundary for
   route-issued room tickets before connecting through
   `CloudRoomTransport` and the realtime server mount.
+- The client validates transport envelopes, non-2xx route error bodies,
+  and every successful route response body before returning typed
+  values to providers. Malformed success responses and malformed error
+  payloads fail as explicit `invalid_response` client errors instead
+  of leaking unchecked transport data into the provider layer.
 
 This is still backend/client-boundary work only. It does not add a real
 HTTP server, UI wiring, auth UI, or local file flow changes.

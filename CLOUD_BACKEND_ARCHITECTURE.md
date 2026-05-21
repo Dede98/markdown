@@ -53,7 +53,11 @@ client boundary over that route shape. It maps backend client methods to
 encoded HTTP-shaped requests, adapts the in-memory service as a
 transport, preserves explicit route errors, and lets the non-wired
 WebSocket provider consume route-issued room tickets without building a
-real HTTP server or wiring UI/local file flows.
+real HTTP server or wiring UI/local file flows. The client now also
+validates transport envelopes, route error payloads, and successful
+response bodies before returning typed values to providers, with
+malformed transport data reported as explicit `invalid_response`
+client errors.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
