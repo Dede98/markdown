@@ -9,6 +9,7 @@ import type {
   CloudRoomInvite,
   CloudRoomInviteRole,
   CloudRoomManagementAccess,
+  CloudRoomMemberRemoval,
   CloudRoomPasswordUpdate,
   CloudRoomRole,
 } from "./backendContract";
@@ -233,6 +234,7 @@ export type CloudRealtimeRepository = CloudRealtimeRepositoryTables & {
   createInvite: (request: CloudRealtimeInviteCreateRequest) => CloudRoomInvite;
   redeemInvite: (request: CloudRealtimeInviteRedeemRequest) => CloudRealtimeInviteRedemption;
   updateRoomPassword: (request: CloudRealtimePasswordUpdateRequest) => CloudRoomPasswordUpdate;
+  removeMember: (request: CloudRealtimeMemberRemoveRequest) => CloudRoomMemberRemoval;
 };
 
 export type CloudRealtimeHooks = {
@@ -309,6 +311,12 @@ type CloudRealtimePasswordUpdateRequest = {
   documentId: string;
   access: CloudRoomManagementAccess;
   password?: string | null;
+};
+
+type CloudRealtimeMemberRemoveRequest = {
+  documentId: string;
+  access: Extract<CloudRoomManagementAccess, { kind: "account" }>;
+  userId: string;
 };
 
 type CloudRealtimeCreatedRoom = {
@@ -628,6 +636,31 @@ export function createInMemoryCloudRealtimeBackend(): CloudRealtimeBackend {
         roomId: document.id,
         hasPassword: true,
         action: existing ? "rotated" : "set",
+      };
+    },
+
+    removeMember({ documentId, access, userId }) {
+      const document = getDocument(repository, documentId);
+      const actor = assertCanManageRoom(repository, document, access, "members");
+      const target = activeMembership(repository, document, userId);
+      if (!target) {
+        throw new Error("Room member does not exist or is already revoked.");
+      }
+      if (target.role === "owner" && actor.userId !== userId) {
+        throw new Error("Admins cannot remove the room owner.");
+      }
+      if (target.role === "owner" && actor.userId === userId) {
+        throw new Error("Room owner cannot remove themselves.");
+      }
+      target.revoked_at = now();
+      audit(repository, document, nextId, now, {
+        kind: "member_removed",
+        actor_user_id: actor.userId,
+      });
+      return {
+        roomId: document.id,
+        userId,
+        revoked: true,
       };
     },
   };
@@ -1017,7 +1050,7 @@ function assertCanManageRoom(
   repository: CloudRealtimeRepositoryTables,
   document: DocumentRow,
   access: CloudRoomManagementAccess,
-  subject: "invites" | "password",
+  subject: "invites" | "password" | "members",
 ) {
   if (access.kind === "anonymous-owner") {
     if (

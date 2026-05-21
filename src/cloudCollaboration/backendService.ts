@@ -8,13 +8,14 @@ import {
   type CloudRoomInvite,
   type CloudRoomInviteRole,
   type CloudRoomManagementAccess,
+  type CloudRoomMemberRemoval,
   type CloudRoomJoinRequest,
   type CloudRoomMetadata,
   type CloudRoomPasswordUpdate,
   type CloudRoomTicket,
 } from "./backendContract";
 
-export type CloudBackendHttpMethod = "GET" | "POST";
+export type CloudBackendHttpMethod = "DELETE" | "GET" | "POST";
 
 export type CloudBackendRouteId =
   | "create-room"
@@ -22,6 +23,7 @@ export type CloudBackendRouteId =
   | "claim-room"
   | "create-room-invite"
   | "update-room-password"
+  | "remove-room-member"
   | "create-ai-session"
   | "get-room";
 
@@ -77,6 +79,7 @@ export const cloudBackendRoutes: CloudBackendRoute[] = [
   { id: "claim-room", method: "POST", pattern: "/v1/rooms/:roomId/claim" },
   { id: "create-room-invite", method: "POST", pattern: "/v1/rooms/:roomId/invites" },
   { id: "update-room-password", method: "POST", pattern: "/v1/rooms/:roomId/password" },
+  { id: "remove-room-member", method: "DELETE", pattern: "/v1/rooms/:roomId/members/:userId" },
   { id: "create-ai-session", method: "POST", pattern: "/v1/rooms/:roomId/ai-sessions" },
   { id: "get-room", method: "GET", pattern: "/v1/rooms/:roomId" },
 ];
@@ -116,6 +119,8 @@ function handleRequest(backend: CloudRoomBackendContract, request: CloudBackendR
       return createRoomInvite(backend, route.roomId, request);
     case "update-room-password":
       return updateRoomPassword(backend, route.roomId, request);
+    case "remove-room-member":
+      return removeRoomMember(backend, route.roomId, route.userId, request);
     case "create-ai-session":
       return createAiSession(backend, route.roomId, request);
     case "get-room":
@@ -219,6 +224,28 @@ function updateRoomPassword(
   };
 }
 
+function removeRoomMember(
+  backend: CloudRoomBackendContract,
+  roomId: string,
+  userId: string | undefined,
+  request: CloudBackendRequest,
+): CloudBackendResponse<CloudRoomMemberRemoval> {
+  if (!userId) {
+    throw new CloudBackendRouteError(404, `No Cloud backend route for ${request.method} ${request.path}`);
+  }
+  if (!request.auth) {
+    throw new CloudBackendRouteError(401, "Removing a room member requires owner/admin auth.");
+  }
+  return {
+    status: 200,
+    body: backend.removeRoomMember({
+      roomId,
+      userId,
+      access: { kind: "account", auth: request.auth },
+    }),
+  };
+}
+
 function createAiSession(
   backend: CloudRoomBackendContract,
   roomId: string,
@@ -239,12 +266,22 @@ function createAiSession(
 type MatchedRoute = {
   id: CloudBackendRouteId;
   roomId: string;
+  userId?: string;
 };
 
 function matchRoute(request: CloudBackendRequest): MatchedRoute | null {
   const path = stripTrailingSlash(request.path);
   if (request.method === "POST" && path === "/v1/rooms") {
     return { id: "create-room", roomId: "" };
+  }
+
+  const memberMatch = path.match(/^\/v1\/rooms\/([^/]+)\/members\/([^/]+)$/u);
+  if (request.method === "DELETE" && memberMatch) {
+    return {
+      id: "remove-room-member",
+      roomId: decodeURIComponent(memberMatch[1]),
+      userId: decodeURIComponent(memberMatch[2]),
+    };
   }
 
   const match = path.match(/^\/v1\/rooms\/([^/]+)(?:\/([^/]+))?$/u);
@@ -324,7 +361,7 @@ function inferErrorStatus(message: string) {
   if (/requires signed-in auth|requires a signed-in account|requires room membership|valid anonymous owner secret/iu.test(message)) {
     return 401;
   }
-  if (/requires a valid password|owner or admin|cannot manage|requires room membership|valid room invite|invite has expired|no remaining uses|requires signed-in account auth/iu.test(message)) {
+  if (/requires a valid password|owner or admin|cannot manage|requires room membership|valid room invite|invite has expired|no remaining uses|requires signed-in account auth|cannot remove|already revoked/iu.test(message)) {
     return 403;
   }
   return 400;

@@ -90,6 +90,18 @@ export type CloudRoomPasswordUpdate = {
   action: "set" | "rotated" | "cleared";
 };
 
+export type CloudRoomMemberRemoveRequest = {
+  roomId: string;
+  access: Extract<CloudRoomManagementAccess, { kind: "account" }>;
+  userId: string;
+};
+
+export type CloudRoomMemberRemoval = {
+  roomId: string;
+  userId: string;
+  revoked: true;
+};
+
 export type EncryptedBlobPurpose = "yjs-checkpoint" | "yjs-update-archive" | "markdown-snapshot";
 
 export type EncryptedBlobRef = {
@@ -144,6 +156,7 @@ export type CloudRoomBackendContract = {
   claimAnonymousRoom: (request: CloudRoomClaimRequest) => CloudRoomMetadata;
   createInvite: (request: CloudRoomInviteCreateRequest) => CloudRoomInvite;
   updateRoomPassword: (request: CloudRoomPasswordUpdateRequest) => CloudRoomPasswordUpdate;
+  removeRoomMember: (request: CloudRoomMemberRemoveRequest) => CloudRoomMemberRemoval;
   requestAiSession: (request: CloudAiSessionRequest) => CloudAiSession;
   getRoomMetadata: (roomId: string) => CloudRoomMetadata;
 };
@@ -287,6 +300,27 @@ export function createInMemoryCloudRoomBackend(): CloudRoomBackendContract {
       };
     },
 
+    removeRoomMember({ roomId, access, userId }) {
+      const room = getRoom(rooms, roomId);
+      assertCanManageRoom(room, access, "members");
+      const targetRole = room.memberships.get(userId);
+      if (!targetRole) {
+        throw new Error("Room member does not exist or is already revoked.");
+      }
+      if (targetRole === "owner" && access.auth.userId !== userId) {
+        throw new Error("Admins cannot remove the room owner.");
+      }
+      if (targetRole === "owner" && access.auth.userId === userId) {
+        throw new Error("Room owner cannot remove themselves.");
+      }
+      room.memberships.delete(userId);
+      return {
+        roomId,
+        userId,
+        revoked: true,
+      };
+    },
+
     requestAiSession({ roomId, auth, agentId, displayName }) {
       const room = getRoom(rooms, roomId);
       if (!auth) {
@@ -383,7 +417,11 @@ function redeemInvite(room: StoredCloudRoom, access: CloudInviteAccess): CloudRo
   return invite.role;
 }
 
-function assertCanManageRoom(room: StoredCloudRoom, access: CloudRoomManagementAccess, subject: "invites" | "password") {
+function assertCanManageRoom(
+  room: StoredCloudRoom,
+  access: CloudRoomManagementAccess,
+  subject: "invites" | "password" | "members",
+) {
   if (access.kind === "anonymous-owner") {
     if (
       room.mode === "anonymous" &&

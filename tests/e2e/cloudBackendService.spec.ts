@@ -18,6 +18,7 @@ test.describe("cloud backend service skeleton", () => {
       { id: "claim-room", method: "POST", pattern: "/v1/rooms/:roomId/claim" },
       { id: "create-room-invite", method: "POST", pattern: "/v1/rooms/:roomId/invites" },
       { id: "update-room-password", method: "POST", pattern: "/v1/rooms/:roomId/password" },
+      { id: "remove-room-member", method: "DELETE", pattern: "/v1/rooms/:roomId/members/:userId" },
       { id: "create-ai-session", method: "POST", pattern: "/v1/rooms/:roomId/ai-sessions" },
       { id: "get-room", method: "GET", pattern: "/v1/rooms/:roomId" },
     ]);

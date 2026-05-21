@@ -6,6 +6,7 @@ import type {
   CloudRoomInvite,
   CloudRoomBackendContract,
   CloudRoomCreateRequest,
+  CloudRoomMemberRemoval,
   CloudRoomMetadata,
   CloudRoomPasswordUpdate,
   CloudRoomRole,
@@ -231,6 +232,14 @@ export function createCloudRouteRealtimeBridge(realtime: CloudRealtimeBackend): 
         access,
         password,
       }) satisfies CloudRoomPasswordUpdate;
+    },
+
+    removeRoomMember({ roomId, access, userId }) {
+      return realtime.repository.removeMember({
+        documentId: roomId,
+        access,
+        userId,
+      }) satisfies CloudRoomMemberRemoval;
     },
 
     requestAiSession({ roomId, auth, agentId, displayName }) {

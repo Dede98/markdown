@@ -359,6 +359,133 @@ test.describe("cloud backend route to realtime token bridge", () => {
     ).toMatchObject({ role: "owner" });
   });
 
+  test("revokes a route-joined member and rejects the member's existing realtime token", () => {
+    const { service, mount } = createBridgeHarness();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: ownerAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Revocation bridge room",
+        seedMarkdown: "# Revoke",
+      },
+    });
+    const created = create.body as { roomId: string };
+    const invite = service.handle({
+      method: "POST",
+      path: `/v1/rooms/${created.roomId}/invites`,
+      auth: ownerAuth,
+      body: { role: "editor" },
+    }).body as { inviteSecret: string };
+    const join = service.handle({
+      method: "POST",
+      path: `/v1/rooms/${created.roomId}/join`,
+      auth: peerAuth,
+      body: { inviteSecret: invite.inviteSecret },
+    });
+    expect(join.status).toBe(200);
+    const joined = join.body as { roomId: string; roomToken: string; role: string };
+    expect(
+      mount.config.hooks.authenticate(
+        mount.createConnectionParameters({
+          roomId: joined.roomId,
+          roomToken: joined.roomToken,
+        }),
+      ),
+    ).toMatchObject({ userId: peerAuth.userId, role: "editor", canWrite: true });
+
+    expect(
+      service.handle({
+        method: "DELETE",
+        path: `/v1/rooms/${created.roomId}/members/${peerAuth.userId}`,
+        auth: ownerAuth,
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: { roomId: created.roomId, userId: peerAuth.userId, revoked: true },
+    });
+
+    expectServerError(
+      () =>
+        mount.config.hooks.authenticate(
+          mount.createConnectionParameters({
+            roomId: joined.roomId,
+            roomToken: joined.roomToken,
+          }),
+        ),
+      { hook: "authenticate", code: "authentication_failed", message: /active room member/i },
+    );
+  });
+
+  test("gates member revocation to owner or admin and protects the owner membership", () => {
+    const { service, realtime } = createBridgeHarness();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: ownerAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Member permission room",
+        seedMarkdown: "# Members",
+      },
+    });
+    const created = create.body as { roomId: string };
+    realtime.repository.addMembership({
+      documentId: created.roomId,
+      tenantId: ownerAuth.tenantId,
+      userId: "user_admin",
+      role: "admin",
+    });
+    realtime.repository.addMembership({
+      documentId: created.roomId,
+      tenantId: ownerAuth.tenantId,
+      userId: "user_viewer",
+      role: "viewer",
+    });
+    realtime.repository.addMembership({
+      documentId: created.roomId,
+      tenantId: ownerAuth.tenantId,
+      userId: "user_editor",
+      role: "editor",
+    });
+
+    expect(
+      service.handle({
+        method: "DELETE",
+        path: `/v1/rooms/${created.roomId}/members/user_editor`,
+        auth: { ...ownerAuth, userId: "user_viewer" },
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { error: expect.stringMatching(/viewer cannot manage room members/i) },
+    });
+
+    expect(
+      service.handle({
+        method: "DELETE",
+        path: `/v1/rooms/${created.roomId}/members/${ownerAuth.userId}`,
+        auth: { ...ownerAuth, userId: "user_admin" },
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { error: expect.stringMatching(/admins cannot remove the room owner/i) },
+    });
+
+    expect(
+      service.handle({
+        method: "DELETE",
+        path: `/v1/rooms/${created.roomId}/members/user_editor`,
+        auth: { ...ownerAuth, userId: "user_admin" },
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: { roomId: created.roomId, userId: "user_editor", revoked: true },
+    });
+  });
+
   test("keeps password failure invalid token document mismatch and write denial explicit on bridged tokens", () => {
     const { service, mount } = createBridgeHarness();
     const create = createAnonymousRoom(service);

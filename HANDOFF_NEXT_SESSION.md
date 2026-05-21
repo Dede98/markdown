@@ -117,7 +117,7 @@ Latest backend verification for this lane:
 - `pnpm typecheck`
 - `pnpm build`
 - `pnpm exec playwright test tests/e2e/cloudBackend*.spec.ts --project=chrome-desktop`
-  passed with 50 backend specs.
+  passed with 52 backend specs.
 
 The invite/password route slice has landed. `backendService.ts` now
 exposes `POST /v1/rooms/:roomId/invites` and
@@ -129,12 +129,20 @@ viewer/commenter denial, route-issued invite tokens authenticating
 through the realtime mount, and password lifecycle changes affecting
 mount authentication.
 
-Next backend slice: implement member management/revocation
-(`DELETE /v1/rooms/:roomId/members/:userId`) with owner/admin
-permission checks, explicit denied-role failures, and tests proving
-revoked member tokens no longer authenticate through the realtime mount.
-Keep it backend-only; do not add a real WebSocket server, DB driver,
-migration runner, auth UI, editor UI, or local file flow wiring.
+The member revocation slice has landed. `backendService.ts` exposes
+`DELETE /v1/rooms/:roomId/members/:userId`; the realtime repository
+marks account memberships revoked; `backendTokenBridge.ts` keeps the
+route on the same mount-auth path. Tests cover owner/admin permission
+behavior, viewer denial, owner-protection, and an existing route-issued
+member token failing realtime authentication after revocation.
+
+Next backend slice: either continue the HTTP API surface with
+deterministic Markdown snapshot download
+(`GET /v1/rooms/:roomId/snapshots/:versionId.md`) or start the first
+non-wired WebSocket provider boundary behind `CloudRoomTransport`.
+Keep it backend-only unless explicitly told otherwise; do not add a DB
+driver, migration runner, auth UI, editor UI, provider UI, or local
+file flow wiring.
 
 ## What landed in the auto-update + OSS session
 

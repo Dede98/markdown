@@ -37,7 +37,9 @@ route-joined room tokens can authenticate through the non-wired
 Hocuspocus server mount. The HTTP-shaped service now also covers invite
 creation and password set/rotate/clear routes, with route-issued invite
 access and password changes flowing through the same realtime
-repository/mount authentication path.
+repository/mount authentication path. Member revocation also uses the
+same repository, so revoked account-member tokens fail realtime mount
+authentication.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -406,6 +408,11 @@ encrypted persistence boundary refs. Implemented in
 9. Add anonymous temporary room expiry, owner capability, and claim
    flow.
 10. Add role-gated read/write behavior and revocation handling.
+    Initial member revocation is implemented through
+    `DELETE /v1/rooms/:roomId/members/:userId`; tests prove owner/admin
+    permission behavior, lower-role denial, owner-protection, and
+    existing route-issued member tokens failing realtime authentication
+    after revocation.
 11. Add AI-agent participant sessions and audit events.
 
 ## Open Questions
