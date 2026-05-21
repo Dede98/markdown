@@ -1,23 +1,20 @@
 import type {
   CloudAccessContext,
   CloudAccountAuth,
-  CloudAiSession,
-  CloudMarkdownSnapshot,
   CloudRoomCreateRequest,
-  CloudRoomInvite,
   CloudRoomInviteRole,
-  CloudRoomMemberRemoval,
-  CloudRoomMetadata,
-  CloudRoomPasswordUpdate,
-  CloudRoomTicket,
 } from "./backendContract";
-import type {
-  CloudBackendHttpMethod,
-  CloudBackendRequest,
-  CloudBackendResponse,
-  CloudBackendRouteId,
-  CloudBackendService,
-} from "./backendService";
+import {
+  cloudBackendRouteResponseValidators,
+  CloudBackendRouteResponseValidationError,
+  type CloudBackendHttpMethod,
+  type CloudBackendRequest,
+  type CloudBackendResponse,
+  type CloudBackendRouteId,
+  type CloudBackendRouteResponseValidator,
+  type CloudBackendRouteSuccessBodies,
+} from "./backendRouteContracts";
+import type { CloudBackendService } from "./backendService";
 
 export type CloudBackendHttpTransport = {
   request: (request: CloudBackendRequest) => CloudBackendResponse;
@@ -88,15 +85,30 @@ export type CloudBackendHttpClientCreateAiSessionRequest = {
 };
 
 export type CloudBackendHttpClient = {
-  createRoom: (request: CloudBackendHttpClientCreateRoomRequest) => CloudRoomTicket;
-  joinRoom: (request: CloudBackendHttpClientJoinRoomRequest) => CloudRoomTicket;
-  claimAnonymousRoom: (request: CloudBackendHttpClientClaimRoomRequest) => CloudRoomMetadata;
-  createInvite: (request: CloudBackendHttpClientCreateInviteRequest) => CloudRoomInvite;
-  updateRoomPassword: (request: CloudBackendHttpClientUpdatePasswordRequest) => CloudRoomPasswordUpdate;
-  removeRoomMember: (request: CloudBackendHttpClientRemoveMemberRequest) => CloudRoomMemberRemoval;
-  getMarkdownSnapshot: (request: CloudBackendHttpClientGetSnapshotRequest) => CloudMarkdownSnapshot;
-  requestAiSession: (request: CloudBackendHttpClientCreateAiSessionRequest) => CloudAiSession;
-  getRoomMetadata: (roomId: string, options?: { auth?: CloudAccountAuth }) => CloudRoomMetadata;
+  createRoom: (request: CloudBackendHttpClientCreateRoomRequest) => CloudBackendRouteSuccessBodies["create-room"];
+  joinRoom: (request: CloudBackendHttpClientJoinRoomRequest) => CloudBackendRouteSuccessBodies["join-room"];
+  claimAnonymousRoom: (
+    request: CloudBackendHttpClientClaimRoomRequest,
+  ) => CloudBackendRouteSuccessBodies["claim-room"];
+  createInvite: (
+    request: CloudBackendHttpClientCreateInviteRequest,
+  ) => CloudBackendRouteSuccessBodies["create-room-invite"];
+  updateRoomPassword: (
+    request: CloudBackendHttpClientUpdatePasswordRequest,
+  ) => CloudBackendRouteSuccessBodies["update-room-password"];
+  removeRoomMember: (
+    request: CloudBackendHttpClientRemoveMemberRequest,
+  ) => CloudBackendRouteSuccessBodies["remove-room-member"];
+  getMarkdownSnapshot: (
+    request: CloudBackendHttpClientGetSnapshotRequest,
+  ) => CloudBackendRouteSuccessBodies["get-markdown-snapshot"];
+  requestAiSession: (
+    request: CloudBackendHttpClientCreateAiSessionRequest,
+  ) => CloudBackendRouteSuccessBodies["create-ai-session"];
+  getRoomMetadata: (
+    roomId: string,
+    options?: { auth?: CloudAccountAuth },
+  ) => CloudBackendRouteSuccessBodies["get-room"];
 };
 
 export type CloudBackendHttpClientErrorCode = "invalid_response" | "route_failed";
@@ -125,7 +137,7 @@ export function createCloudBackendHttpClient({
     method: CloudBackendHttpMethod,
     path: string,
     requestAuth: CloudAccountAuth | undefined,
-    validate: ResponseValidator<TBody>,
+    validate: CloudBackendRouteResponseValidator<TBody>,
     body?: unknown,
   ) =>
     expectSuccess<TBody>(
@@ -144,99 +156,106 @@ export function createCloudBackendHttpClient({
   return {
     createRoom(request) {
       const { auth: requestAuth, ...body } = request;
-      return send<CloudRoomTicket>("create-room", "POST", "/v1/rooms", requestAuth, validateRoomTicket, body);
+      return send(
+        "create-room",
+        "POST",
+        "/v1/rooms",
+        requestAuth,
+        cloudBackendRouteResponseValidators["create-room"],
+        body,
+      );
     },
 
     joinRoom(request) {
       const { roomId, auth: requestAuth, ...body } = request;
-      return send<CloudRoomTicket>(
+      return send(
         "join-room",
         "POST",
         `/v1/rooms/${routeSegment(roomId)}/join`,
         requestAuth,
-        validateRoomTicket,
+        cloudBackendRouteResponseValidators["join-room"],
         body,
       );
     },
 
     claimAnonymousRoom(request) {
       const { roomId, auth: requestAuth, ownerSecret } = request;
-      return send<CloudRoomMetadata>(
+      return send(
         "claim-room",
         "POST",
         `/v1/rooms/${routeSegment(roomId)}/claim`,
         requestAuth,
-        validateRoomMetadata,
+        cloudBackendRouteResponseValidators["claim-room"],
         { ownerSecret },
       );
     },
 
     createInvite(request) {
       const { roomId, auth: requestAuth, ...body } = request;
-      return send<CloudRoomInvite>(
+      return send(
         "create-room-invite",
         "POST",
         `/v1/rooms/${routeSegment(roomId)}/invites`,
         requestAuth,
-        validateRoomInvite,
+        cloudBackendRouteResponseValidators["create-room-invite"],
         body,
       );
     },
 
     updateRoomPassword(request) {
       const { roomId, auth: requestAuth, ...body } = request;
-      return send<CloudRoomPasswordUpdate>(
+      return send(
         "update-room-password",
         "POST",
         `/v1/rooms/${routeSegment(roomId)}/password`,
         requestAuth,
-        validatePasswordUpdate,
+        cloudBackendRouteResponseValidators["update-room-password"],
         body,
       );
     },
 
     removeRoomMember(request) {
       const { roomId, userId, auth: requestAuth } = request;
-      return send<CloudRoomMemberRemoval>(
+      return send(
         "remove-room-member",
         "DELETE",
         `/v1/rooms/${routeSegment(roomId)}/members/${routeSegment(userId)}`,
         requestAuth,
-        validateMemberRemoval,
+        cloudBackendRouteResponseValidators["remove-room-member"],
       );
     },
 
     getMarkdownSnapshot(request) {
       const { roomId, versionId, auth: requestAuth, ...body } = request;
-      return send<CloudMarkdownSnapshot>(
+      return send(
         "get-markdown-snapshot",
         "GET",
         `/v1/rooms/${routeSegment(roomId)}/snapshots/${routeSegment(versionId)}.md`,
         requestAuth,
-        validateMarkdownSnapshot,
+        cloudBackendRouteResponseValidators["get-markdown-snapshot"],
         body,
       );
     },
 
     requestAiSession(request) {
       const { roomId, auth: requestAuth, ...body } = request;
-      return send<CloudAiSession>(
+      return send(
         "create-ai-session",
         "POST",
         `/v1/rooms/${routeSegment(roomId)}/ai-sessions`,
         requestAuth,
-        validateAiSession,
+        cloudBackendRouteResponseValidators["create-ai-session"],
         body,
       );
     },
 
     getRoomMetadata(roomId, options) {
-      return send<CloudRoomMetadata>(
+      return send(
         "get-room",
         "GET",
         `/v1/rooms/${routeSegment(roomId)}`,
         options?.auth,
-        validateRoomMetadata,
+        cloudBackendRouteResponseValidators["get-room"],
       );
     },
   };
@@ -253,7 +272,7 @@ function expectSuccess<TBody>(
   method: CloudBackendHttpMethod,
   path: string,
   response: unknown,
-  validate: ResponseValidator<TBody>,
+  validate: CloudBackendRouteResponseValidator<TBody>,
 ): TBody {
   const normalized = normalizeResponse(routeId, method, path, response);
   if (normalized.status >= 200 && normalized.status < 300) {
@@ -265,7 +284,9 @@ function expectSuccess<TBody>(
         method,
         path,
         normalized.status,
-        error instanceof ResponseValidationError ? error.message : "Response body did not match the route contract.",
+        error instanceof CloudBackendRouteResponseValidationError
+          ? error.message
+          : "Response body did not match the route contract.",
       );
     }
   }
@@ -278,10 +299,6 @@ function expectSuccess<TBody>(
     routeErrorMessage(routeId, method, path, normalized),
   );
 }
-
-type ResponseValidator<TBody> = (body: unknown) => TBody;
-
-class ResponseValidationError extends Error {}
 
 function normalizeResponse(
   routeId: CloudBackendRouteId,
@@ -336,198 +353,6 @@ function invalidResponse(
   message: string,
 ) {
   return new CloudBackendHttpClientError(routeId, method, path, status, "invalid_response", message);
-}
-
-function validateRoomTicket(body: unknown): CloudRoomTicket {
-  const input = expectObject(body, "Room ticket response body");
-  return {
-    roomId: expectString(input, "roomId"),
-    websocketUrl: expectString(input, "websocketUrl"),
-    roomToken: expectString(input, "roomToken"),
-    role: expectOneOf(input, "role", ["owner", "admin", "editor", "commenter", "viewer", "guest-owner"]),
-    ownerSecret: optionalString(input, "ownerSecret"),
-    expiresAt: optionalString(input, "expiresAt"),
-    persistence: validatePersistenceBoundary(input.persistence),
-    materializeMarkdown: expectFunction(input, "materializeMarkdown"),
-    getCommentMappingSummary: expectFunction(input, "getCommentMappingSummary"),
-  };
-}
-
-function validateRoomMetadata(body: unknown): CloudRoomMetadata {
-  const input = expectObject(body, "Room metadata response body");
-  return {
-    roomId: expectString(input, "roomId"),
-    title: expectString(input, "title"),
-    mode: expectOneOf(input, "mode", ["anonymous", "account"]),
-    source: expectOneOf(input, "source", ["local-file"]),
-    ownerUserId: optionalString(input, "ownerUserId"),
-    hasPassword: expectBoolean(input, "hasPassword"),
-    claimedAt: optionalString(input, "claimedAt"),
-    expiresAt: optionalString(input, "expiresAt"),
-  };
-}
-
-function validateRoomInvite(body: unknown): CloudRoomInvite {
-  const input = expectObject(body, "Room invite response body");
-  return {
-    roomId: expectString(input, "roomId"),
-    inviteSecret: expectString(input, "inviteSecret"),
-    role: expectOneOf(input, "role", ["admin", "editor", "commenter", "viewer"]),
-    expiresAt: optionalString(input, "expiresAt"),
-    maxUses: optionalNumber(input, "maxUses"),
-    audience: optionalString(input, "audience"),
-  };
-}
-
-function validatePasswordUpdate(body: unknown): CloudRoomPasswordUpdate {
-  const input = expectObject(body, "Room password response body");
-  return {
-    roomId: expectString(input, "roomId"),
-    hasPassword: expectBoolean(input, "hasPassword"),
-    action: expectOneOf(input, "action", ["set", "rotated", "cleared"]),
-  };
-}
-
-function validateMemberRemoval(body: unknown): CloudRoomMemberRemoval {
-  const input = expectObject(body, "Room member removal response body");
-  const revoked = input.revoked;
-  if (revoked !== true) {
-    throw new ResponseValidationError('Response field "revoked" must be true.');
-  }
-  return {
-    roomId: expectString(input, "roomId"),
-    userId: expectString(input, "userId"),
-    revoked,
-  };
-}
-
-function validateMarkdownSnapshot(body: unknown): CloudMarkdownSnapshot {
-  const input = expectObject(body, "Markdown snapshot response body");
-  return {
-    roomId: expectString(input, "roomId"),
-    versionId: expectString(input, "versionId"),
-    markdown: expectString(input, "markdown"),
-  };
-}
-
-function validateAiSession(body: unknown): CloudAiSession {
-  const input = expectObject(body, "AI session response body");
-  const participantKind = input.participantKind;
-  if (participantKind !== "ai-agent") {
-    throw new ResponseValidationError('Response field "participantKind" must be ai-agent.');
-  }
-  return {
-    participantKind,
-    agentId: expectString(input, "agentId"),
-    displayName: expectString(input, "displayName"),
-    authorizedByUserId: expectString(input, "authorizedByUserId"),
-    roomId: expectString(input, "roomId"),
-  };
-}
-
-function validatePersistenceBoundary(body: unknown): CloudRoomTicket["persistence"] {
-  const input = expectObject(body, "Persistence response body");
-  return {
-    yjsCheckpoint: validateEncryptedBlobRef(input.yjsCheckpoint, "yjsCheckpoint", "yjs-checkpoint"),
-    yjsUpdateArchive: validateEncryptedBlobRef(input.yjsUpdateArchive, "yjsUpdateArchive", "yjs-update-archive"),
-    markdownSnapshot: validateEncryptedBlobRef(input.markdownSnapshot, "markdownSnapshot", "markdown-snapshot"),
-  };
-}
-
-function validateEncryptedBlobRef(
-  body: unknown,
-  key: string,
-  purpose: CloudRoomTicket["persistence"]["yjsCheckpoint"]["purpose"],
-): CloudRoomTicket["persistence"]["yjsCheckpoint"] {
-  const input = expectObject(body, `Encrypted blob response body "${key}"`);
-  const plaintextAvailable = input.plaintextAvailable;
-  if (plaintextAvailable !== false) {
-    throw new ResponseValidationError(`Response field "${key}.plaintextAvailable" must be false.`);
-  }
-  return {
-    purpose: expectOneOf(input, "purpose", [purpose]),
-    ref: expectString(input, "ref"),
-    encryption: expectOneOf(input, "encryption", ["application-level-at-rest"]),
-    keyScope: expectOneOf(input, "keyScope", ["room"]),
-    byteLength: expectNumber(input, "byteLength"),
-    plaintextAvailable,
-  };
-}
-
-function expectObject(body: unknown, label: string): Record<string, unknown> {
-  if (!body || typeof body !== "object" || Array.isArray(body)) {
-    throw new ResponseValidationError(`${label} must be an object.`);
-  }
-  return body as Record<string, unknown>;
-}
-
-function expectString(input: Record<string, unknown>, key: string) {
-  const value = input[key];
-  if (typeof value !== "string" || value.length === 0) {
-    throw new ResponseValidationError(`Response field "${key}" must be a non-empty string.`);
-  }
-  return value;
-}
-
-function optionalString(input: Record<string, unknown>, key: string) {
-  const value = input[key];
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "string") {
-    throw new ResponseValidationError(`Response field "${key}" must be a string.`);
-  }
-  return value;
-}
-
-function expectBoolean(input: Record<string, unknown>, key: string) {
-  const value = input[key];
-  if (typeof value !== "boolean") {
-    throw new ResponseValidationError(`Response field "${key}" must be a boolean.`);
-  }
-  return value;
-}
-
-function expectNumber(input: Record<string, unknown>, key: string) {
-  const value = input[key];
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new ResponseValidationError(`Response field "${key}" must be a finite number.`);
-  }
-  return value;
-}
-
-function optionalNumber(input: Record<string, unknown>, key: string) {
-  const value = input[key];
-  if (value === undefined) {
-    return undefined;
-  }
-  if (typeof value !== "number" || !Number.isFinite(value)) {
-    throw new ResponseValidationError(`Response field "${key}" must be a finite number.`);
-  }
-  return value;
-}
-
-function expectOneOf<const TValues extends readonly string[]>(
-  input: Record<string, unknown>,
-  key: string,
-  values: TValues,
-): TValues[number] {
-  const value = input[key];
-  if (typeof value === "string" && values.includes(value)) {
-    return value;
-  }
-  throw new ResponseValidationError(`Response field "${key}" must be one of: ${values.join(", ")}.`);
-}
-
-function expectFunction<TFunction extends (...args: never[]) => unknown>(
-  input: Record<string, unknown>,
-  key: string,
-): TFunction {
-  const value = input[key];
-  if (typeof value !== "function") {
-    throw new ResponseValidationError(`Response field "${key}" must be a function.`);
-  }
-  return value as TFunction;
 }
 
 function routeSegment(value: string) {

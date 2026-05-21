@@ -15,41 +15,24 @@ import {
   type CloudRoomPasswordUpdate,
   type CloudRoomTicket,
 } from "./backendContract";
+import {
+  cloudBackendRoutes,
+  type CloudBackendErrorResponse,
+  type CloudBackendRequest,
+  type CloudBackendResponse,
+  type CloudBackendRoute,
+  type CloudBackendRouteId,
+} from "./backendRouteContracts";
 
-export type CloudBackendHttpMethod = "DELETE" | "GET" | "POST";
-
-export type CloudBackendRouteId =
-  | "create-room"
-  | "join-room"
-  | "claim-room"
-  | "create-room-invite"
-  | "update-room-password"
-  | "remove-room-member"
-  | "get-markdown-snapshot"
-  | "create-ai-session"
-  | "get-room";
-
-export type CloudBackendRoute = {
-  id: CloudBackendRouteId;
-  method: CloudBackendHttpMethod;
-  pattern: string;
-};
-
-export type CloudBackendRequest = {
-  method: CloudBackendHttpMethod;
-  path: string;
-  auth?: CloudAccountAuth;
-  body?: unknown;
-};
-
-export type CloudBackendResponse<TBody = unknown> = {
-  status: number;
-  body: TBody;
-};
-
-export type CloudBackendErrorResponse = {
-  error: string;
-};
+export {
+  cloudBackendRoutes,
+  type CloudBackendErrorResponse,
+  type CloudBackendHttpMethod,
+  type CloudBackendRequest,
+  type CloudBackendResponse,
+  type CloudBackendRoute,
+  type CloudBackendRouteId,
+} from "./backendRouteContracts";
 
 export type CloudBackendService = {
   routes: CloudBackendRoute[];
@@ -80,18 +63,6 @@ type GetSnapshotBody = {
   guestId?: string;
 };
 type AiSessionBody = Omit<Parameters<CloudRoomBackendContract["requestAiSession"]>[0], "roomId" | "auth">;
-
-export const cloudBackendRoutes: CloudBackendRoute[] = [
-  { id: "create-room", method: "POST", pattern: "/v1/rooms" },
-  { id: "join-room", method: "POST", pattern: "/v1/rooms/:roomId/join" },
-  { id: "claim-room", method: "POST", pattern: "/v1/rooms/:roomId/claim" },
-  { id: "create-room-invite", method: "POST", pattern: "/v1/rooms/:roomId/invites" },
-  { id: "update-room-password", method: "POST", pattern: "/v1/rooms/:roomId/password" },
-  { id: "remove-room-member", method: "DELETE", pattern: "/v1/rooms/:roomId/members/:userId" },
-  { id: "get-markdown-snapshot", method: "GET", pattern: "/v1/rooms/:roomId/snapshots/:versionId.md" },
-  { id: "create-ai-session", method: "POST", pattern: "/v1/rooms/:roomId/ai-sessions" },
-  { id: "get-room", method: "GET", pattern: "/v1/rooms/:roomId" },
-];
 
 export function createInMemoryCloudBackendService(
   backend: CloudRoomBackendContract = createInMemoryCloudRoomBackend(),
