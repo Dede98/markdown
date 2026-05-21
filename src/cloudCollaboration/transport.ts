@@ -8,6 +8,15 @@ export type CloudRoomTransportConnectOptions = {
   roomId: string;
   title: string;
   seedMarkdown?: string;
+  /**
+   * Short-lived backend-issued room token. Real transports require this,
+   * while local mock transports may ignore it.
+   */
+  roomToken?: string;
+  /**
+   * Optional room password forwarded to the realtime authentication boundary.
+   */
+  password?: string;
   participant: PresenceParticipant;
   participants: PresenceParticipant[];
   createIfMissing: boolean;
