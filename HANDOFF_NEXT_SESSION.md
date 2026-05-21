@@ -117,7 +117,7 @@ Latest backend verification for this lane:
 - `pnpm typecheck`
 - `pnpm build`
 - `pnpm exec playwright test tests/e2e/cloudBackend*.spec.ts --project=chrome-desktop`
-  passed with 52 backend specs.
+  passed with 55 backend specs.
 
 The invite/password route slice has landed. `backendService.ts` now
 exposes `POST /v1/rooms/:roomId/invites` and
@@ -136,13 +136,20 @@ route on the same mount-auth path. Tests cover owner/admin permission
 behavior, viewer denial, owner-protection, and an existing route-issued
 member token failing realtime authentication after revocation.
 
-Next backend slice: either continue the HTTP API surface with
-deterministic Markdown snapshot download
-(`GET /v1/rooms/:roomId/snapshots/:versionId.md`) or start the first
-non-wired WebSocket provider boundary behind `CloudRoomTransport`.
-Keep it backend-only unless explicitly told otherwise; do not add a DB
-driver, migration runner, auth UI, editor UI, provider UI, or local
-file flow wiring.
+The deterministic Markdown snapshot download slice has landed.
+`backendService.ts` exposes
+`GET /v1/rooms/:roomId/snapshots/:versionId.md`; the realtime
+repository decrypts Markdown snapshots only inside the backend boundary
+and supports `latest`, concrete snapshot ids, and version ids. Tests
+cover latest/versioned reads, account and anonymous access, password
+failure, missing-version errors, and the route skeleton shape.
+
+Next backend slice: start the first non-wired WebSocket provider
+boundary behind `CloudRoomTransport`, using the existing
+`createCloudRealtimeServerMount(...)` connection parameters and route
+tokens. Keep it backend-only unless explicitly told otherwise; do not
+add a real WebSocket server, DB driver, migration runner, auth UI,
+editor UI, provider UI, or local file flow wiring.
 
 ## What landed in the auto-update + OSS session
 

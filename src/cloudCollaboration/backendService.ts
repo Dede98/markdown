@@ -3,6 +3,7 @@ import {
   type CloudAccessContext,
   type CloudAccountAuth,
   type CloudAiSession,
+  type CloudMarkdownSnapshot,
   type CloudRoomBackendContract,
   type CloudRoomCreateRequest,
   type CloudRoomInvite,
@@ -24,6 +25,7 @@ export type CloudBackendRouteId =
   | "create-room-invite"
   | "update-room-password"
   | "remove-room-member"
+  | "get-markdown-snapshot"
   | "create-ai-session"
   | "get-room";
 
@@ -71,6 +73,12 @@ type UpdatePasswordBody = {
   password?: string | null;
   ownerSecret?: string;
 };
+type GetSnapshotBody = {
+  access?: CloudAccessContext;
+  password?: string;
+  ownerSecret?: string;
+  guestId?: string;
+};
 type AiSessionBody = Omit<Parameters<CloudRoomBackendContract["requestAiSession"]>[0], "roomId" | "auth">;
 
 export const cloudBackendRoutes: CloudBackendRoute[] = [
@@ -80,6 +88,7 @@ export const cloudBackendRoutes: CloudBackendRoute[] = [
   { id: "create-room-invite", method: "POST", pattern: "/v1/rooms/:roomId/invites" },
   { id: "update-room-password", method: "POST", pattern: "/v1/rooms/:roomId/password" },
   { id: "remove-room-member", method: "DELETE", pattern: "/v1/rooms/:roomId/members/:userId" },
+  { id: "get-markdown-snapshot", method: "GET", pattern: "/v1/rooms/:roomId/snapshots/:versionId.md" },
   { id: "create-ai-session", method: "POST", pattern: "/v1/rooms/:roomId/ai-sessions" },
   { id: "get-room", method: "GET", pattern: "/v1/rooms/:roomId" },
 ];
@@ -121,6 +130,8 @@ function handleRequest(backend: CloudRoomBackendContract, request: CloudBackendR
       return updateRoomPassword(backend, route.roomId, request);
     case "remove-room-member":
       return removeRoomMember(backend, route.roomId, route.userId, request);
+    case "get-markdown-snapshot":
+      return getMarkdownSnapshot(backend, route.roomId, route.versionId, request);
     case "create-ai-session":
       return createAiSession(backend, route.roomId, request);
     case "get-room":
@@ -246,6 +257,27 @@ function removeRoomMember(
   };
 }
 
+function getMarkdownSnapshot(
+  backend: CloudRoomBackendContract,
+  roomId: string,
+  versionId: string | undefined,
+  request: CloudBackendRequest,
+): CloudBackendResponse<CloudMarkdownSnapshot> {
+  if (!versionId) {
+    throw new CloudBackendRouteError(404, `No Cloud backend route for ${request.method} ${request.path}`);
+  }
+  const body = optionalBody<GetSnapshotBody>(request.body);
+  return {
+    status: 200,
+    body: backend.getMarkdownSnapshot({
+      roomId,
+      versionId,
+      access: snapshotAccessFor(request.auth, body),
+      password: body.password,
+    }),
+  };
+}
+
 function createAiSession(
   backend: CloudRoomBackendContract,
   roomId: string,
@@ -267,6 +299,7 @@ type MatchedRoute = {
   id: CloudBackendRouteId;
   roomId: string;
   userId?: string;
+  versionId?: string;
 };
 
 function matchRoute(request: CloudBackendRequest): MatchedRoute | null {
@@ -281,6 +314,15 @@ function matchRoute(request: CloudBackendRequest): MatchedRoute | null {
       id: "remove-room-member",
       roomId: decodeURIComponent(memberMatch[1]),
       userId: decodeURIComponent(memberMatch[2]),
+    };
+  }
+
+  const snapshotMatch = path.match(/^\/v1\/rooms\/([^/]+)\/snapshots\/([^/]+)\.md$/u);
+  if (request.method === "GET" && snapshotMatch) {
+    return {
+      id: "get-markdown-snapshot",
+      roomId: decodeURIComponent(snapshotMatch[1]),
+      versionId: decodeURIComponent(snapshotMatch[2]),
     };
   }
 
@@ -323,6 +365,16 @@ function expectBody<T>(body: unknown): T {
   return body as T;
 }
 
+function optionalBody<T>(body: unknown): Partial<T> {
+  if (body === undefined) {
+    return {};
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new CloudBackendRouteError(400, "Request body must be an object.");
+  }
+  return body as Partial<T>;
+}
+
 function managementAccessFor(
   auth: CloudAccountAuth | undefined,
   ownerSecret: string | undefined,
@@ -338,6 +390,23 @@ function managementAccessFor(
     401,
     `Managing room ${subject} requires owner/admin auth or anonymous owner capability.`,
   );
+}
+
+function snapshotAccessFor(auth: CloudAccountAuth | undefined, body: Partial<GetSnapshotBody>): CloudAccessContext {
+  if (auth) {
+    return auth;
+  }
+  if (body.access) {
+    return body.access;
+  }
+  if (body.ownerSecret || body.guestId) {
+    return {
+      kind: "anonymous",
+      guestId: body.guestId ?? "guest_snapshot",
+      ownerSecret: body.ownerSecret,
+    };
+  }
+  throw new CloudBackendRouteError(401, "Snapshot download requires account auth or anonymous room access.");
 }
 
 function errorResponse(error: unknown): CloudBackendResponse<CloudBackendErrorResponse> {
@@ -358,10 +427,10 @@ function inferErrorStatus(message: string) {
   if (/does not exist|no cloud backend route/iu.test(message)) {
     return 404;
   }
-  if (/requires signed-in auth|requires a signed-in account|requires room membership|valid anonymous owner secret/iu.test(message)) {
+  if (/requires signed-in auth|requires a signed-in account|valid anonymous owner secret/iu.test(message)) {
     return 401;
   }
-  if (/requires a valid password|owner or admin|cannot manage|requires room membership|valid room invite|invite has expired|no remaining uses|requires signed-in account auth|cannot remove|already revoked/iu.test(message)) {
+  if (/requires a valid password|owner or admin|cannot manage|requires room membership|anonymous room access|valid room invite|invite has expired|no remaining uses|requires signed-in account auth|cannot remove|already revoked/iu.test(message)) {
     return 403;
   }
   return 400;

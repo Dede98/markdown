@@ -150,6 +150,11 @@ Routes:
 - `DELETE /v1/rooms/:roomId/members/:userId` lets owner/admin account
   members revoke a room membership. Admins cannot remove the room
   owner.
+- `GET /v1/rooms/:roomId/snapshots/:versionId.md` returns
+  deterministic Markdown materialization for `latest`, a concrete
+  Markdown snapshot id, or a version id. Access is checked at the
+  service boundary; encrypted snapshot rows remain opaque in repository
+  metadata.
 - `POST /v1/rooms/:roomId/ai-sessions` requires signed-in account auth
   and returns a visible `ai-agent` participant session.
 - `GET /v1/rooms/:roomId` returns room metadata only.
@@ -314,6 +319,9 @@ Contract:
 - Member revocation routes mark account memberships revoked in the same
   repository that realtime auth reads, so existing room tokens for a
   revoked member stop authenticating through the mount.
+- Snapshot download routes decrypt Markdown snapshots only inside the
+  backend boundary and return deterministic `.md` materialization while
+  keeping stored snapshot refs encrypted and opaque.
 - Route tickets preserve deterministic Markdown materialization,
   comment mapping summary, and opaque encrypted persistence refs.
 - The bridge remains backend-only and does not start a WebSocket
@@ -330,8 +338,8 @@ Contract:
   implementation.
 - `createInMemoryCloudBackendService()` is the test-backed route
   skeleton over that contract. It models the HTTP route boundary,
-  including invite, password, and member-revocation management, in
-  memory and is intentionally not wired into the UI.
+  including invite, password, member-revocation, and snapshot download
+  routes, in memory and is intentionally not wired into the UI.
 - `cloudBackendSchema` and `renderSchemaSql()` are the test-backed
   Postgres metadata schema draft. The schema is consumed by structural
   tests only and is not yet wired into a migration runner.

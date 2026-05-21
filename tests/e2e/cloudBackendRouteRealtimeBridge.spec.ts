@@ -486,6 +486,118 @@ test.describe("cloud backend route to realtime token bridge", () => {
     });
   });
 
+  test("downloads latest and versioned Markdown snapshots through the route bridge", () => {
+    const { service, realtime, mount } = createBridgeHarness();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: ownerAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Snapshot bridge room",
+        seedMarkdown: "# Snapshot bridge\n\nInitial.",
+      },
+    });
+    const ticket = create.body as { roomId: string; roomToken: string };
+    const context = mount.config.hooks.authenticate(
+      mount.createConnectionParameters({
+        roomId: ticket.roomId,
+        roomToken: ticket.roomToken,
+      }),
+    );
+    const updatedDoc = mount.config.hooks.loadDocument({
+      documentName: ticket.roomId,
+      context,
+    });
+    replaceMarkdown(updatedDoc, "# Snapshot bridge\n\nVersioned.");
+    const stored = realtime.hooks.store(ticket.roomId, Y.encodeStateAsUpdate(updatedDoc), {
+      context,
+      compact: true,
+      materializeSnapshotReason: "manual",
+      createdByUserId: ownerAuth.userId,
+    });
+    const versionId = stored.version?.id;
+    expect(versionId).toBeTruthy();
+    expect(realtime.repository.document_versions.map((row) => row.id)).toContain(versionId);
+
+    expect(
+      service.handle({
+        method: "GET",
+        path: `/v1/rooms/${ticket.roomId}/snapshots/latest.md`,
+        auth: ownerAuth,
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: {
+        roomId: ticket.roomId,
+        versionId: "latest",
+        markdown: "# Snapshot bridge\n\nVersioned.",
+      },
+    });
+    expect(
+      service.handle({
+        method: "GET",
+        path: `/v1/rooms/${ticket.roomId}/snapshots/${versionId}.md`,
+        auth: ownerAuth,
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: {
+        roomId: ticket.roomId,
+        versionId,
+        markdown: "# Snapshot bridge\n\nVersioned.",
+      },
+    });
+  });
+
+  test("applies snapshot route access password and missing-version failures explicitly", () => {
+    const { service } = createBridgeHarness();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      body: {
+        mode: "anonymous",
+        source: "local-file",
+        title: "Anonymous snapshot bridge",
+        seedMarkdown: "# Anonymous snapshot",
+        password: "snapshot-pass",
+      },
+    });
+    const room = create.body as { roomId: string; ownerSecret: string };
+
+    expect(
+      service.handle({
+        method: "GET",
+        path: `/v1/rooms/${room.roomId}/snapshots/latest.md`,
+        body: { guestId: "guest_snapshot", password: "wrong" },
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { error: expect.stringMatching(/valid password/i) },
+    });
+    expect(
+      service.handle({
+        method: "GET",
+        path: `/v1/rooms/${room.roomId}/snapshots/latest.md`,
+        body: { ownerSecret: room.ownerSecret, password: "snapshot-pass" },
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: { markdown: "# Anonymous snapshot" },
+    });
+    expect(
+      service.handle({
+        method: "GET",
+        path: `/v1/rooms/${room.roomId}/snapshots/missing-version.md`,
+        body: { ownerSecret: room.ownerSecret, password: "snapshot-pass" },
+      }),
+    ).toMatchObject({
+      status: 404,
+      body: { error: expect.stringMatching(/snapshot version does not exist/i) },
+    });
+  });
+
   test("keeps password failure invalid token document mismatch and write denial explicit on bridged tokens", () => {
     const { service, mount } = createBridgeHarness();
     const create = createAnonymousRoom(service);

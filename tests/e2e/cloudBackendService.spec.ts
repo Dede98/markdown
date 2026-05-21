@@ -19,6 +19,7 @@ test.describe("cloud backend service skeleton", () => {
       { id: "create-room-invite", method: "POST", pattern: "/v1/rooms/:roomId/invites" },
       { id: "update-room-password", method: "POST", pattern: "/v1/rooms/:roomId/password" },
       { id: "remove-room-member", method: "DELETE", pattern: "/v1/rooms/:roomId/members/:userId" },
+      { id: "get-markdown-snapshot", method: "GET", pattern: "/v1/rooms/:roomId/snapshots/:versionId.md" },
       { id: "create-ai-session", method: "POST", pattern: "/v1/rooms/:roomId/ai-sessions" },
       { id: "get-room", method: "GET", pattern: "/v1/rooms/:roomId" },
     ]);
@@ -253,6 +254,47 @@ test.describe("cloud backend service skeleton", () => {
     ).toMatchObject({
       status: 200,
       body: { roomId: room.roomId, hasPassword: true, action: "set" },
+    });
+  });
+
+  test("returns deterministic Markdown snapshots through the HTTP-shaped route", () => {
+    const service = createInMemoryCloudBackendService();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: accountAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Snapshot route",
+        seedMarkdown: "# Snapshot\n\nInitial.",
+      },
+    });
+    const roomId = String((create.body as { roomId: string }).roomId);
+
+    expect(
+      service.handle({
+        method: "GET",
+        path: `/v1/rooms/${roomId}/snapshots/latest.md`,
+        auth: accountAuth,
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: {
+        roomId,
+        versionId: "latest",
+        markdown: "# Snapshot\n\nInitial.",
+      },
+    });
+
+    expect(
+      service.handle({
+        method: "GET",
+        path: `/v1/rooms/${roomId}/snapshots/latest.md`,
+      }),
+    ).toMatchObject({
+      status: 401,
+      body: { error: expect.stringMatching(/snapshot download requires account auth/i) },
     });
   });
 });

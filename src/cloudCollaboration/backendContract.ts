@@ -102,6 +102,19 @@ export type CloudRoomMemberRemoval = {
   revoked: true;
 };
 
+export type CloudMarkdownSnapshotRequest = {
+  roomId: string;
+  versionId: string;
+  access: CloudAccessContext;
+  password?: string;
+};
+
+export type CloudMarkdownSnapshot = {
+  roomId: string;
+  versionId: string;
+  markdown: string;
+};
+
 export type EncryptedBlobPurpose = "yjs-checkpoint" | "yjs-update-archive" | "markdown-snapshot";
 
 export type EncryptedBlobRef = {
@@ -157,6 +170,7 @@ export type CloudRoomBackendContract = {
   createInvite: (request: CloudRoomInviteCreateRequest) => CloudRoomInvite;
   updateRoomPassword: (request: CloudRoomPasswordUpdateRequest) => CloudRoomPasswordUpdate;
   removeRoomMember: (request: CloudRoomMemberRemoveRequest) => CloudRoomMemberRemoval;
+  getMarkdownSnapshot: (request: CloudMarkdownSnapshotRequest) => CloudMarkdownSnapshot;
   requestAiSession: (request: CloudAiSessionRequest) => CloudAiSession;
   getRoomMetadata: (roomId: string) => CloudRoomMetadata;
 };
@@ -318,6 +332,20 @@ export function createInMemoryCloudRoomBackend(): CloudRoomBackendContract {
         roomId,
         userId,
         revoked: true,
+      };
+    },
+
+    getMarkdownSnapshot({ roomId, versionId, access, password }) {
+      const room = getRoom(rooms, roomId);
+      validatePassword(room, password);
+      roleForAccess(room, access);
+      if (versionId !== "latest") {
+        throw new Error(`Markdown snapshot version does not exist: ${versionId}`);
+      }
+      return {
+        roomId,
+        versionId,
+        markdown: room.ytext.toString(),
       };
     },
 

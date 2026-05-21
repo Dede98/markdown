@@ -6,6 +6,8 @@ import {
 } from "./backendSchema";
 import type {
   CloudAccountAuth,
+  CloudAccessContext,
+  CloudMarkdownSnapshot,
   CloudRoomInvite,
   CloudRoomInviteRole,
   CloudRoomManagementAccess,
@@ -235,6 +237,7 @@ export type CloudRealtimeRepository = CloudRealtimeRepositoryTables & {
   redeemInvite: (request: CloudRealtimeInviteRedeemRequest) => CloudRealtimeInviteRedemption;
   updateRoomPassword: (request: CloudRealtimePasswordUpdateRequest) => CloudRoomPasswordUpdate;
   removeMember: (request: CloudRealtimeMemberRemoveRequest) => CloudRoomMemberRemoval;
+  getMarkdownSnapshot: (request: CloudRealtimeMarkdownSnapshotRequest) => CloudMarkdownSnapshot;
 };
 
 export type CloudRealtimeHooks = {
@@ -317,6 +320,13 @@ type CloudRealtimeMemberRemoveRequest = {
   documentId: string;
   access: Extract<CloudRoomManagementAccess, { kind: "account" }>;
   userId: string;
+};
+
+type CloudRealtimeMarkdownSnapshotRequest = {
+  documentId: string;
+  versionId: string;
+  access: CloudAccessContext;
+  password?: string;
 };
 
 type CloudRealtimeCreatedRoom = {
@@ -661,6 +671,17 @@ export function createInMemoryCloudRealtimeBackend(): CloudRealtimeBackend {
         roomId: document.id,
         userId,
         revoked: true,
+      };
+    },
+
+    getMarkdownSnapshot({ documentId, versionId, access, password }) {
+      const document = getDocument(repository, documentId);
+      authorizeSnapshotAccess(repository, document, access, password);
+      const snapshot = findMarkdownSnapshot(repository, document, versionId);
+      return {
+        roomId: document.id,
+        versionId,
+        markdown: bytesToText(decryptBlob(encryptedBlobs, snapshot.blob_ref)),
       };
     },
   };
@@ -1094,6 +1115,65 @@ function findUsableInvite(repository: CloudRealtimeRepositoryTables, document: D
     throw new Error("Room invite has no remaining uses.");
   }
   return invite;
+}
+
+function authorizeSnapshotAccess(
+  repository: CloudRealtimeRepositoryTables,
+  document: DocumentRow,
+  access: CloudAccessContext,
+  password?: string,
+) {
+  validatePassword(repository, document, password);
+  if (access.kind === "account") {
+    if (access.tenantId !== document.tenant_id) {
+      throw new Error("Snapshot download requires room membership in the room tenant.");
+    }
+    if (!activeMembership(repository, document, access.userId)) {
+      throw new Error("Snapshot download requires room membership.");
+    }
+    return;
+  }
+  if (access.kind === "invite") {
+    throw new Error("Snapshot download requires room membership or anonymous room access, not an unredeemed invite.");
+  }
+  if (
+    document.mode === "anonymous" &&
+    document.anonymous_owner_capability_hash &&
+    access.ownerSecret &&
+    constantTimeMatch(document.anonymous_owner_capability_hash, hashSecret(access.ownerSecret))
+  ) {
+    return;
+  }
+  if (document.mode === "anonymous" && access.guestId) {
+    return;
+  }
+  throw new Error("Snapshot download requires room membership or anonymous room access.");
+}
+
+function findMarkdownSnapshot(repository: CloudRealtimeRepositoryTables, document: DocumentRow, versionId: string) {
+  if (versionId === "latest") {
+    const latest = latestByCreatedAt(
+      repository.document_markdown_snapshots.filter((row) => row.document_id === document.id),
+    );
+    if (latest) {
+      return latest;
+    }
+  }
+  const version = repository.document_versions.find(
+    (row) => row.tenant_id === document.tenant_id && row.document_id === document.id && row.id === versionId,
+  );
+  const snapshot = version
+    ? repository.document_markdown_snapshots.find(
+        (row) =>
+          row.tenant_id === document.tenant_id && row.document_id === document.id && row.id === version.snapshot_id,
+      )
+    : repository.document_markdown_snapshots.find(
+        (row) => row.tenant_id === document.tenant_id && row.document_id === document.id && row.id === versionId,
+      );
+  if (!snapshot) {
+    throw new Error(`Markdown snapshot version does not exist: ${versionId}`);
+  }
+  return snapshot;
 }
 
 function updatesAfterCheckpoint(

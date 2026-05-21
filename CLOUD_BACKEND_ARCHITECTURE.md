@@ -39,7 +39,9 @@ creation and password set/rotate/clear routes, with route-issued invite
 access and password changes flowing through the same realtime
 repository/mount authentication path. Member revocation also uses the
 same repository, so revoked account-member tokens fail realtime mount
-authentication.
+authentication. Deterministic Markdown snapshot download is exposed
+through the HTTP-shaped service while encrypted snapshot refs remain
+opaque in repository metadata.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -395,7 +397,10 @@ encrypted persistence boundary refs. Implemented in
 6. Implement `.md` materialization worker. Initial lifecycle-triggered
    deterministic Markdown snapshot rows are implemented in the hook
    contract; future work should move materialization to a backend
-   worker.
+   worker. Snapshot download is now exposed through
+   `GET /v1/rooms/:roomId/snapshots/:versionId.md`; tests prove latest
+   and versioned snapshot reads, password/access failures, and missing
+   version errors.
 7. Implement HTTP room/create/join/claim/invite/password APIs. The
    invite and password-management slice is implemented in
    `src/cloudCollaboration/backendService.ts`,

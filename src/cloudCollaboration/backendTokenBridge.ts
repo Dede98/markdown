@@ -2,6 +2,7 @@ import type {
   CloudAccessContext,
   CloudAccountAuth,
   CloudAiSession,
+  CloudMarkdownSnapshot,
   CloudPersistenceBoundary,
   CloudRoomInvite,
   CloudRoomBackendContract,
@@ -240,6 +241,15 @@ export function createCloudRouteRealtimeBridge(realtime: CloudRealtimeBackend): 
         access,
         userId,
       }) satisfies CloudRoomMemberRemoval;
+    },
+
+    getMarkdownSnapshot({ roomId, versionId, access, password }) {
+      return realtime.repository.getMarkdownSnapshot({
+        documentId: roomId,
+        versionId,
+        access,
+        password,
+      }) satisfies CloudMarkdownSnapshot;
     },
 
     requestAiSession({ roomId, auth, agentId, displayName }) {
