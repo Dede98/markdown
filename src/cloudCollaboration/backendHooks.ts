@@ -4,7 +4,14 @@ import {
   getTable,
   type CloudSchemaTable,
 } from "./backendSchema";
-import type { CloudAccountAuth, CloudRoomRole } from "./backendContract";
+import type {
+  CloudAccountAuth,
+  CloudRoomInvite,
+  CloudRoomInviteRole,
+  CloudRoomManagementAccess,
+  CloudRoomPasswordUpdate,
+  CloudRoomRole,
+} from "./backendContract";
 
 export type CloudRealtimeMaterializationReason = "manual" | "autosnapshot" | "before_ai_edit" | "restore" | "room_close";
 
@@ -223,6 +230,9 @@ export type CloudRealtimeRepository = CloudRealtimeRepositoryTables & {
   createAccountRoom: (request: CloudRealtimeAccountRoomRequest) => CloudRealtimeCreatedRoom;
   claimAnonymousRoom: (request: CloudRealtimeClaimRequest) => DocumentRow;
   addMembership: (request: CloudRealtimeMembershipRequest) => DocumentMembershipRow;
+  createInvite: (request: CloudRealtimeInviteCreateRequest) => CloudRoomInvite;
+  redeemInvite: (request: CloudRealtimeInviteRedeemRequest) => CloudRealtimeInviteRedemption;
+  updateRoomPassword: (request: CloudRealtimePasswordUpdateRequest) => CloudRoomPasswordUpdate;
 };
 
 export type CloudRealtimeHooks = {
@@ -241,7 +251,7 @@ type CloudRealtimeTokenRequest = {
   documentId: string;
   access:
     | { kind: "account"; userId: string }
-    | { kind: "anonymous"; guestId: string; ownerSecret?: string };
+    | { kind: "anonymous"; guestId: string; ownerSecret?: string; role?: CloudRoomRole };
 };
 
 type CloudRealtimeAnonymousRoomRequest = {
@@ -271,6 +281,36 @@ type CloudRealtimeMembershipRequest = {
   role: DocumentMembershipRow["role"];
 };
 
+type CloudRealtimeInviteCreateRequest = {
+  documentId: string;
+  access: CloudRoomManagementAccess;
+  role: CloudRoomInviteRole;
+  expiresAt?: string;
+  maxUses?: number;
+  audience?: string;
+};
+
+type CloudRealtimeInviteRedeemRequest = {
+  documentId: string;
+  inviteSecret: string;
+  auth?: CloudAccountAuth;
+  guestId?: string;
+};
+
+type CloudRealtimeInviteRedemption = {
+  document: DocumentRow;
+  role: CloudRoomRole;
+  tokenAccess:
+    | { kind: "account"; userId: string }
+    | { kind: "anonymous"; guestId: string; role: CloudRoomRole };
+};
+
+type CloudRealtimePasswordUpdateRequest = {
+  documentId: string;
+  access: CloudRoomManagementAccess;
+  password?: string | null;
+};
+
 type CloudRealtimeCreatedRoom = {
   document: DocumentRow;
   roomToken: string;
@@ -284,6 +324,7 @@ type RoomTokenClaims = {
   documentId: string;
   userId?: string;
   guestId?: string;
+  guestRole?: CloudRoomRole;
   ownerSecretHash?: string;
 };
 
@@ -337,6 +378,7 @@ export function createInMemoryCloudRealtimeBackend(): CloudRealtimeBackend {
         claims.userId = access.userId;
       } else {
         claims.guestId = access.guestId;
+        claims.guestRole = access.role;
         claims.ownerSecretHash = access.ownerSecret ? hashSecret(access.ownerSecret) : undefined;
       }
       const token = `${tokenId}.${stableHash(JSON.stringify(claims))}`;
@@ -476,6 +518,117 @@ export function createInMemoryCloudRealtimeBackend(): CloudRealtimeBackend {
         actor_user_id: userId,
       });
       return membership;
+    },
+
+    createInvite({ documentId, access, role, expiresAt, maxUses, audience }) {
+      const document = getDocument(repository, documentId);
+      const actor = assertCanManageRoom(repository, document, access, "invites");
+      const inviteSecret = `invite_${document.id}_${nextId("secret")}_${stableHash(`${document.id}:invite:${now()}`)}`;
+      const invite: DocumentInviteRow = {
+        id: nextId("invite"),
+        tenant_id: document.tenant_id,
+        document_id: document.id,
+        invite_secret_hash: hashSecret(inviteSecret),
+        role,
+        created_by_user_id: actor.userId ?? null,
+        audience: audience ?? null,
+        max_uses: maxUses ?? null,
+        used_count: 0,
+        expires_at: expiresAt ?? null,
+        revoked_at: null,
+        created_at: now(),
+      };
+      repository.document_invites.push(invite);
+      audit(repository, document, nextId, now, {
+        kind: "invite_created",
+        actor_user_id: actor.userId,
+        actor_guest_id: actor.guestId,
+      });
+      return {
+        roomId: document.id,
+        inviteSecret,
+        role,
+        expiresAt,
+        maxUses,
+        audience,
+      };
+    },
+
+    redeemInvite({ documentId, inviteSecret, auth, guestId }) {
+      const document = getDocument(repository, documentId);
+      const invite = findUsableInvite(repository, document, inviteSecret);
+
+      if (auth) {
+        if (auth.tenantId !== document.tenant_id) {
+          throw new Error("Tenant mismatch while redeeming room invite.");
+        }
+        invite.used_count += 1;
+        repository.addMembership({
+          documentId: document.id,
+          tenantId: auth.tenantId,
+          userId: auth.userId,
+          role: invite.role,
+        });
+        audit(repository, document, nextId, now, {
+          kind: "invite_redeemed",
+          actor_user_id: auth.userId,
+        });
+        return {
+          document,
+          role: invite.role,
+          tokenAccess: { kind: "account", userId: auth.userId },
+        };
+      }
+
+      if (!guestId) {
+        throw new Error("Joining with an invite requires account auth or anonymous guest id.");
+      }
+      if (invite.role === "admin" || invite.role === "editor") {
+        throw new Error("Admin and editor invite access requires signed-in account auth.");
+      }
+      invite.used_count += 1;
+      audit(repository, document, nextId, now, {
+        kind: "invite_redeemed",
+        actor_guest_id: guestId,
+      });
+      return {
+        document,
+        role: invite.role,
+        tokenAccess: { kind: "anonymous", guestId, role: invite.role },
+      };
+    },
+
+    updateRoomPassword({ documentId, access, password }) {
+      const document = getDocument(repository, documentId);
+      const actor = assertCanManageRoom(repository, document, access, "password");
+      const existing = repository.document_password_verifiers.find((row) => row.document_id === document.id);
+      if (password === null || password === undefined || password === "") {
+        if (existing) {
+          repository.document_password_verifiers.splice(repository.document_password_verifiers.indexOf(existing), 1);
+        }
+        audit(repository, document, nextId, now, {
+          kind: "room_password_cleared",
+          actor_user_id: actor.userId,
+          actor_guest_id: actor.guestId,
+        });
+        return {
+          roomId: document.id,
+          hasPassword: false,
+          action: "cleared",
+        };
+      }
+
+      upsertPasswordVerifier(repository, document, password, nextId, now);
+      audit(repository, document, nextId, now, {
+        kind: existing ? "room_password_rotated" : "room_password_set",
+        actor_user_id: actor.userId,
+        actor_guest_id: actor.guestId,
+      });
+      return {
+        roomId: document.id,
+        hasPassword: true,
+        action: existing ? "rotated" : "set",
+      };
     },
   };
 
@@ -837,7 +990,7 @@ function contextForClaims(
     document.anonymous_owner_capability_hash &&
     claims.ownerSecretHash &&
     constantTimeMatch(document.anonymous_owner_capability_hash, claims.ownerSecretHash);
-  const role: CloudRoomRole = guestOwner ? "guest-owner" : "viewer";
+  const role: CloudRoomRole = guestOwner ? "guest-owner" : claims.guestRole ?? "viewer";
   return {
     tenantId: document.tenant_id,
     roomId: document.id,
@@ -858,6 +1011,56 @@ function validateContext(document: DocumentRow, context: CloudRealtimeRoomContex
   if (requireWrite && !context.canWrite) {
     throw new Error("Room context does not grant write capability.");
   }
+}
+
+function assertCanManageRoom(
+  repository: CloudRealtimeRepositoryTables,
+  document: DocumentRow,
+  access: CloudRoomManagementAccess,
+  subject: "invites" | "password",
+) {
+  if (access.kind === "anonymous-owner") {
+    if (
+      document.mode === "anonymous" &&
+      document.anonymous_owner_capability_hash &&
+      constantTimeMatch(document.anonymous_owner_capability_hash, hashSecret(access.ownerSecret))
+    ) {
+      return { guestId: access.guestId ?? "anonymous-owner" };
+    }
+    throw new Error(`Managing room ${subject} requires a valid anonymous owner secret.`);
+  }
+
+  if (access.auth.tenantId !== document.tenant_id) {
+    throw new Error(`Managing room ${subject} requires room membership in the room tenant.`);
+  }
+  const membership = activeMembership(repository, document, access.auth.userId);
+  if (membership?.role === "owner" || membership?.role === "admin") {
+    return { userId: access.auth.userId };
+  }
+  if (!membership) {
+    throw new Error(`Managing room ${subject} requires room membership.`);
+  }
+  throw new Error(`Role ${membership.role} cannot manage room ${subject}; owner or admin is required.`);
+}
+
+function findUsableInvite(repository: CloudRealtimeRepositoryTables, document: DocumentRow, inviteSecret: string) {
+  const invite = repository.document_invites.find(
+    (row) =>
+      row.tenant_id === document.tenant_id &&
+      row.document_id === document.id &&
+      row.revoked_at === null &&
+      constantTimeMatch(row.invite_secret_hash, hashSecret(inviteSecret)),
+  );
+  if (!invite) {
+    throw new Error("A valid room invite is required to join this room.");
+  }
+  if (invite.expires_at && Date.parse(invite.expires_at) <= Date.parse(new Date(1700000000000).toISOString())) {
+    throw new Error("Room invite has expired.");
+  }
+  if (invite.max_uses !== null && invite.used_count >= invite.max_uses) {
+    throw new Error("Room invite has no remaining uses.");
+  }
+  return invite;
 }
 
 function updatesAfterCheckpoint(

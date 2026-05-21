@@ -34,7 +34,10 @@ boundary.
 create/join calls and the HTTP-shaped backend service route contract
 onto that same realtime repository/hook backend so route-created and
 route-joined room tokens can authenticate through the non-wired
-Hocuspocus server mount.
+Hocuspocus server mount. The HTTP-shaped service now also covers invite
+creation and password set/rotate/clear routes, with route-issued invite
+access and password changes flowing through the same realtime
+repository/mount authentication path.
 
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
@@ -391,7 +394,14 @@ encrypted persistence boundary refs. Implemented in
    deterministic Markdown snapshot rows are implemented in the hook
    contract; future work should move materialization to a backend
    worker.
-7. Implement HTTP room/create/join/claim/invite/password APIs.
+7. Implement HTTP room/create/join/claim/invite/password APIs. The
+   invite and password-management slice is implemented in
+   `src/cloudCollaboration/backendService.ts`,
+   `src/cloudCollaboration/backendHooks.ts`, and
+   `src/cloudCollaboration/backendTokenBridge.ts`; tests prove
+   owner/admin and anonymous-owner permission behavior, explicit
+   denial for lower roles, invite-issued realtime auth, and password
+   set/rotate/clear effects at mount authentication.
 8. Implement WebSocket provider behind `CloudRoomTransport`.
 9. Add anonymous temporary room expiry, owner capability, and claim
    flow.

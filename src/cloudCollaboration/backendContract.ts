@@ -5,6 +5,7 @@ import type { CommentMappingSummary } from "./session";
 export type CloudRoomMode = "anonymous" | "account";
 export type CloudRoomSource = "local-file";
 export type CloudRoomRole = "owner" | "admin" | "editor" | "commenter" | "viewer" | "guest-owner";
+export type CloudRoomInviteRole = "admin" | "editor" | "commenter" | "viewer";
 
 export type CloudAccountAuth = {
   kind: "account";
@@ -18,7 +19,18 @@ export type CloudAnonymousAccess = {
   ownerSecret?: string;
 };
 
-export type CloudAccessContext = CloudAccountAuth | CloudAnonymousAccess;
+export type CloudInviteAccess = {
+  kind: "invite";
+  inviteSecret: string;
+  auth?: CloudAccountAuth;
+  guestId?: string;
+};
+
+export type CloudAccessContext = CloudAccountAuth | CloudAnonymousAccess | CloudInviteAccess;
+
+export type CloudRoomManagementAccess =
+  | { kind: "account"; auth: CloudAccountAuth }
+  | { kind: "anonymous-owner"; ownerSecret: string; guestId?: string };
 
 export type CloudRoomCreateRequest = {
   mode: CloudRoomMode;
@@ -46,6 +58,36 @@ export type CloudAiSessionRequest = {
   auth?: CloudAccountAuth;
   agentId: string;
   displayName: string;
+};
+
+export type CloudRoomInviteCreateRequest = {
+  roomId: string;
+  access: CloudRoomManagementAccess;
+  role: CloudRoomInviteRole;
+  expiresAt?: string;
+  maxUses?: number;
+  audience?: string;
+};
+
+export type CloudRoomInvite = {
+  roomId: string;
+  inviteSecret: string;
+  role: CloudRoomInviteRole;
+  expiresAt?: string;
+  maxUses?: number;
+  audience?: string;
+};
+
+export type CloudRoomPasswordUpdateRequest = {
+  roomId: string;
+  access: CloudRoomManagementAccess;
+  password?: string | null;
+};
+
+export type CloudRoomPasswordUpdate = {
+  roomId: string;
+  hasPassword: boolean;
+  action: "set" | "rotated" | "cleared";
 };
 
 export type EncryptedBlobPurpose = "yjs-checkpoint" | "yjs-update-archive" | "markdown-snapshot";
@@ -100,8 +142,19 @@ export type CloudRoomBackendContract = {
   createRoom: (request: CloudRoomCreateRequest) => CloudRoomTicket;
   joinRoom: (request: CloudRoomJoinRequest) => CloudRoomTicket;
   claimAnonymousRoom: (request: CloudRoomClaimRequest) => CloudRoomMetadata;
+  createInvite: (request: CloudRoomInviteCreateRequest) => CloudRoomInvite;
+  updateRoomPassword: (request: CloudRoomPasswordUpdateRequest) => CloudRoomPasswordUpdate;
   requestAiSession: (request: CloudAiSessionRequest) => CloudAiSession;
   getRoomMetadata: (roomId: string) => CloudRoomMetadata;
+};
+
+type StoredCloudInvite = {
+  inviteSecretHash: string;
+  role: CloudRoomInviteRole;
+  expiresAt?: string;
+  maxUses?: number;
+  usedCount: number;
+  audience?: string;
 };
 
 type StoredCloudRoom = {
@@ -119,6 +172,7 @@ type StoredCloudRoom = {
   claimedAt?: string;
   persistence: CloudPersistenceBoundary;
   memberships: Map<string, CloudRoomRole>;
+  invites: StoredCloudInvite[];
 };
 
 const ANONYMOUS_ROOM_TTL_MS = 24 * 60 * 60 * 1000;
@@ -155,6 +209,7 @@ export function createInMemoryCloudRoomBackend(): CloudRoomBackendContract {
         expiresAt,
         persistence: createPersistenceBoundary(roomId, ytext.toString()),
         memberships: new Map(),
+        invites: [],
       };
       if (request.auth) {
         room.memberships.set(request.auth.userId, "owner");
@@ -167,7 +222,7 @@ export function createInMemoryCloudRoomBackend(): CloudRoomBackendContract {
     joinRoom({ roomId, access, password }) {
       const room = getRoom(rooms, roomId);
       validatePassword(room, password);
-      return createTicket(room, roleForAccess(room, access));
+      return createTicket(room, redeemAccess(room, access));
     },
 
     claimAnonymousRoom({ roomId, auth, ownerSecret }) {
@@ -187,6 +242,49 @@ export function createInMemoryCloudRoomBackend(): CloudRoomBackendContract {
       room.claimedAt = new Date().toISOString();
       room.memberships.set(auth.userId, "owner");
       return metadataFor(room);
+    },
+
+    createInvite({ roomId, access, role, expiresAt, maxUses, audience }) {
+      const room = getRoom(rooms, roomId);
+      assertCanManageRoom(room, access, "invites");
+      sequence += 1;
+      const inviteSecret = `invite_${roomId}_${sequence.toString().padStart(4, "0")}_${stableHash(`${roomId}:${sequence}:invite`)}`;
+      room.invites.push({
+        inviteSecretHash: hashSecret(inviteSecret),
+        role,
+        expiresAt,
+        maxUses,
+        usedCount: 0,
+        audience,
+      });
+      return {
+        roomId,
+        inviteSecret,
+        role,
+        expiresAt,
+        maxUses,
+        audience,
+      };
+    },
+
+    updateRoomPassword({ roomId, access, password }) {
+      const room = getRoom(rooms, roomId);
+      assertCanManageRoom(room, access, "password");
+      const hadPassword = Boolean(room.passwordHash);
+      if (password === null || password === undefined || password === "") {
+        room.passwordHash = undefined;
+        return {
+          roomId,
+          hasPassword: false,
+          action: "cleared",
+        };
+      }
+      room.passwordHash = hashSecret(password);
+      return {
+        roomId,
+        hasPassword: true,
+        action: hadPassword ? "rotated" : "set",
+      };
     },
 
     requestAiSession({ roomId, auth, agentId, displayName }) {
@@ -244,10 +342,67 @@ function roleForAccess(room: StoredCloudRoom, access: CloudAccessContext): Cloud
   if (access.kind === "account") {
     return room.memberships.get(access.userId) ?? "viewer";
   }
+  if (access.kind === "invite") {
+    return redeemInvite(room, access);
+  }
   if (room.ownerSecretHash && access.ownerSecret && constantTimeMatch(room.ownerSecretHash, hashSecret(access.ownerSecret))) {
     return "guest-owner";
   }
   return "viewer";
+}
+
+function redeemAccess(room: StoredCloudRoom, access: CloudAccessContext): CloudRoomRole {
+  return roleForAccess(room, access);
+}
+
+function redeemInvite(room: StoredCloudRoom, access: CloudInviteAccess): CloudRoomRole {
+  const invite = room.invites.find((candidate) =>
+    constantTimeMatch(candidate.inviteSecretHash, hashSecret(access.inviteSecret)),
+  );
+  if (!invite) {
+    throw new Error("A valid room invite is required to join this room.");
+  }
+  if (invite.expiresAt && Date.parse(invite.expiresAt) <= Date.now()) {
+    throw new Error("Room invite has expired.");
+  }
+  if (invite.maxUses !== undefined && invite.usedCount >= invite.maxUses) {
+    throw new Error("Room invite has no remaining uses.");
+  }
+  if (access.auth) {
+    invite.usedCount += 1;
+    room.memberships.set(access.auth.userId, invite.role);
+    return invite.role;
+  }
+  if (!access.guestId) {
+    throw new Error("Joining with an invite requires account auth or anonymous guest id.");
+  }
+  if (invite.role === "admin" || invite.role === "editor") {
+    throw new Error("Admin and editor invite access requires signed-in account auth.");
+  }
+  invite.usedCount += 1;
+  return invite.role;
+}
+
+function assertCanManageRoom(room: StoredCloudRoom, access: CloudRoomManagementAccess, subject: "invites" | "password") {
+  if (access.kind === "anonymous-owner") {
+    if (
+      room.mode === "anonymous" &&
+      room.ownerSecretHash &&
+      constantTimeMatch(room.ownerSecretHash, hashSecret(access.ownerSecret))
+    ) {
+      return;
+    }
+    throw new Error(`Managing room ${subject} requires a valid anonymous owner secret.`);
+  }
+
+  const role = room.memberships.get(access.auth.userId);
+  if (role === "owner" || role === "admin") {
+    return;
+  }
+  if (!role) {
+    throw new Error(`Managing room ${subject} requires room membership.`);
+  }
+  throw new Error(`Role ${role} cannot manage room ${subject}; owner or admin is required.`);
 }
 
 function validatePassword(room: StoredCloudRoom, password?: string) {

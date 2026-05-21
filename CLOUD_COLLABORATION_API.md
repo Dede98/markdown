@@ -141,6 +141,12 @@ Routes:
   explicit anonymous access and applies password checks.
 - `POST /v1/rooms/:roomId/claim` requires signed-in auth plus the
   anonymous owner secret.
+- `POST /v1/rooms/:roomId/invites` lets owner/admin account members
+  create invite secrets. Anonymous room owners may also create invites
+  with the anonymous owner capability.
+- `POST /v1/rooms/:roomId/password` lets owner/admin account members,
+  or an anonymous owner capability for anonymous rooms, set, rotate, or
+  clear the room password gate.
 - `POST /v1/rooms/:roomId/ai-sessions` requires signed-in account auth
   and returns a visible `ai-agent` participant session.
 - `GET /v1/rooms/:roomId` returns room metadata only.
@@ -296,7 +302,12 @@ Contract:
   `createCloudRealtimeServerMount(...)`.
 - Room joins issue a realtime repository token, immediately validate
   password/access through `hooks.onAuthenticate(...)`, and return the
-  authenticated role in the route ticket.
+  authenticated role in the route ticket. Invite redemption uses the
+  same repository before token issuance so route-issued invite access
+  authenticates through the realtime mount.
+- Invite and password management routes use the same owner/admin and
+  anonymous-owner checks as the realtime repository, so password
+  changes immediately affect mount authentication behavior.
 - Route tickets preserve deterministic Markdown materialization,
   comment mapping summary, and opaque encrypted persistence refs.
 - The bridge remains backend-only and does not start a WebSocket
@@ -308,12 +319,13 @@ Contract:
 - `inMemoryCloudSessionProvider` is the only wired provider. It has no
   auth, network, or persistence.
 - `createInMemoryCloudRoomBackend()` is the test-backed backend room
-  contract spike. It models auth/password/claim/AI/persistence
+  contract spike. It models auth/password/invite/claim/AI/persistence
   boundaries in memory and is intentionally not a production storage
   implementation.
 - `createInMemoryCloudBackendService()` is the test-backed route
-  skeleton over that contract. It models the HTTP route boundary in
-  memory and is intentionally not wired into the UI.
+  skeleton over that contract. It models the HTTP route boundary,
+  including invite and password management, in memory and is
+  intentionally not wired into the UI.
 - `cloudBackendSchema` and `renderSchemaSql()` are the test-backed
   Postgres metadata schema draft. The schema is consumed by structural
   tests only and is not yet wired into a migration runner.
@@ -332,7 +344,7 @@ Contract:
   the test-backed token bridge helpers. They adapt direct backend
   create/join calls and `backendService` route responses onto the
   realtime backend so issued room tokens authenticate against the
-  non-wired server mount.
+  non-wired server mount, including route-issued invite joins.
 - `createWebSocketCloudSessionProvider()` is a non-wired contract stub.
   It exists to reserve the provider shape for backend work and must not
   be exposed in UI until a real `CloudRoomTransport` exists.

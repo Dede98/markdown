@@ -16,6 +16,8 @@ test.describe("cloud backend service skeleton", () => {
       { id: "create-room", method: "POST", pattern: "/v1/rooms" },
       { id: "join-room", method: "POST", pattern: "/v1/rooms/:roomId/join" },
       { id: "claim-room", method: "POST", pattern: "/v1/rooms/:roomId/claim" },
+      { id: "create-room-invite", method: "POST", pattern: "/v1/rooms/:roomId/invites" },
+      { id: "update-room-password", method: "POST", pattern: "/v1/rooms/:roomId/password" },
       { id: "create-ai-session", method: "POST", pattern: "/v1/rooms/:roomId/ai-sessions" },
       { id: "get-room", method: "GET", pattern: "/v1/rooms/:roomId" },
     ]);
@@ -147,6 +149,109 @@ test.describe("cloud backend service skeleton", () => {
     ).toMatchObject({
       status: 404,
       body: { error: expect.stringMatching(/does not exist/i) },
+    });
+  });
+
+  test("creates invites and manages passwords through explicit owner routes", () => {
+    const service = createInMemoryCloudBackendService();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: accountAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Managed account route",
+        seedMarkdown: "# Managed",
+      },
+    });
+    const roomId = String((create.body as { roomId: string }).roomId);
+
+    const invite = service.handle({
+      method: "POST",
+      path: `/v1/rooms/${roomId}/invites`,
+      auth: accountAuth,
+      body: { role: "editor", maxUses: 1, audience: "peer@example.test" },
+    });
+    expect(invite).toMatchObject({
+      status: 201,
+      body: {
+        roomId,
+        role: "editor",
+        inviteSecret: expect.stringMatching(/^invite_/),
+        maxUses: 1,
+        audience: "peer@example.test",
+      },
+    });
+
+    const passwordSet = service.handle({
+      method: "POST",
+      path: `/v1/rooms/${roomId}/password`,
+      auth: accountAuth,
+      body: { password: "new-pass" },
+    });
+    expect(passwordSet).toMatchObject({
+      status: 200,
+      body: { roomId, hasPassword: true, action: "set" },
+    });
+
+    const passwordClear = service.handle({
+      method: "POST",
+      path: `/v1/rooms/${roomId}/password`,
+      auth: accountAuth,
+      body: { password: null },
+    });
+    expect(passwordClear).toMatchObject({
+      status: 200,
+      body: { roomId, hasPassword: false, action: "cleared" },
+    });
+  });
+
+  test("allows anonymous owner capability to manage anonymous room invites and password", () => {
+    const service = createInMemoryCloudBackendService();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      body: {
+        mode: "anonymous",
+        source: "local-file",
+        title: "Anonymous managed route",
+        seedMarkdown: "# Anonymous managed",
+      },
+    });
+    const room = create.body as { roomId: string; ownerSecret: string };
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${room.roomId}/invites`,
+        body: { role: "viewer" },
+      }),
+    ).toMatchObject({
+      status: 401,
+      body: { error: expect.stringMatching(/owner\/admin auth or anonymous owner capability/i) },
+    });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${room.roomId}/invites`,
+        body: { role: "viewer", ownerSecret: room.ownerSecret },
+      }),
+    ).toMatchObject({
+      status: 201,
+      body: { roomId: room.roomId, role: "viewer", inviteSecret: expect.stringMatching(/^invite_/) },
+    });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${room.roomId}/password`,
+        body: { password: "anon-pass", ownerSecret: room.ownerSecret },
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: { roomId: room.roomId, hasPassword: true, action: "set" },
     });
   });
 });

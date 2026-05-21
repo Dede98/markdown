@@ -3,9 +3,11 @@ import type {
   CloudAccountAuth,
   CloudAiSession,
   CloudPersistenceBoundary,
+  CloudRoomInvite,
   CloudRoomBackendContract,
   CloudRoomCreateRequest,
   CloudRoomMetadata,
+  CloudRoomPasswordUpdate,
   CloudRoomRole,
   CloudRoomTicket,
   EncryptedBlobPurpose,
@@ -183,9 +185,19 @@ export function createCloudRouteRealtimeBridge(realtime: CloudRealtimeBackend): 
 
     joinRoom({ roomId, access, password }) {
       const document = getDocument(realtime, roomId);
+      const redeemedInvite =
+        access.kind === "invite"
+          ? realtime.repository.redeemInvite({
+              documentId: document.id,
+              inviteSecret: access.inviteSecret,
+              auth: access.auth,
+              guestId: access.guestId,
+            })
+          : undefined;
+      const tokenAccess = redeemedInvite?.tokenAccess ?? realtimeAccess(access);
       const roomToken = realtime.repository.issueRoomToken({
         documentId: document.id,
-        access: realtimeAccess(access),
+        access: tokenAccess,
       });
       const context = realtime.hooks.onAuthenticate({ roomToken, password });
       return ticketFor(realtime, document, roomToken, context.role);
@@ -200,6 +212,25 @@ export function createCloudRouteRealtimeBridge(realtime: CloudRealtimeBackend): 
         }),
         realtime,
       );
+    },
+
+    createInvite({ roomId, access, role, expiresAt, maxUses, audience }) {
+      return realtime.repository.createInvite({
+        documentId: roomId,
+        access,
+        role,
+        expiresAt,
+        maxUses,
+        audience,
+      }) satisfies CloudRoomInvite;
+    },
+
+    updateRoomPassword({ roomId, access, password }) {
+      return realtime.repository.updateRoomPassword({
+        documentId: roomId,
+        access,
+        password,
+      }) satisfies CloudRoomPasswordUpdate;
     },
 
     requestAiSession({ roomId, auth, agentId, displayName }) {
@@ -248,6 +279,9 @@ function realtimeAccess(access: CloudAccessContext) {
       kind: "account" as const,
       userId: access.userId,
     };
+  }
+  if (access.kind === "invite") {
+    throw new Error("Invite access must be redeemed before issuing realtime room tokens.");
   }
   return {
     kind: "anonymous" as const,

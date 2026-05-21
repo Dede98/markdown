@@ -12,6 +12,12 @@ const ownerAuth: CloudAccountAuth = {
   tenantId: "tenant_personal",
 };
 
+const peerAuth: CloudAccountAuth = {
+  kind: "account",
+  userId: "user_peer",
+  tenantId: "tenant_personal",
+};
+
 test.describe("cloud backend route to realtime token bridge", () => {
   test("uses a route-created room token to authenticate load and store through the realtime mount", () => {
     const { service, mount, realtime } = createBridgeHarness();
@@ -107,6 +113,250 @@ test.describe("cloud backend route to realtime token bridge", () => {
         .getText("markdown")
         .toString(),
     ).toBe("# Anonymous bridge");
+  });
+
+  test("creates an invite route token that joins and authenticates through the realtime mount", () => {
+    const { service, mount } = createBridgeHarness();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: ownerAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Invite bridge room",
+        seedMarkdown: "# Invite bridge",
+      },
+    });
+    const created = create.body as { roomId: string };
+
+    const invite = service.handle({
+      method: "POST",
+      path: `/v1/rooms/${created.roomId}/invites`,
+      auth: ownerAuth,
+      body: { role: "editor", maxUses: 1 },
+    });
+    expect(invite.status).toBe(201);
+    const inviteBody = invite.body as { inviteSecret: string };
+
+    const join = service.handle({
+      method: "POST",
+      path: `/v1/rooms/${created.roomId}/join`,
+      auth: peerAuth,
+      body: { inviteSecret: inviteBody.inviteSecret },
+    });
+    expect(join.status).toBe(200);
+    const joined = join.body as { roomId: string; roomToken: string; role: string };
+    expect(joined).toMatchObject({ roomId: created.roomId, role: "editor" });
+
+    const context = mount.config.hooks.authenticate(
+      mount.createConnectionParameters({
+        roomId: joined.roomId,
+        roomToken: joined.roomToken,
+      }),
+    );
+    expect(context).toMatchObject({
+      roomId: joined.roomId,
+      userId: peerAuth.userId,
+      role: "editor",
+      canWrite: true,
+    });
+    expect(
+      mount.config.hooks
+        .loadDocument({
+          documentName: joined.roomId,
+          context,
+        })
+        .getText("markdown")
+        .toString(),
+    ).toBe("# Invite bridge");
+  });
+
+  test("gates invite and password management to owner admin or anonymous owner capability", () => {
+    const { service, realtime } = createBridgeHarness();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: ownerAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Permission bridge room",
+        seedMarkdown: "# Permissions",
+      },
+    });
+    const created = create.body as { roomId: string };
+    realtime.repository.addMembership({
+      documentId: created.roomId,
+      tenantId: ownerAuth.tenantId,
+      userId: "user_admin",
+      role: "admin",
+    });
+    realtime.repository.addMembership({
+      documentId: created.roomId,
+      tenantId: ownerAuth.tenantId,
+      userId: "user_viewer",
+      role: "viewer",
+    });
+    realtime.repository.addMembership({
+      documentId: created.roomId,
+      tenantId: ownerAuth.tenantId,
+      userId: "user_commenter",
+      role: "commenter",
+    });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${created.roomId}/invites`,
+        auth: { ...ownerAuth, userId: "user_admin" },
+        body: { role: "viewer" },
+      }),
+    ).toMatchObject({ status: 201, body: { role: "viewer" } });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${created.roomId}/invites`,
+        auth: { ...ownerAuth, userId: "user_viewer" },
+        body: { role: "viewer" },
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { error: expect.stringMatching(/viewer cannot manage room invites/i) },
+    });
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${created.roomId}/password`,
+        auth: { ...ownerAuth, userId: "user_commenter" },
+        body: { password: "denied" },
+      }),
+    ).toMatchObject({
+      status: 403,
+      body: { error: expect.stringMatching(/commenter cannot manage room password/i) },
+    });
+
+    const anonymous = createAnonymousRoom(service).body as { roomId: string; ownerSecret: string };
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${anonymous.roomId}/password`,
+        body: { password: "anon-pass", ownerSecret: "wrong-secret" },
+      }),
+    ).toMatchObject({
+      status: 401,
+      body: { error: expect.stringMatching(/valid anonymous owner secret/i) },
+    });
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${anonymous.roomId}/password`,
+        body: { password: "anon-pass", ownerSecret: anonymous.ownerSecret },
+      }),
+    ).toMatchObject({
+      status: 200,
+      body: { roomId: anonymous.roomId, hasPassword: true, action: "rotated" },
+    });
+  });
+
+  test("password set rotate and clear routes immediately affect realtime mount authentication", () => {
+    const { service, mount } = createBridgeHarness();
+    const create = service.handle({
+      method: "POST",
+      path: "/v1/rooms",
+      auth: ownerAuth,
+      body: {
+        mode: "account",
+        source: "local-file",
+        title: "Password bridge room",
+        seedMarkdown: "# Password bridge",
+      },
+    });
+    const ticket = create.body as { roomId: string; roomToken: string };
+
+    expect(
+      mount.config.hooks.authenticate(
+        mount.createConnectionParameters({
+          roomId: ticket.roomId,
+          roomToken: ticket.roomToken,
+        }),
+      ),
+    ).toMatchObject({ role: "owner" });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${ticket.roomId}/password`,
+        auth: ownerAuth,
+        body: { password: "first-pass" },
+      }),
+    ).toMatchObject({ status: 200, body: { hasPassword: true, action: "set" } });
+    expectServerError(
+      () =>
+        mount.config.hooks.authenticate(
+          mount.createConnectionParameters({
+            roomId: ticket.roomId,
+            roomToken: ticket.roomToken,
+          }),
+        ),
+      { hook: "authenticate", code: "authentication_failed", message: /valid password/i },
+    );
+    expect(
+      mount.config.hooks.authenticate(
+        mount.createConnectionParameters({
+          roomId: ticket.roomId,
+          roomToken: ticket.roomToken,
+          password: "first-pass",
+        }),
+      ),
+    ).toMatchObject({ role: "owner" });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${ticket.roomId}/password`,
+        auth: ownerAuth,
+        body: { password: "second-pass" },
+      }),
+    ).toMatchObject({ status: 200, body: { hasPassword: true, action: "rotated" } });
+    expectServerError(
+      () =>
+        mount.config.hooks.authenticate(
+          mount.createConnectionParameters({
+            roomId: ticket.roomId,
+            roomToken: ticket.roomToken,
+            password: "first-pass",
+          }),
+        ),
+      { hook: "authenticate", code: "authentication_failed", message: /valid password/i },
+    );
+    expect(
+      mount.config.hooks.authenticate(
+        mount.createConnectionParameters({
+          roomId: ticket.roomId,
+          roomToken: ticket.roomToken,
+          password: "second-pass",
+        }),
+      ),
+    ).toMatchObject({ role: "owner" });
+
+    expect(
+      service.handle({
+        method: "POST",
+        path: `/v1/rooms/${ticket.roomId}/password`,
+        auth: ownerAuth,
+        body: { password: null },
+      }),
+    ).toMatchObject({ status: 200, body: { hasPassword: false, action: "cleared" } });
+    expect(
+      mount.config.hooks.authenticate(
+        mount.createConnectionParameters({
+          roomId: ticket.roomId,
+          roomToken: ticket.roomToken,
+        }),
+      ),
+    ).toMatchObject({ role: "owner" });
   });
 
   test("keeps password failure invalid token document mismatch and write denial explicit on bridged tokens", () => {

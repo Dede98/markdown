@@ -5,8 +5,12 @@ import {
   type CloudAiSession,
   type CloudRoomBackendContract,
   type CloudRoomCreateRequest,
+  type CloudRoomInvite,
+  type CloudRoomInviteRole,
+  type CloudRoomManagementAccess,
   type CloudRoomJoinRequest,
   type CloudRoomMetadata,
+  type CloudRoomPasswordUpdate,
   type CloudRoomTicket,
 } from "./backendContract";
 
@@ -16,6 +20,8 @@ export type CloudBackendRouteId =
   | "create-room"
   | "join-room"
   | "claim-room"
+  | "create-room-invite"
+  | "update-room-password"
   | "create-ai-session"
   | "get-room";
 
@@ -47,14 +53,30 @@ export type CloudBackendService = {
 };
 
 type CreateRoomBody = Omit<CloudRoomCreateRequest, "auth">;
-type JoinRoomBody = Partial<Omit<CloudRoomJoinRequest, "roomId">>;
+type JoinRoomBody = Partial<Omit<CloudRoomJoinRequest, "roomId">> & {
+  inviteSecret?: string;
+  guestId?: string;
+};
 type ClaimRoomBody = { ownerSecret: string };
+type CreateInviteBody = {
+  role: CloudRoomInviteRole;
+  ownerSecret?: string;
+  expiresAt?: string;
+  maxUses?: number;
+  audience?: string;
+};
+type UpdatePasswordBody = {
+  password?: string | null;
+  ownerSecret?: string;
+};
 type AiSessionBody = Omit<Parameters<CloudRoomBackendContract["requestAiSession"]>[0], "roomId" | "auth">;
 
 export const cloudBackendRoutes: CloudBackendRoute[] = [
   { id: "create-room", method: "POST", pattern: "/v1/rooms" },
   { id: "join-room", method: "POST", pattern: "/v1/rooms/:roomId/join" },
   { id: "claim-room", method: "POST", pattern: "/v1/rooms/:roomId/claim" },
+  { id: "create-room-invite", method: "POST", pattern: "/v1/rooms/:roomId/invites" },
+  { id: "update-room-password", method: "POST", pattern: "/v1/rooms/:roomId/password" },
   { id: "create-ai-session", method: "POST", pattern: "/v1/rooms/:roomId/ai-sessions" },
   { id: "get-room", method: "GET", pattern: "/v1/rooms/:roomId" },
 ];
@@ -90,6 +112,10 @@ function handleRequest(backend: CloudRoomBackendContract, request: CloudBackendR
       return joinRoom(backend, route.roomId, request);
     case "claim-room":
       return claimRoom(backend, route.roomId, request);
+    case "create-room-invite":
+      return createRoomInvite(backend, route.roomId, request);
+    case "update-room-password":
+      return updateRoomPassword(backend, route.roomId, request);
     case "create-ai-session":
       return createAiSession(backend, route.roomId, request);
     case "get-room":
@@ -118,7 +144,14 @@ function joinRoom(
   request: CloudBackendRequest,
 ): CloudBackendResponse<CloudRoomTicket> {
   const body = expectBody<JoinRoomBody>(request.body);
-  const access = body.access ?? request.auth;
+  const access = body.inviteSecret
+    ? {
+        kind: "invite" as const,
+        inviteSecret: body.inviteSecret,
+        auth: request.auth,
+        guestId: body.guestId,
+      }
+    : body.access ?? request.auth;
   if (!access) {
     throw new CloudBackendRouteError(401, "Joining a room requires account auth or anonymous access.");
   }
@@ -147,6 +180,41 @@ function claimRoom(
       roomId,
       auth: request.auth,
       ownerSecret: body.ownerSecret,
+    }),
+  };
+}
+
+function createRoomInvite(
+  backend: CloudRoomBackendContract,
+  roomId: string,
+  request: CloudBackendRequest,
+): CloudBackendResponse<CloudRoomInvite> {
+  const body = expectBody<CreateInviteBody>(request.body);
+  return {
+    status: 201,
+    body: backend.createInvite({
+      roomId,
+      access: managementAccessFor(request.auth, body.ownerSecret, "invites"),
+      role: body.role,
+      expiresAt: body.expiresAt,
+      maxUses: body.maxUses,
+      audience: body.audience,
+    }),
+  };
+}
+
+function updateRoomPassword(
+  backend: CloudRoomBackendContract,
+  roomId: string,
+  request: CloudBackendRequest,
+): CloudBackendResponse<CloudRoomPasswordUpdate> {
+  const body = expectBody<UpdatePasswordBody>(request.body);
+  return {
+    status: 200,
+    body: backend.updateRoomPassword({
+      roomId,
+      access: managementAccessFor(request.auth, body.ownerSecret, "password"),
+      password: body.password,
     }),
   };
 }
@@ -195,6 +263,12 @@ function matchRoute(request: CloudBackendRequest): MatchedRoute | null {
   if (request.method === "POST" && action === "claim") {
     return { id: "claim-room", roomId };
   }
+  if (request.method === "POST" && action === "invites") {
+    return { id: "create-room-invite", roomId };
+  }
+  if (request.method === "POST" && action === "password") {
+    return { id: "update-room-password", roomId };
+  }
   if (request.method === "POST" && action === "ai-sessions") {
     return { id: "create-ai-session", roomId };
   }
@@ -210,6 +284,23 @@ function expectBody<T>(body: unknown): T {
     throw new CloudBackendRouteError(400, "Request body must be an object.");
   }
   return body as T;
+}
+
+function managementAccessFor(
+  auth: CloudAccountAuth | undefined,
+  ownerSecret: string | undefined,
+  subject: "invites" | "password",
+): CloudRoomManagementAccess {
+  if (auth) {
+    return { kind: "account", auth };
+  }
+  if (ownerSecret) {
+    return { kind: "anonymous-owner", ownerSecret };
+  }
+  throw new CloudBackendRouteError(
+    401,
+    `Managing room ${subject} requires owner/admin auth or anonymous owner capability.`,
+  );
 }
 
 function errorResponse(error: unknown): CloudBackendResponse<CloudBackendErrorResponse> {
@@ -233,7 +324,7 @@ function inferErrorStatus(message: string) {
   if (/requires signed-in auth|requires a signed-in account|requires room membership|valid anonymous owner secret/iu.test(message)) {
     return 401;
   }
-  if (/requires a valid password/iu.test(message)) {
+  if (/requires a valid password|owner or admin|cannot manage|requires room membership|valid room invite|invite has expired|no remaining uses|requires signed-in account auth/iu.test(message)) {
     return 403;
   }
   return 400;
