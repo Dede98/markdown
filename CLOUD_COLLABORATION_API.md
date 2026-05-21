@@ -163,6 +163,34 @@ The service returns HTTP-like `{ status, body }` responses so tests can
 lock route behavior before a framework, database, or real auth provider
 is selected.
 
+## Backend HTTP Client Boundary
+
+Source: `src/cloudCollaboration/backendHttpClient.ts`
+
+The HTTP client boundary maps typed backend client methods onto the
+HTTP-shaped route skeleton without requiring a running server or fetch
+transport yet. It keeps route construction, URL segment encoding,
+default account auth, service-transport adaptation, and explicit
+non-2xx route errors in one backend-owned module.
+
+Contract:
+
+- `createCloudBackendHttpClient({ transport, auth? })` exposes typed
+  methods for room creation, join, claim, invite creation, password
+  update, member removal, snapshot download, AI-session creation, and
+  room metadata.
+- `createCloudBackendServiceTransport(service)` adapts the existing
+  in-memory `CloudBackendService` route harness into that client
+  transport contract.
+- `CloudBackendHttpClientError` preserves the route id, method, path,
+  status, and route error text for provider-level error mapping.
+- `webSocketCloudSessionProvider.ts` consumes this client boundary for
+  route-issued room tickets before connecting through
+  `CloudRoomTransport` and the realtime server mount.
+
+This is still backend/client-boundary work only. It does not add a real
+HTTP server, UI wiring, auth UI, or local file flow changes.
+
 ## Backend Postgres Schema
 
 Source: `src/cloudCollaboration/backendSchema.ts`

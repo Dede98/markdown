@@ -111,13 +111,18 @@ mount, and token bridging:
   `createCloudRouteRealtimeBridge(...)`, which adapts
   `backendService` onto the realtime repository so route-created and
   route-joined room tokens authenticate through the server mount.
+- `src/cloudCollaboration/backendHttpClient.ts` maps typed backend
+  client calls to the existing HTTP-shaped route contract. It keeps
+  route construction, URL segment encoding, default account auth,
+  service-transport adaptation, and non-2xx route errors behind a
+  backend/client boundary.
 
 Latest backend verification for this lane:
 
 - `pnpm typecheck`
 - `pnpm build`
 - `pnpm exec playwright test tests/e2e/cloudBackend*.spec.ts --project=chrome-desktop`
-  passed with 55 backend specs.
+  passed with 64 backend specs.
 
 The invite/password route slice has landed. `backendService.ts` now
 exposes `POST /v1/rooms/:roomId/invites` and
@@ -144,12 +149,23 @@ and supports `latest`, concrete snapshot ids, and version ids. Tests
 cover latest/versioned reads, account and anonymous access, password
 failure, missing-version errors, and the route skeleton shape.
 
-Next backend slice: start the first non-wired WebSocket provider
-boundary behind `CloudRoomTransport`, using the existing
-`createCloudRealtimeServerMount(...)` connection parameters and route
-tokens. Keep it backend-only unless explicitly told otherwise; do not
-add a real WebSocket server, DB driver, migration runner, auth UI,
-editor UI, provider UI, or local file flow wiring.
+The first non-wired WebSocket provider boundary has landed behind
+`CloudRoomTransport`. It uses route-issued room tokens,
+`createCloudRealtimeServerMount(...)` connection parameters, explicit
+provider errors, password lifecycle checks, revoked-member token checks,
+and load/store delegation through the mount. It is still not wired into
+UI or local file flows.
+
+The typed HTTP client boundary slice has landed. The WebSocket provider
+now consumes route tickets through `CloudBackendHttpClient`, while
+`createCloudBackendServiceTransport(...)` keeps the in-memory route
+harness usable for backend tests.
+
+Next backend slice: continue the backend/client contract toward a real
+runtime boundary only if explicitly requested. Reasonable next steps
+would be a fetch-backed transport contract or route schema validation,
+still without a real WebSocket server, DB driver, migration runner,
+auth UI, editor UI, provider UI, or local file flow wiring.
 
 ## What landed in the auto-update + OSS session
 

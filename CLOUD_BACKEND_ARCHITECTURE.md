@@ -43,6 +43,13 @@ authentication. Deterministic Markdown snapshot download is exposed
 through the HTTP-shaped service while encrypted snapshot refs remain
 opaque in repository metadata.
 
+`src/cloudCollaboration/backendHttpClient.ts` adds the first typed
+client boundary over that route shape. It maps backend client methods to
+encoded HTTP-shaped requests, adapts the in-memory service as a
+transport, preserves explicit route errors, and lets the non-wired
+WebSocket provider consume route-issued room tickets without building a
+real HTTP server or wiring UI/local file flows.
+
 This is an internal first-party backend architecture. It must not turn
 local `.md` editing into a logged-in or online-only workflow.
 

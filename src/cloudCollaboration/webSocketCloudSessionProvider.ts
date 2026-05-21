@@ -8,18 +8,25 @@ import type {
   CloudRoomCreateRequest,
   CloudRoomTicket,
 } from "./backendContract";
+import {
+  CloudBackendHttpClientError,
+  createCloudBackendHttpClient,
+  createCloudBackendServiceTransport,
+  type CloudBackendHttpClient,
+} from "./backendHttpClient";
 import type { CloudRealtimeRoomContext, CloudRealtimeStoreResult } from "./backendHooks";
 import {
   CloudRealtimeServerMountError,
   type CloudRealtimeConnectionBridgeRequest,
   type CloudRealtimeServerMount,
 } from "./backendRealtimeServer";
-import type { CloudBackendResponse, CloudBackendService } from "./backendService";
+import type { CloudBackendService } from "./backendService";
 import type { CloudRoomHandle, CloudSessionProvider } from "./session";
 import type { CloudRoomTransport, CloudRoomTransportConnectOptions, RealtimeRoomConnection } from "./transport";
 
 export type WebSocketCloudSessionProviderOptions = {
   endpointUrl: string;
+  client?: CloudBackendHttpClient;
   service?: CloudBackendService;
   serverMount?: CloudRealtimeServerMount;
   auth?: CloudAccountAuth;
@@ -93,21 +100,18 @@ export function createWebSocketCloudSessionProvider(options: WebSocketCloudSessi
     id: "websocket",
     label: "WebSocket room",
     createRoom: (roomOptions) => {
-      const service = requireService(options, "createRoom");
-      const ticket = expectTicket(
+      const client = requireClient(options, "createRoom");
+      const ticket = requestTicket(
         "createRoom",
-        service.handle({
-          method: "POST",
-          path: "/v1/rooms",
-          auth: options.auth,
-          body: {
+        () =>
+          client.createRoom({
+            auth: options.auth,
             mode: options.mode ?? (options.auth ? "account" : "anonymous"),
             source: options.source ?? "local-file",
             title: roomOptions.title ?? "Cloud room",
             seedMarkdown: roomOptions.seedMarkdown ?? "",
             password: options.password,
-          },
-        }),
+          }),
       );
       return handleFromTicket({
         providerId: "websocket",
@@ -119,18 +123,16 @@ export function createWebSocketCloudSessionProvider(options: WebSocketCloudSessi
       });
     },
     joinRoom: (roomOptions) => {
-      const service = requireService(options, "joinRoom");
-      const ticket = expectTicket(
+      const client = requireClient(options, "joinRoom");
+      const ticket = requestTicket(
         "joinRoom",
-        service.handle({
-          method: "POST",
-          path: `/v1/rooms/${encodeURIComponent(roomOptions.roomId)}/join`,
-          auth: options.auth,
-          body: {
+        () =>
+          client.joinRoom({
+            roomId: roomOptions.roomId,
+            auth: options.auth,
             access: accessForJoin(options, roomOptions.roomId),
             password: options.password,
-          },
-        }),
+          }),
       );
       return handleFromTicket({
         providerId: "websocket",
@@ -295,29 +297,51 @@ function missingBoundaryTransport(endpointUrl: string): WebSocketCloudRoomTransp
   };
 }
 
-function requireService(
+function requireClient(
   options: WebSocketCloudSessionProviderOptions,
   phase: "createRoom" | "joinRoom",
 ) {
-  if (!options.service) {
-    throw new WebSocketCloudSessionProviderError(
-      phase,
-      "missing_backend_boundary",
-      `No backend service was supplied for ${options.endpointUrl}. Keep this provider non-wired until the route boundary is available.`,
-    );
+  if (options.client) {
+    return options.client;
   }
-  return options.service;
+  if (options.service) {
+    return createCloudBackendHttpClient({
+      transport: createCloudBackendServiceTransport(options.service),
+      auth: options.auth,
+    });
+  }
+  throw new WebSocketCloudSessionProviderError(
+    phase,
+    "missing_backend_boundary",
+    `No backend client was supplied for ${options.endpointUrl}. Keep this provider non-wired until the route boundary is available.`,
+  );
 }
 
-function expectTicket(phase: "createRoom" | "joinRoom", response: CloudBackendResponse): CloudRoomTicket {
-  if (response.status < 200 || response.status >= 300) {
-    const message =
-      response.body && typeof response.body === "object" && "error" in response.body
-        ? String(response.body.error)
-        : `Route returned HTTP ${response.status}.`;
-    throw new WebSocketCloudSessionProviderError(phase, "route_request_failed", message);
+function requestTicket(
+  phase: "createRoom" | "joinRoom",
+  request: () => CloudRoomTicket,
+): CloudRoomTicket {
+  try {
+    return request();
+  } catch (error) {
+    if (error instanceof WebSocketCloudSessionProviderError) {
+      throw error;
+    }
+    if (error instanceof CloudBackendHttpClientError) {
+      throw new WebSocketCloudSessionProviderError(
+        phase,
+        "route_request_failed",
+        `${error.status} ${error.routeId}: ${error.message}`,
+        { cause: error },
+      );
+    }
+    throw new WebSocketCloudSessionProviderError(
+      phase,
+      "route_request_failed",
+      error instanceof Error ? error.message : "Route request failed.",
+      { cause: error },
+    );
   }
-  return response.body as CloudRoomTicket;
 }
 
 function handleFromTicket({
