@@ -50,9 +50,10 @@ explicit `400` route errors at the service boundary.
 
 `src/cloudCollaboration/backendRouteContracts.ts` now owns the shared
 HTTP-shaped route ids, request/response envelope types, published route
-list, and success response validators. The service uses that route
-contract for its route surface, and the client uses the same response
-validators before provider code receives typed route results.
+list, request body parsers, and success response validators. The
+service uses that route contract for its route surface and body parsing,
+and the client uses the same response validators before provider code
+receives typed route results.
 
 `src/cloudCollaboration/backendHttpClient.ts` adds the first typed
 client boundary over that route shape. It maps backend client methods to

@@ -1,11 +1,15 @@
 import type {
   CloudAiSession,
   CloudAccountAuth,
+  CloudAccessContext,
   CloudMarkdownSnapshot,
+  CloudRoomCreateRequest,
   CloudRoomInvite,
   CloudRoomMemberRemoval,
   CloudRoomMetadata,
   CloudRoomPasswordUpdate,
+  CloudRoomInviteRole,
+  CloudRoomJoinRequest,
   CloudRoomTicket,
 } from "./backendContract";
 
@@ -44,6 +48,34 @@ export type CloudBackendErrorResponse = {
   error: string;
 };
 
+export type CloudBackendCreateRoomBody = Omit<CloudRoomCreateRequest, "auth">;
+export type CloudBackendJoinRoomBody = Partial<Omit<CloudRoomJoinRequest, "roomId">> & {
+  inviteSecret?: string;
+  guestId?: string;
+};
+export type CloudBackendClaimRoomBody = { ownerSecret: string };
+export type CloudBackendCreateInviteBody = {
+  role: CloudRoomInviteRole;
+  ownerSecret?: string;
+  expiresAt?: string;
+  maxUses?: number;
+  audience?: string;
+};
+export type CloudBackendUpdatePasswordBody = {
+  password?: string | null;
+  ownerSecret?: string;
+};
+export type CloudBackendGetSnapshotBody = {
+  access?: CloudAccessContext;
+  password?: string;
+  ownerSecret?: string;
+  guestId?: string;
+};
+export type CloudBackendAiSessionBody = {
+  agentId: string;
+  displayName: string;
+};
+
 export type CloudBackendRouteSuccessBodies = {
   "create-room": CloudRoomTicket;
   "join-room": CloudRoomTicket;
@@ -63,6 +95,8 @@ export type CloudBackendRouteResponseValidators = {
 };
 
 export class CloudBackendRouteResponseValidationError extends Error {}
+
+export class CloudBackendRouteRequestValidationError extends Error {}
 
 export const cloudBackendRoutes: CloudBackendRoute[] = [
   { id: "create-room", method: "POST", pattern: "/v1/rooms" },
@@ -87,6 +121,197 @@ export const cloudBackendRouteResponseValidators: CloudBackendRouteResponseValid
   "create-ai-session": validateAiSession,
   "get-room": validateRoomMetadata,
 };
+
+export function parseCreateRoomBody(body: unknown): CloudBackendCreateRoomBody {
+  const input = expectRequestBody(body);
+  return {
+    mode: expectRequestOneOf(input, "mode", ["anonymous", "account"]),
+    source: expectRequestOneOf(input, "source", ["local-file"]),
+    title: expectRequiredRequestString(input, "title"),
+    seedMarkdown: expectRequiredRequestString(input, "seedMarkdown"),
+    password: optionalRequestString(input, "password"),
+  };
+}
+
+export function parseJoinRoomBody(body: unknown): CloudBackendJoinRoomBody {
+  const input = expectRequestBody(body);
+  return {
+    access: optionalRequestAccessContext(input, "access"),
+    inviteSecret: optionalRequestString(input, "inviteSecret"),
+    guestId: optionalRequestString(input, "guestId"),
+    password: optionalRequestString(input, "password"),
+  };
+}
+
+export function parseClaimRoomBody(body: unknown): CloudBackendClaimRoomBody {
+  const input = expectRequestBody(body);
+  return {
+    ownerSecret: expectRequiredRequestString(input, "ownerSecret"),
+  };
+}
+
+export function parseCreateInviteBody(body: unknown): CloudBackendCreateInviteBody {
+  const input = expectRequestBody(body);
+  return {
+    role: expectRequestOneOf(input, "role", ["admin", "editor", "commenter", "viewer"]),
+    ownerSecret: optionalRequestString(input, "ownerSecret"),
+    expiresAt: optionalRequestString(input, "expiresAt"),
+    maxUses: optionalRequestNumber(input, "maxUses"),
+    audience: optionalRequestString(input, "audience"),
+  };
+}
+
+export function parseUpdatePasswordBody(body: unknown): CloudBackendUpdatePasswordBody {
+  const input = expectRequestBody(body);
+  return {
+    password: optionalNullableRequestString(input, "password"),
+    ownerSecret: optionalRequestString(input, "ownerSecret"),
+  };
+}
+
+export function parseGetSnapshotBody(body: unknown): Partial<CloudBackendGetSnapshotBody> {
+  const input = optionalRequestBody(body);
+  return {
+    access: optionalRequestAccessContext(input, "access"),
+    password: optionalRequestString(input, "password"),
+    ownerSecret: optionalRequestString(input, "ownerSecret"),
+    guestId: optionalRequestString(input, "guestId"),
+  };
+}
+
+export function parseAiSessionBody(body: unknown): CloudBackendAiSessionBody {
+  const input = expectRequestBody(body);
+  return {
+    agentId: expectRequiredRequestString(input, "agentId"),
+    displayName: expectRequiredRequestString(input, "displayName"),
+  };
+}
+
+function expectRequestBody(body: unknown): Record<string, unknown> {
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new CloudBackendRouteRequestValidationError("Request body must be an object.");
+  }
+  return body as Record<string, unknown>;
+}
+
+function optionalRequestBody(body: unknown): Record<string, unknown> {
+  if (body === undefined) {
+    return {};
+  }
+  if (!body || typeof body !== "object" || Array.isArray(body)) {
+    throw new CloudBackendRouteRequestValidationError("Request body must be an object.");
+  }
+  return body as Record<string, unknown>;
+}
+
+function expectRequiredRequestString(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (typeof value !== "string" || value.length === 0) {
+    throw new CloudBackendRouteRequestValidationError(`Request field "${key}" must be a non-empty string.`);
+  }
+  return value;
+}
+
+function optionalRequestString(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string") {
+    throw new CloudBackendRouteRequestValidationError(`Request field "${key}" must be a string.`);
+  }
+  return value;
+}
+
+function optionalNullableRequestString(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (value === undefined || value === null) {
+    return value;
+  }
+  if (typeof value !== "string") {
+    throw new CloudBackendRouteRequestValidationError(`Request field "${key}" must be a string or null.`);
+  }
+  return value;
+}
+
+function optionalRequestNumber(input: Record<string, unknown>, key: string) {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new CloudBackendRouteRequestValidationError(`Request field "${key}" must be a finite number.`);
+  }
+  return value;
+}
+
+function expectRequestOneOf<const TValues extends readonly string[]>(
+  input: Record<string, unknown>,
+  key: string,
+  values: TValues,
+): TValues[number] {
+  const value = input[key];
+  if (typeof value === "string" && values.includes(value)) {
+    return value;
+  }
+  throw new CloudBackendRouteRequestValidationError(`Request field "${key}" must be one of: ${values.join(", ")}.`);
+}
+
+function optionalRequestAccessContext(input: Record<string, unknown>, key: string): CloudAccessContext | undefined {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new CloudBackendRouteRequestValidationError(`Request field "${key}" must be an access object.`);
+  }
+  const access = value as Record<string, unknown>;
+  const kind = access.kind;
+  if (kind === "account") {
+    return {
+      kind,
+      userId: expectRequiredRequestString(access, "userId"),
+      tenantId: expectRequiredRequestString(access, "tenantId"),
+    };
+  }
+  if (kind === "anonymous") {
+    return {
+      kind,
+      guestId: expectRequiredRequestString(access, "guestId"),
+      ownerSecret: optionalRequestString(access, "ownerSecret"),
+    };
+  }
+  if (kind === "invite") {
+    return {
+      kind,
+      inviteSecret: expectRequiredRequestString(access, "inviteSecret"),
+      auth: optionalRequestAccountAuth(access, "auth"),
+      guestId: optionalRequestString(access, "guestId"),
+    };
+  }
+  throw new CloudBackendRouteRequestValidationError(
+    `Request field "${key}.kind" must be one of: account, anonymous, invite.`,
+  );
+}
+
+function optionalRequestAccountAuth(input: Record<string, unknown>, key: string): CloudAccountAuth | undefined {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new CloudBackendRouteRequestValidationError(`Request field "${key}" must be an account auth object.`);
+  }
+  const auth = value as Record<string, unknown>;
+  if (auth.kind !== "account") {
+    throw new CloudBackendRouteRequestValidationError(`Request field "${key}.kind" must be account.`);
+  }
+  return {
+    kind: "account",
+    userId: expectRequiredRequestString(auth, "userId"),
+    tenantId: expectRequiredRequestString(auth, "tenantId"),
+  };
+}
 
 function validateRoomTicket(body: unknown): CloudRoomTicket {
   const input = expectObject(body, "Room ticket response body");

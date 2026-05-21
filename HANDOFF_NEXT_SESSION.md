@@ -177,22 +177,22 @@ transport envelopes fail as explicit `invalid_response`
 types. The focused HTTP-client tests cover those failure modes while
 keeping the existing WebSocket provider route-ticket path intact.
 
-The shared route response-contract slice has landed.
+The shared route contract slice has landed.
 `backendRouteContracts.ts` now owns the HTTP-shaped route ids,
-request/response envelope types, published route list, and route success
-response validators. `backendService.ts` reuses that route surface, and
-`backendHttpClient.ts` consumes the shared validators instead of keeping
-its own copy. This keeps the backend/client contract backend-owned
-without introducing a real server, fetch transport, UI wiring, auth UI,
-provider UI, or local file flow changes.
+request/response envelope types, published route list, request body
+parsers, and route success response validators. `backendService.ts`
+reuses that route surface and delegates route body parsing to the shared
+contract module; `backendHttpClient.ts` consumes the shared validators
+instead of keeping its own copy. This keeps the backend/client contract
+backend-owned without introducing a real server, fetch transport, UI
+wiring, auth UI, provider UI, or local file flow changes.
 
 Next backend slice: continue the backend/client contract toward a real
 runtime boundary only if explicitly requested. Reasonable next steps
 would be a fetch-backed transport contract for
-`CloudBackendHttpClient`, or moving request body parsers into the same
-route contract module if real fetch work exposes more duplication,
-still without a real WebSocket server, DB driver, migration runner,
-auth UI, editor UI, provider UI, or local file flow wiring.
+`CloudBackendHttpClient`, still without a real WebSocket server, DB
+driver, migration runner, auth UI, editor UI, provider UI, or local file
+flow wiring.
 
 ## What landed in the auto-update + OSS session
 

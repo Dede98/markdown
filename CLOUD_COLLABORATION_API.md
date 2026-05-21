@@ -169,11 +169,11 @@ malformed access objects return explicit `400` route errors before the
 request reaches the in-memory backend contract.
 
 Shared route ids, HTTP-shaped request/response envelope types, the
-published route list, and route success response validators live in
-`src/cloudCollaboration/backendRouteContracts.ts`. `backendService.ts`
-uses the route contract types and route list, while
-`backendHttpClient.ts` uses the same response validators before
-returning typed values to providers.
+published route list, request body parsers, and route success response
+validators live in `src/cloudCollaboration/backendRouteContracts.ts`.
+`backendService.ts` uses the route contract types, route list, and body
+parsers, while `backendHttpClient.ts` uses the same response validators
+before returning typed values to providers.
 
 ## Backend HTTP Client Boundary
 
