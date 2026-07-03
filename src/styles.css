@@ -1656,6 +1656,28 @@ button {
   vertical-align: 0.12em;
 }
 
+.cm-md-bullet-depth-1 {
+  width: 0.34em;
+  height: 0.34em;
+  border: 1.5px solid var(--bullet-marker);
+  background: transparent;
+}
+
+.cm-md-bullet-depth-2 {
+  width: 0.34em;
+  height: 0.34em;
+  border-radius: 1px;
+}
+
+.cm-md-ordered-widget {
+  display: inline-block;
+  min-width: 1.35em;
+  margin-right: 0.45em;
+  color: var(--bullet-marker);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
 .cm-md-task-widget {
   display: inline-block;
   width: 0.82em;

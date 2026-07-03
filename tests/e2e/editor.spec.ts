@@ -916,7 +916,7 @@ test.describe("editor core", () => {
     await expectEditorSourceNot(page, "- item");
   });
 
-  test("tab indents an unordered list item by two spaces", async ({ page }, testInfo) => {
+  test("tab indents an unordered list item by one four-space level", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");
     await setEditorText(page, "- top\n- nested");
@@ -924,7 +924,107 @@ test.describe("editor core", () => {
     await setEditorSelection(page, "- top\n- nested".length);
     await page.keyboard.press("Tab");
 
-    await expectEditorSource(page, "- top\n  - nested");
+    await expectEditorSource(page, "- top\n    - nested");
+    await expect(page.locator(".cm-md-bullet-depth-1")).toHaveCount(1);
+  });
+
+  test("space at the start of a list item nests it under the previous item", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "- top\n- nested");
+
+    await setEditorSelection(page, "- top\n".length);
+    await page.keyboard.press("Space");
+
+    await expectEditorSource(page, "- top\n    - nested");
+  });
+
+  test("tab restarts numbering within a nested numbered list", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "1. top\n2. nested");
+
+    await setEditorSelection(page, "1. top\n2. nested".length);
+    await page.keyboard.press("Tab");
+
+    await expectEditorSource(page, "1. top\n    1. nested");
+    await expect(page.locator(".cm-md-ordered-widget")).toHaveText(["1.", "a."]);
+  });
+
+  test("nesting an ordered item renumbers the following parent siblings", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "1. top\n2. nested\n3. next");
+
+    await setEditorSelection(page, "1. top\n2. nested".length);
+    await page.keyboard.press("Tab");
+
+    await expectEditorSource(page, "1. top\n    1. nested\n2. next");
+  });
+
+  test("shift+tab rejoins the parent numbered sequence", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "1. top\n    1. nested\n2. next");
+
+    await setEditorSelection(page, "1. top\n    1. nested".length);
+
+    await page.keyboard.press("Shift+Tab");
+
+    await expectEditorSource(page, "1. top\n2. nested\n3. next");
+    await expect(page.locator(".cm-md-ordered-widget")).toHaveText(["1.", "2.", "3."]);
+  });
+
+  test("successive numbered items use their nested sequence", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    await setEditorText(page, "1. top\n2. first child\n3. second child");
+
+    await setEditorSelection(page, "1. top\n2. first child".length);
+    await page.keyboard.press("Tab");
+    await setEditorSelection(page, "1. top\n    1. first child\n3. second child".length);
+    await page.keyboard.press("Tab");
+
+    await expectEditorSource(page, "1. top\n    1. first child\n    2. second child");
+  });
+
+  test("rendered nested lists use distinct numbering and bullet styles", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(
+      page,
+      "1. root\n    1. first child\n    2. second child\n        1. deep child\n\n- root\n    - child\n        - deep child\n\ntail",
+    );
+
+    await expect(page.locator(".cm-md-ordered-widget")).toHaveText(["1.", "a.", "b.", "i."]);
+    await expect(page.locator(".cm-md-bullet-depth-0")).toHaveCount(1);
+    await expect(page.locator(".cm-md-bullet-depth-1")).toHaveCount(1);
+    await expect(page.locator(".cm-md-bullet-depth-2")).toHaveCount(1);
+
+    const orderedPositions = await page.locator(".cm-md-ordered-widget").evaluateAll((markers) =>
+      markers.map((marker) => marker.getBoundingClientRect().left),
+    );
+    expect(orderedPositions[1]).toBeGreaterThan(orderedPositions[0] + 12);
+    expect(orderedPositions[3]).toBeGreaterThan(orderedPositions[1] + 12);
+
+    const bulletPositions = await page.locator(".cm-md-bullet-widget").evaluateAll((markers) =>
+      markers.map((marker) => marker.getBoundingClientRect().left),
+    );
+    expect(bulletPositions[1]).toBeGreaterThan(bulletPositions[0] + 12);
+    expect(bulletPositions[2]).toBeGreaterThan(bulletPositions[1] + 12);
+  });
+
+  test("tab and shift+tab move a list item with its nested children", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+    const source = "- first\n- second\n  - child";
+    await setEditorText(page, source);
+
+    await setEditorSelection(page, "- first\n- second".length);
+    await page.keyboard.press("Tab");
+    await expectEditorSource(page, "- first\n    - second\n      - child");
+
+    await page.keyboard.press("Shift+Tab");
+    await expectEditorSource(page, source);
   });
 
   test("shift+tab outdents a nested list item", async ({ page }, testInfo) => {

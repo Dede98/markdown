@@ -359,7 +359,7 @@ function buildDecorations(view: EditorView): DecorationSet {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list cm-md-task-list" }));
         decorateSyntax(
           decorations,
-          line.from,
+          blockKind.markerFrom,
           blockKind.markerEnd,
           lineActive,
           "cm-md-syntax cm-md-task-marker",
@@ -367,10 +367,24 @@ function buildDecorations(view: EditorView): DecorationSet {
         );
       } else if (blockKind && blockKind.kind === "bullet") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list" }));
-        decorateSyntax(decorations, line.from, blockKind.markerEnd, lineActive, "cm-md-syntax cm-md-list-marker", new BulletMarkerWidget());
+        decorateSyntax(
+          decorations,
+          blockKind.markerFrom,
+          blockKind.markerEnd,
+          false,
+          "cm-md-syntax cm-md-list-marker",
+          new BulletMarkerWidget(blockKind.depth),
+        );
       } else if (blockKind && blockKind.kind === "ordered") {
         addDecoration(decorations, line.from, line.from, Decoration.line({ class: "cm-md-list" }));
-        addDecoration(decorations, line.from, blockKind.markerEnd, Decoration.mark({ class: "cm-md-syntax cm-md-list-marker" }));
+        decorateSyntax(
+          decorations,
+          blockKind.markerFrom,
+          blockKind.markerEnd,
+          false,
+          "cm-md-syntax cm-md-list-marker",
+          new OrderedMarkerWidget(formatOrderedMarker(blockKind.number, blockKind.depth, blockKind.separator), blockKind.depth),
+        );
       }
 
       // Inline markdown decorations (bold, italic, inline code, strikethrough,
@@ -489,9 +503,9 @@ function isLineActive(view: EditorView, from: number, to: number) {
 // the existing `decorateSyntax` reveal-on-cursor pattern unchanged.
 type BlockLineKind =
   | { kind: "heading"; level: number; markerEnd: number }
-  | { kind: "task"; markerEnd: number; checked: boolean }
-  | { kind: "bullet"; markerEnd: number }
-  | { kind: "ordered"; markerEnd: number }
+  | { kind: "task"; markerFrom: number; markerEnd: number; checked: boolean }
+  | { kind: "bullet"; markerFrom: number; markerEnd: number; depth: number }
+  | { kind: "ordered"; markerFrom: number; markerEnd: number; depth: number; number: number; separator: "." | ")" }
   | { kind: "quote"; markerEnd: number }
   | { kind: "rule" }
   | null;
@@ -507,8 +521,12 @@ function classifyBlockLine(state: EditorState, line: Line): BlockLineKind {
 
   let headingLevel = 0;
   let headerMarkEnd = -1;
+  let listMarkFrom = -1;
   let listMarkEnd = -1;
   let isOrdered = false;
+  let listDepth = 0;
+  let orderedNumber = 1;
+  let orderedSeparator: "." | ")" = ".";
   let taskMarkerFrom = -1;
   let taskMarkerEnd = -1;
   let quoteMarkEnd = -1;
@@ -532,6 +550,12 @@ function classifyBlockLine(state: EditorState, line: Line): BlockLineKind {
       } else if (name === "HeaderMark" && headerMarkEnd < 0) {
         headerMarkEnd = node.to;
       } else if (name === "ListMark" && listMarkEnd < 0) {
+        // Lezer's ListMark starts at the beginning of the list construct,
+        // including indentation. Replacing from `node.from` would therefore
+        // consume the spaces that visually place nested items. Keep those
+        // source spaces in the line and replace only the actual marker.
+        const leadingIndentLength = line.text.match(/^[\t ]*/)?.[0].length ?? 0;
+        listMarkFrom = line.from + leadingIndentLength;
         listMarkEnd = node.to;
         // Walk up: ListMark.parent is ListItem, ListItem.parent is the
         // enclosing BulletList or OrderedList. The list type tells us
@@ -539,6 +563,12 @@ function classifyBlockLine(state: EditorState, line: Line): BlockLineKind {
         const listItem = node.node.parent;
         const list = listItem?.parent;
         isOrdered = list?.name === "OrderedList";
+        listDepth = getListDepth(list ?? null);
+        if (isOrdered && list && listItem) {
+          orderedNumber = getOrderedListItemNumber(state, list, listItem);
+          const marker = state.sliceDoc(node.from, node.to);
+          orderedSeparator = marker.endsWith(")") ? ")" : ".";
+        }
       } else if (name === "TaskMarker" && taskMarkerEnd < 0) {
         taskMarkerFrom = node.from;
         taskMarkerEnd = node.to;
@@ -556,13 +586,18 @@ function classifyBlockLine(state: EditorState, line: Line): BlockLineKind {
   if (taskMarkerEnd >= 0) {
     const text = state.sliceDoc(taskMarkerFrom, taskMarkerEnd);
     const checked = /x/i.test(text);
-    return { kind: "task", markerEnd: Math.min(taskMarkerEnd + 1, line.to), checked };
+    return {
+      kind: "task",
+      markerFrom: listMarkFrom >= 0 ? listMarkFrom : taskMarkerFrom,
+      markerEnd: Math.min(taskMarkerEnd + 1, line.to),
+      checked,
+    };
   }
   if (listMarkEnd >= 0) {
-    return {
-      kind: isOrdered ? "ordered" : "bullet",
-      markerEnd: Math.min(listMarkEnd + 1, line.to),
-    };
+    const markerEnd = Math.min(listMarkEnd + 1, line.to);
+    return isOrdered
+      ? { kind: "ordered", markerFrom: listMarkFrom, markerEnd, depth: listDepth, number: orderedNumber, separator: orderedSeparator }
+      : { kind: "bullet", markerFrom: listMarkFrom, markerEnd, depth: listDepth };
   }
   if (headingLevel > 0 && headerMarkEnd >= 0) {
     return { kind: "heading", level: headingLevel, markerEnd: Math.min(headerMarkEnd + 1, line.to) };
@@ -574,6 +609,45 @@ function classifyBlockLine(state: EditorState, line: Line): BlockLineKind {
     return { kind: "rule" };
   }
   return null;
+}
+
+function getListDepth(list: SyntaxNode | null): number {
+  let depth = -1;
+
+  for (let node: SyntaxNode | null = list; node; node = node.parent) {
+    if (node.name === "BulletList" || node.name === "OrderedList") {
+      depth += 1;
+    }
+  }
+
+  return Math.max(0, depth);
+}
+
+function getOrderedListItemNumber(state: EditorState, list: SyntaxNode, activeItem: SyntaxNode): number {
+  let start = 1;
+  let offset = 0;
+  let sawFirstItem = false;
+
+  for (let child = list.firstChild; child; child = child.nextSibling) {
+    if (child.name !== "ListItem") {
+      continue;
+    }
+
+    if (!sawFirstItem) {
+      const marker = child.getChild("ListMark");
+      const parsed = marker ? Number.parseInt(state.sliceDoc(marker.from, marker.to), 10) : Number.NaN;
+      start = Number.isFinite(parsed) ? parsed : 1;
+      sawFirstItem = true;
+    }
+
+    if (child.from === activeItem.from) {
+      return start + offset;
+    }
+
+    offset += 1;
+  }
+
+  return start;
 }
 
 function decorateSyntax(decorations: Range<Decoration>[], from: number, to: number, activeSyntax: boolean, className = "cm-md-syntax", widget?: WidgetType) {
@@ -1037,10 +1111,76 @@ function getMermaidErrorMessage(error: unknown) {
   return "Mermaid error: unable to render diagram";
 }
 
+function formatOrderedMarker(number: number, depth: number, separator: "." | ")") {
+  const style = depth % 3;
+  const value = style === 1 ? toAlphabetic(number) : style === 2 ? toRoman(number).toLowerCase() : String(number);
+  return `${value}${separator}`;
+}
+
+function toAlphabetic(number: number) {
+  let value = Math.max(1, number);
+  let result = "";
+
+  while (value > 0) {
+    value -= 1;
+    result = String.fromCharCode(97 + (value % 26)) + result;
+    value = Math.floor(value / 26);
+  }
+
+  return result;
+}
+
+function toRoman(number: number) {
+  const numerals: Array<[number, string]> = [
+    [1000, "M"], [900, "CM"], [500, "D"], [400, "CD"], [100, "C"], [90, "XC"],
+    [50, "L"], [40, "XL"], [10, "X"], [9, "IX"], [5, "V"], [4, "IV"], [1, "I"],
+  ];
+  let value = Math.max(1, Math.min(3999, number));
+  let result = "";
+
+  for (const [unit, numeral] of numerals) {
+    while (value >= unit) {
+      result += numeral;
+      value -= unit;
+    }
+  }
+
+  return result;
+}
+
 class BulletMarkerWidget extends WidgetType {
+  constructor(private readonly depth: number) {
+    super();
+  }
+
+  eq(other: BulletMarkerWidget) {
+    return this.depth === other.depth;
+  }
+
   toDOM() {
     const marker = document.createElement("span");
-    marker.className = "cm-md-bullet-widget";
+    marker.className = `cm-md-bullet-widget cm-md-bullet-depth-${this.depth % 3}`;
+    marker.setAttribute("aria-hidden", "true");
+    return marker;
+  }
+}
+
+class OrderedMarkerWidget extends WidgetType {
+  constructor(
+    private readonly label: string,
+    private readonly depth: number,
+  ) {
+    super();
+  }
+
+  eq(other: OrderedMarkerWidget) {
+    return this.label === other.label && this.depth === other.depth;
+  }
+
+  toDOM() {
+    const marker = document.createElement("span");
+    marker.className = `cm-md-ordered-widget cm-md-ordered-depth-${this.depth % 3}`;
+    marker.textContent = this.label;
     return marker;
   }
 }

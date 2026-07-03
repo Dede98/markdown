@@ -9,7 +9,7 @@ import type { ContentWidth } from "./contentWidth";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
 import type { EditorContribution } from "./editorContributions";
 import { autoPairExtension, linkPasteExtension } from "./editorInputs";
-import { handleBackspace, handleEnter, handleListShiftTab, handleListTab } from "./listEditing";
+import { handleBackspace, handleEnter, handleListShiftTab, handleListSpace, handleListTab } from "./listEditing";
 import { insertLink, wrapSelection } from "./markdownCommands";
 import { htmlCommentBlockState, markdownPreview, mermaidBlockState, tableBlockState } from "./markdownPreview";
 
@@ -88,6 +88,7 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
         keymap.of([
           { key: "Enter", run: handleEnter },
           { key: "Backspace", run: handleBackspace },
+          { key: "Space", run: handleListSpace },
           { key: "Tab", run: handleListTab },
           { key: "Shift-Tab", run: handleListShiftTab },
           { key: "Tab", run: insertTab, preventDefault: true },
