@@ -6,6 +6,8 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.24] - 2026-07-03
+
 ### Added
 
 - Cloud collaboration architecture spike with internal
@@ -37,6 +39,14 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
   extension work over explicit session/contribution seams, keeping local
   `.md` editing account-free while avoiding a premature public plugin
   API.
+
+### Fixed
+
+- Tab and Space now create visibly indented Markdown sublists, while
+  Shift+Tab outdents the current item and its nested children.
+- Nested ordered lists restart and renumber independently, rendering
+  decimal, alphabetic, and Roman markers by depth; nested bullet lists
+  use distinct marker shapes while preserving Markdown source indentation.
 
 ## [0.0.23] - 2026-04-29
 
@@ -199,6 +209,8 @@ record):
   table / HTML-comment block detection, replacing earlier regex
   heuristics.
 
+[Unreleased]: https://github.com/Dede98/markdown/compare/v0.0.24...HEAD
+[0.0.24]: https://github.com/Dede98/markdown/releases/tag/v0.0.24
 [0.0.23]: https://github.com/Dede98/markdown/releases/tag/v0.0.23
 [0.0.22]: https://github.com/Dede98/markdown/releases/tag/v0.0.22
 [0.0.21]: https://github.com/Dede98/markdown/releases/tag/v0.0.21

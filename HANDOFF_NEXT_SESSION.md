@@ -1,9 +1,10 @@
 # Handoff — Cloud collaboration architecture spike landed
 
-Status: v0.0.23 is the current released app version in the repo. The
-project is MIT-licensed, has the Tauri auto-update loop wired through
-GitHub Releases, and the local editor MVP is feature-complete
-(`DECISIONS.md` § 11).
+Status: v0.0.24 is prepared locally for release; v0.0.23 remains the
+current published GitHub release until the v0.0.24 tag is pushed and its
+draft release is published. The project is MIT-licensed, has the Tauri
+auto-update loop wired through GitHub Releases, and the local editor MVP
+is feature-complete (`DECISIONS.md` § 11).
 
 The local Comments and annotations milestone has shipped. It was the
 first non-built-in feature and drove out the toolbar registry,
@@ -279,10 +280,10 @@ also points at the noreply address; global git config is untouched.
 - Branch: `main` (renamed from `spike/editor-core` during the
   auto-update session; the old `spike/editor-core` and the
   pre-rewrite `main` are gone).
-- HEAD before this handoff refresh: `e2ff8c4` (`Document rendered markdown widgets`).
+- Release feature anchor: `6da789d` (`Improve nested list editing`).
 - Remote: `git@github.com:Dede98/markdown.git`. Repo is **public**
   and MIT-licensed.
-- Latest local tag: `v0.0.23`.
+- Latest local tag after release preparation: `v0.0.24` (not pushed yet).
 - Verify current working tree and checks before relying on this file as a
   release handoff.
 - App identifier: `io.github.dede98.markdown` (current).
