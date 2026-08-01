@@ -6,6 +6,21 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.25] - 2026-08-01
+
+### Added
+
+- Floating heading navigation for documents with at least two headings,
+  with a compact hierarchy rail, searchable outline, active-section
+  tracking, and source-preserving jumps in Normal and Zen modes.
+- Pointer, keyboard-focus, and touch interactions for expanding the
+  heading outline without reflowing the writing column.
+
+### Fixed
+
+- Typing into a newly inserted rendered bullet, numbered, or task list
+  now preserves the Markdown marker and character order.
+
 ## [0.0.24] - 2026-07-03
 
 ### Added
@@ -209,7 +224,8 @@ record):
   table / HTML-comment block detection, replacing earlier regex
   heuristics.
 
-[Unreleased]: https://github.com/Dede98/markdown/compare/v0.0.24...HEAD
+[Unreleased]: https://github.com/Dede98/markdown/compare/v0.0.25...HEAD
+[0.0.25]: https://github.com/Dede98/markdown/releases/tag/v0.0.25
 [0.0.24]: https://github.com/Dede98/markdown/releases/tag/v0.0.24
 [0.0.23]: https://github.com/Dede98/markdown/releases/tag/v0.0.23
 [0.0.22]: https://github.com/Dede98/markdown/releases/tag/v0.0.22
