@@ -836,6 +836,23 @@ test.describe("editor core", () => {
     await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toHaveCSS("position", "sticky");
   });
 
+  test("typing into a newly inserted rendered list keeps the marker and character order", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await page.goto("/");
+
+    for (const list of [
+      { title: "Bulleted list", prefix: "- " },
+      { title: "Numbered list", prefix: "1. " },
+      { title: "Task list", prefix: "- [ ] " },
+    ]) {
+      await setEditorText(page, "");
+      await page.getByTitle(list.title).click();
+      await page.keyboard.type("write");
+
+      await expect.poll(() => getEditorSource(page)).toBe(`${list.prefix}write`);
+    }
+  });
+
   test("enter continues an unordered list with the same marker", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await page.goto("/");

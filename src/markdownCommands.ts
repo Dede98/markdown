@@ -93,32 +93,55 @@ export function toggleLinePrefix(view: EditorView, prefix: string): boolean {
     const endLine = state.doc.lineAt(getSelectionEnd(state, range));
     const edits = [];
     let selectionShift = 0;
+    let cursor = range.head;
 
     for (let lineNo = startLine.number; lineNo <= endLine.number; lineNo += 1) {
       const line = state.doc.line(lineNo);
       const existingPrefix = getCompatibleLinePrefix(line.text, prefix);
 
       if (existingPrefix === prefix) {
-        edits.push({ from: line.from, to: line.from + existingPrefix.length, insert: "" });
+        const edit = { from: line.from, to: line.from + existingPrefix.length, insert: "" };
+        edits.push(edit);
+        cursor = mapPositionAfterEdit(cursor, edit.from, edit.to, edit.insert.length);
         selectionShift -= existingPrefix.length;
       } else {
         const from = existingPrefix ? line.from : line.from + line.text.match(/^\s*/u)![0].length;
         const to = existingPrefix ? line.from + existingPrefix.length : from;
 
-        edits.push({ from, to, insert: prefix });
+        const edit = { from, to, insert: prefix };
+        edits.push(edit);
+        cursor = mapPositionAfterEdit(cursor, edit.from, edit.to, edit.insert.length);
         selectionShift += prefix.length - (existingPrefix?.length ?? 0);
       }
     }
 
     return {
       changes: edits,
-      range: EditorSelection.range(range.from, range.to + selectionShift),
+      // A toolbar click with only a caret must keep a caret. Expanding it over
+      // the inserted prefix makes the browser replace the rendered marker on
+      // the next physical keystroke. Non-empty line selections intentionally
+      // keep their existing whole-line behavior.
+      range: range.empty
+        ? EditorSelection.cursor(cursor)
+        : EditorSelection.range(range.from, range.to + selectionShift),
     };
   });
 
   view.dispatch(changes);
   view.focus();
   return true;
+}
+
+function mapPositionAfterEdit(position: number, from: number, to: number, insertedLength: number) {
+  if (position < from) {
+    return position;
+  }
+
+  if (position <= to) {
+    return from + insertedLength;
+  }
+
+  return position + insertedLength - (to - from);
 }
 
 export function insertBlock(view: EditorView, markdown: string): boolean {

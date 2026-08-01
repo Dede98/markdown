@@ -1651,7 +1651,10 @@ button {
   width: 0.38em;
   height: 0.38em;
   border-radius: 999px;
-  margin: 0 0.64em 0 0.24em;
+  /* The Markdown separator space stays editable after the widget so empty
+   * list items have a real caret anchor. Account for that space here to keep
+   * the rendered marker-to-text rhythm unchanged. */
+  margin: 0 0.39em 0 0.24em;
   background: var(--bullet-marker);
   vertical-align: 0.12em;
 }
@@ -1672,7 +1675,7 @@ button {
 .cm-md-ordered-widget {
   display: inline-block;
   min-width: 1.35em;
-  margin-right: 0.45em;
+  margin-right: 0.2em;
   color: var(--bullet-marker);
   font-variant-numeric: tabular-nums;
   text-align: right;
@@ -1684,7 +1687,7 @@ button {
   height: 0.82em;
   border: 1.5px solid var(--fg-faint);
   border-radius: 3px;
-  margin: 0 0.52em 0 0.08em;
+  margin: 0 0.27em 0 0.08em;
   vertical-align: -0.08em;
 }
 

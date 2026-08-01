@@ -497,10 +497,10 @@ function isLineActive(view: EditorView, from: number, to: number) {
 
 // Classification result for a single source line, derived from the Lezer
 // tree. Each kind drives one branch of `buildDecorations`'s line-level
-// switch. `markerEnd` is the absolute position right after the construct's
-// leading marker (e.g. just past the `## ` of an H2, the `> ` of a
-// blockquote, or the `[ ] ` of a task list item) so the caller can apply
-// the existing `decorateSyntax` reveal-on-cursor pattern unchanged.
+// switch. List `markerEnd` values stop before the separator space. Keeping
+// that source space in the editable DOM gives an empty rendered list item a
+// stable caret position after its widget. Heading and quote marker ends still
+// include their separator so their reveal-on-cursor behavior is unchanged.
 type BlockLineKind =
   | { kind: "heading"; level: number; markerEnd: number }
   | { kind: "task"; markerFrom: number; markerEnd: number; checked: boolean }
@@ -578,23 +578,24 @@ function classifyBlockLine(state: EditorState, line: Line): BlockLineKind {
     },
   });
 
-  // Resolve to the highest-priority kind we found. The `+ 1` on marker
-  // ends includes the single space that follows the marker character(s)
-  // in the source (e.g. `## `, `> `, `- `, `1. `, `[ ] `). Clamp to
-  // `line.to` so we never produce a range that crosses into the next
-  // line if the marker is at end-of-line with no trailing content.
+  // Resolve to the highest-priority kind we found. List replacements must
+  // stop before their separator space. Replacing the entire contents of an
+  // empty list line leaves only a non-editable widget in contenteditable;
+  // Chrome then selects the widget and the first typed character replaces the
+  // Markdown marker. The real separator space provides a stable text node for
+  // the caret while the source remains ordinary Markdown.
   if (taskMarkerEnd >= 0) {
     const text = state.sliceDoc(taskMarkerFrom, taskMarkerEnd);
     const checked = /x/i.test(text);
     return {
       kind: "task",
       markerFrom: listMarkFrom >= 0 ? listMarkFrom : taskMarkerFrom,
-      markerEnd: Math.min(taskMarkerEnd + 1, line.to),
+      markerEnd: taskMarkerEnd,
       checked,
     };
   }
   if (listMarkEnd >= 0) {
-    const markerEnd = Math.min(listMarkEnd + 1, line.to);
+    const markerEnd = listMarkEnd;
     return isOrdered
       ? { kind: "ordered", markerFrom: listMarkFrom, markerEnd, depth: listDepth, number: orderedNumber, separator: orderedSeparator }
       : { kind: "bullet", markerFrom: listMarkFrom, markerEnd, depth: listDepth };
