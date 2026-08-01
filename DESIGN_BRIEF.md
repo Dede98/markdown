@@ -69,6 +69,8 @@ Normal Mode should include:
 - A bottom status bar with local path, Markdown mode, and cursor/status metadata.
 - Entry points for comments and collaboration when available.
 
+Documents with at least two headings show a quiet floating hierarchy rail beside the writing column. Hover, keyboard focus, or touch expands it inward into a searchable outline. It remains available in Zen mode because it is transient navigation rather than persistent editor chrome, and opening it must not resize the writing column.
+
 Toolbar controls should feel like editing tools, not marketing buttons.
 Topbar mode controls should be icon-only with tooltips and accessible labels. Raw/Rendered uses source/eye icons; Zen uses a calm Zen-like icon and a distinct active-state icon/pressed treatment so the state remains visible without text. Settings close uses a simple `X`.
 

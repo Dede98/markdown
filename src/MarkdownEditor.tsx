@@ -1,6 +1,6 @@
 import { defaultKeymap, history, historyKeymap, indentLess, insertTab } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
-import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting } from "@codemirror/language";
+import { bracketMatching, defaultHighlightStyle, indentOnInput, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { GFM } from "@lezer/markdown";
 import { Compartment, EditorState, Prec, type Extension } from "@codemirror/state";
 import { drawSelection, EditorView, highlightActiveLine, keymap } from "@codemirror/view";
@@ -9,6 +9,12 @@ import type { ContentWidth } from "./contentWidth";
 import { getActiveFormat, type ActiveFormat } from "./editorFormat";
 import type { EditorContribution } from "./editorContributions";
 import { autoPairExtension, linkPasteExtension } from "./editorInputs";
+import {
+  activeHeadingAt,
+  collectMarkdownHeadings,
+  headingSignature,
+  type MarkdownHeading,
+} from "./headingNavigation";
 import { handleBackspace, handleEnter, handleListShiftTab, handleListSpace, handleListTab } from "./listEditing";
 import { insertLink, wrapSelection } from "./markdownCommands";
 import { htmlCommentBlockState, markdownPreview, mermaidBlockState, tableBlockState } from "./markdownPreview";
@@ -21,6 +27,8 @@ type MarkdownEditorProps = {
   onChange: (value: string) => void;
   onFormatChange: (format: ActiveFormat) => void;
   onSelectionChange?: (hasSelection: boolean) => void;
+  onHeadingsChange?: (headings: MarkdownHeading[]) => void;
+  onActiveHeadingChange?: (headingId: string | null) => void;
   onReady: (view: EditorView) => void;
   contributions?: EditorContribution[];
 };
@@ -32,12 +40,14 @@ type MarkdownEditorProps = {
 const previewExtensions: Extension[] = [markdownPreview, mermaidBlockState, tableBlockState, htmlCommentBlockState];
 const emptyContributions: EditorContribution[] = [];
 
-export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onFormatChange, onSelectionChange, onReady, contributions = emptyContributions }: MarkdownEditorProps) {
+export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onFormatChange, onSelectionChange, onHeadingsChange, onActiveHeadingChange, onReady, contributions = emptyContributions }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   const onFormatChangeRef = useRef(onFormatChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
+  const onHeadingsChangeRef = useRef(onHeadingsChange);
+  const onActiveHeadingChangeRef = useRef(onActiveHeadingChange);
   const initialValueRef = useRef(value);
   // Lazy-init the Compartment so we don't allocate a fresh one on every
   // render. `useRef(new Compartment())` would call the constructor each render
@@ -51,6 +61,8 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
   onChangeRef.current = onChange;
   onFormatChangeRef.current = onFormatChange;
   onSelectionChangeRef.current = onSelectionChange;
+  onHeadingsChangeRef.current = onHeadingsChange;
+  onActiveHeadingChangeRef.current = onActiveHeadingChange;
   rawRef.current = raw;
 
   useEffect(() => {
@@ -64,6 +76,28 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
 
     const contributionExtensions = contributions.flatMap((contribution) => contribution.extensions ?? []);
     const contributionKeymap = contributions.flatMap((contribution) => contribution.keymap ?? []);
+    let currentHeadings: MarkdownHeading[] = [];
+    let currentHeadingSignature = "";
+    let currentActiveHeading: string | null = null;
+    let activeHeadingSource: "selection" | "viewport" = "viewport";
+
+    const syncHeadings = (state: EditorState) => {
+      const nextHeadings = collectMarkdownHeadings(state);
+      const nextSignature = headingSignature(nextHeadings);
+      if (nextSignature !== currentHeadingSignature) {
+        currentHeadings = nextHeadings;
+        currentHeadingSignature = nextSignature;
+        onHeadingsChangeRef.current?.(nextHeadings);
+      }
+    };
+
+    const syncActiveHeading = (position: number) => {
+      const nextActiveHeading = activeHeadingAt(currentHeadings, position);
+      if (nextActiveHeading !== currentActiveHeading) {
+        currentActiveHeading = nextActiveHeading;
+        onActiveHeadingChangeRef.current?.(nextActiveHeading);
+      }
+    };
 
     const extensions: Extension[] = [
       history(),
@@ -131,6 +165,7 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
         },
       }),
       EditorView.updateListener.of((update) => {
+        const treeChanged = syntaxTree(update.startState) !== syntaxTree(update.state);
         if (update.docChanged) {
           onChangeRef.current(update.state.doc.toString());
         }
@@ -138,6 +173,19 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
           onFormatChangeRef.current(getActiveFormat(update.state));
           onSelectionChangeRef.current?.(!update.state.selection.main.empty);
         }
+        if (update.docChanged || treeChanged) {
+          syncHeadings(update.state);
+        }
+        if (update.selectionSet || update.docChanged) {
+          activeHeadingSource = "selection";
+        } else if (update.viewportMoved) {
+          activeHeadingSource = "viewport";
+        }
+        const activePosition =
+          activeHeadingSource === "selection"
+            ? update.state.selection.main.head
+            : activeViewportPosition(update.view);
+        syncActiveHeading(activePosition);
       }),
       // Theme values are CSS custom properties so the editor switches with
       // the rest of the app on `data-theme` change without rebuilding the view.
@@ -198,6 +246,8 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
     });
 
     viewRef.current = view;
+    syncHeadings(view.state);
+    syncActiveHeading(activeViewportPosition(view));
     onReady(view);
     onFormatChangeRef.current(getActiveFormat(view.state));
     onSelectionChangeRef.current?.(!view.state.selection.main.empty);
@@ -232,6 +282,20 @@ export function MarkdownEditor({ value, zen, raw, contentWidth, onChange, onForm
   if (raw) classes.push("editorMountRaw");
   classes.push(`editorWidth${toClassSuffix(contentWidth)}`);
   return <div className={classes.join(" ")} ref={containerRef} />;
+}
+
+function activeViewportPosition(view: EditorView) {
+  const { clientHeight, scrollHeight, scrollTop } = view.scrollDOM;
+  const distanceFromBottom = scrollHeight - clientHeight - scrollTop;
+
+  // CodeMirror keeps a small vertical buffer around its content. Treat the
+  // last screenful as the end of the document so the final heading can become
+  // active even when there is not enough trailing text to lift it to the top.
+  if (scrollHeight > clientHeight + 32 && distanceFromBottom <= 32) {
+    return view.state.doc.length;
+  }
+
+  return view.viewportLineBlocks[0]?.from ?? view.viewport.from;
 }
 
 function toClassSuffix(value: ContentWidth) {

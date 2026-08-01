@@ -95,6 +95,11 @@ Current QoL direction:
   command temporarily prints the rendered view without changing the
   Markdown source. Custom pagination, templates, headers, and
   publishing controls remain deferred.
+- Floating headings: implemented as a source-derived navigation rail
+  for documents with at least two headings. It stays beside the writing
+  column in Normal and Zen modes, expands to a searchable outline on
+  hover, focus, or tap, and jumps the editor caret without changing the
+  Markdown source.
 
 ## Cloud Collaboration
 
@@ -167,7 +172,7 @@ MCP goals:
 1. Local editor MVP. Implemented.
 2. Comments and annotations model. Implemented for local files.
 3. Local QoL polish before cloud. Implemented for autosave, PDF export,
-   and current native release parity.
+   floating heading navigation, and current native release parity.
 4. Cloud collaboration. Next major milestone, starting with a
    first-party extension/session architecture spike. Spike implemented;
    backend sync/auth/history are still future work.

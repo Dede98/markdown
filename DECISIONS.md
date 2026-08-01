@@ -281,3 +281,29 @@ Implications:
 - Public third-party plugins remain deferred until first-party seams have
   been validated by Comments, Cloud collaboration, and at least one more
   real consumer such as History or MCP.
+
+## 15. Heading Navigation Is Derived, Floating UI
+
+Decision: Documents with at least two Markdown headings expose a
+floating heading rail beside the writing column. It expands inward on
+hover, keyboard focus, or touch into a searchable outline and remains
+available in both Normal and Zen modes.
+
+Reason:
+
+- Long documents need fast section navigation without permanently
+  narrowing or reflowing the writing surface.
+- Heading structure already exists in canonical Markdown and should not
+  be duplicated in document metadata.
+- A compact rail preserves the low-noise writing direction while still
+  exposing hierarchy and the current section.
+
+Implications:
+
+- Heading entries come from CodeMirror's Lezer Markdown syntax tree, so
+  fenced examples and other non-heading text are excluded by the parser.
+- The active item follows caret movement and viewport scrolling.
+- Selecting a heading scrolls and focuses the editor at that source
+  position; it does not mutate the `.md` text.
+- The panel overlays the editor and expands toward the document, so it
+  must not change the writing column's layout.

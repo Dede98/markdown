@@ -1,4 +1,4 @@
-import type { EditorView } from "@codemirror/view";
+import { EditorView } from "@codemirror/view";
 import {
   BookOpenText,
   Download,
@@ -62,6 +62,7 @@ import { getStoredContentWidth, storeContentWidth, type ContentWidth } from "./c
 import { createLocalFileSession } from "./documentSession";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
 import type { EditorContribution } from "./editorContributions";
+import { FloatingHeadings } from "./FloatingHeadings";
 import {
   DEFAULT_NEW_FILE_NAME,
   type FileAdapter,
@@ -70,6 +71,7 @@ import {
 } from "./fileAdapter";
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MarkdownPrintDocument } from "./MarkdownPrintDocument";
+import type { MarkdownHeading } from "./headingNavigation";
 import { isMarkdownPath, openMarkdownFromPath, tauriFileAdapter } from "./tauriFileAdapter";
 import {
   applyTheme,
@@ -206,6 +208,8 @@ export function App() {
   const [markdown, setMarkdown] = useState(initialMarkdown);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
+  const [headings, setHeadings] = useState<MarkdownHeading[]>([]);
+  const [activeHeadingId, setActiveHeadingId] = useState<string | null>(null);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [cloudPanelOpen, setCloudPanelOpen] = useState(false);
   const [activeCloudRoom, setActiveCloudRoom] = useState<CloudRoomHandle | null>(null);
@@ -387,6 +391,19 @@ export function App() {
     view.focus();
   }, []);
 
+  const handleNavigateToHeading = useCallback((heading: MarkdownHeading) => {
+    const view = editorRef.current;
+    if (!view) {
+      return;
+    }
+    const position = Math.min(heading.contentFrom, view.state.doc.length);
+    view.dispatch({
+      selection: { anchor: position },
+      effects: EditorView.scrollIntoView(position, { y: "start", yMargin: 24 }),
+    });
+    view.focus();
+  }, []);
+
   const documentSession = useMemo(() => activeCloudRoom?.session ?? createLocalFileSession(file), [activeCloudRoom, file]);
   const appContributionContext = useMemo<AppContributionContext>(
     () => ({
@@ -505,6 +522,8 @@ export function App() {
     setSaveError(null);
     setSelectedCommentId(null);
     setCommentsOpen(false);
+    setHeadings([]);
+    setActiveHeadingId(null);
     setFileVersion((value) => value + 1);
   }, []);
 
@@ -1431,9 +1450,19 @@ export function App() {
             onChange={setMarkdown}
             onFormatChange={setActiveFormat}
             onSelectionChange={setHasEditorSelection}
+            onHeadingsChange={setHeadings}
+            onActiveHeadingChange={setActiveHeadingId}
             onReady={handleReady}
             contributions={editorContributions}
           />
+          {headings.length >= 2 && (
+            <FloatingHeadings
+              headings={headings}
+              activeHeadingId={activeHeadingId}
+              contentWidth={contentWidth}
+              onNavigate={handleNavigateToHeading}
+            />
+          )}
         </section>
         {commentsOpen && (
           <CommentsSidebar

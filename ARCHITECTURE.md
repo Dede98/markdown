@@ -67,6 +67,7 @@ The current preview pipeline is source-preserving:
 - GFM table blocks render as real table widgets off-source. Cell edits mount a wrapping textarea, then serialize back to the same Markdown table block.
 - Mermaid fenced code blocks with `mermaid` or `mmd` info strings render as diagrams off-source. The diagram frame supports a Move/Edit toggle plus pan and crisp SVG zoom. Clicking the diagram in edit mode focuses the fenced Markdown source.
 - HTML comment metadata used by comments is hidden from the rendered surface.
+- Floating heading navigation reads heading nodes from the same CodeMirror/Lezer syntax tree. Its outline, hierarchy, and active-section state are derived UI only; navigation dispatches a selection and scroll effect but never inserts navigation metadata into the Markdown source.
 
 All of these preview extensions live behind the raw-mode `Compartment`. Raw mode disables them and shows the `.md` source verbatim; it must remain the canonical recovery/editing path for any rendered widget.
 

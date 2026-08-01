@@ -106,6 +106,106 @@ test.describe("editor core", () => {
     await expectEditorSourceNot(page, "## Morning light");
   });
 
+  test("floating headings expand without reflow and filter the live outline", async ({ page }, testInfo) => {
+    await page.goto("/");
+
+    const rail = page.getByRole("button", { name: "Show document headings" });
+    await expect(rail).toBeVisible();
+    const contentBefore = await editorContentBox(page);
+
+    await openFloatingHeadings(page, testInfo);
+
+    const outline = page.getByRole("navigation", { name: "Document headings" });
+    await expect(outline).toBeVisible();
+    await expect(outline.getByRole("button", { name: "On the Quiet Hour" })).toHaveAttribute(
+      "aria-current",
+      "location",
+    );
+    await expect(outline.getByRole("button", { name: "Morning light" })).toBeVisible();
+    expect(await editorContentBox(page)).toEqual(contentBefore);
+
+    await outline.getByRole("searchbox", { name: "Filter headings" }).fill("morning");
+    await expect(outline.getByRole("button", { name: "Morning light" })).toBeVisible();
+    await expect(outline.getByRole("button", { name: "On the Quiet Hour" })).toHaveCount(0);
+  });
+
+  test("floating headings follow Markdown structure and jump without changing source", async ({ page }, testInfo) => {
+    const source = [
+      "# **First**",
+      "",
+      "Second",
+      "---",
+      "",
+      "```md",
+      "# Not a heading",
+      "```",
+      "",
+      "### [Third](https://example.com)",
+      "",
+      "Body",
+    ].join("\n");
+
+    await page.goto("/");
+    await setEditorText(page, source);
+    await openFloatingHeadings(page, testInfo);
+
+    const outline = page.getByRole("navigation", { name: "Document headings" });
+    await expect(outline.getByRole("button", { name: "First" })).toBeVisible();
+    await expect(outline.getByRole("button", { name: "Second" })).toBeVisible();
+    await expect(outline.getByRole("button", { name: "Third" })).toBeVisible();
+    await expect(outline.getByRole("button", { name: "Not a heading" })).toHaveCount(0);
+
+    await outline.getByRole("button", { name: "Third" }).click();
+
+    await expect.poll(() => editorSelectionHead(page)).toBe(source.indexOf("[Third]"));
+    expect(await getEditorSource(page)).toBe(source);
+    await expect(outline).toBeHidden();
+  });
+
+  test("floating headings hide for short outlines and remain available in Zen mode", async ({ page }) => {
+    await page.goto("/");
+    await setEditorText(page, "# Only heading\n\nBody");
+    await expect(page.locator(".floatingHeadings")).toHaveCount(0);
+
+    await setEditorText(page, "# First\n\nBody\n\n## Second\n\nMore body");
+    await expect(page.locator(".floatingHeadings")).toBeVisible();
+
+    await page.getByTitle("Zen Mode").click();
+    await expect(page.locator(".floatingHeadings")).toBeVisible();
+    await expect(page.getByRole("navigation", { name: "Markdown formatting" })).toBeHidden();
+  });
+
+  test("floating headings track the caret and the scrolled section", async ({ page }, testInfo) => {
+    const source = [
+      "# First",
+      "",
+      ...Array.from({ length: 50 }, (_, index) => `Paragraph ${index + 1} keeps the document tall.`),
+      "",
+      "## Last",
+      "",
+      "Tail",
+    ].join("\n\n");
+
+    await page.goto("/");
+    await setEditorText(page, source);
+    await page.locator(".cm-scroller").evaluate((scroller) => {
+      scroller.scrollTop = 0;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+    await setEditorSelection(page, source.indexOf("First"));
+    await openFloatingHeadings(page, testInfo);
+
+    const outline = page.getByRole("navigation", { name: "Document headings" });
+    await expect(outline.getByRole("button", { name: "First" })).toHaveAttribute("aria-current", "location");
+
+    await page.locator(".cm-scroller").evaluate((scroller) => {
+      scroller.scrollTop = scroller.scrollHeight;
+      scroller.dispatchEvent(new Event("scroll"));
+    });
+
+    await expect(outline.getByRole("button", { name: "Last" })).toHaveAttribute("aria-current", "location");
+  });
+
   test("markdown syntax is hidden outside the active editing line", async ({ page }) => {
     await page.goto("/");
     await setEditorText(page, "# Quiet\n\n**bold** and *soft*\n\n- item\n\n[site](https://example.com)\n\n```js\ncallFunction();\n```\n\n---\n\ntail");
@@ -2105,6 +2205,39 @@ async function setEditorSelection(page: Page, anchor: number, head = anchor) {
     },
     { nextAnchor: anchor, nextHead: head },
   );
+}
+
+async function openFloatingHeadings(page: Page, testInfo: TestInfo) {
+  const rail = page.getByRole("button", { name: "Show document headings" });
+  if (testInfo.project.name === "chrome-mobile") {
+    await rail.tap();
+  } else {
+    await rail.hover();
+  }
+  await expect(page.getByRole("navigation", { name: "Document headings" })).toBeVisible();
+}
+
+async function editorContentBox(page: Page) {
+  return page.locator(".editorShell .cm-content").evaluate((element) => {
+    const box = element.getBoundingClientRect();
+    return { left: box.left, width: box.width };
+  });
+}
+
+async function editorSelectionHead(page: Page) {
+  return page.evaluate(() => {
+    const view = (
+      window as unknown as {
+        __markdownEditorView?: { state: { selection: { main: { head: number } } } };
+      }
+    ).__markdownEditorView;
+
+    if (!view) {
+      throw new Error("CodeMirror editor view is not available");
+    }
+
+    return view.state.selection.main.head;
+  });
 }
 
 async function expectEditorSource(page: Page, expectedText: string) {
