@@ -1,7 +1,9 @@
 import type { CloudAccessContext, CloudAccountAuth } from "./backendContract";
-import type {
-  CloudBackendGetSnapshotBody,
-  CloudBackendRequest,
+import {
+  parseJoinRoomBody,
+  type CloudBackendGetSnapshotBody,
+  type CloudBackendJoinRoomBody,
+  type CloudBackendRequest,
 } from "./backendRouteContracts";
 import type { CloudBackendHttpTransport } from "./backendHttpClient";
 
@@ -82,19 +84,26 @@ export function createCloudBackendFetchTransport({
     async request(request) {
       const url = routeUrl(base, request.path);
       const snapshot = snapshotInputs(request);
-      const sensitive = collectSensitiveInputs(request.auth, snapshot);
+      const join = request.method === "POST" && /^\/v1\/rooms\/[^/]+\/join\/?$/u.test(request.path)
+        ? parseJoinRoomBody(request.body)
+        : undefined;
+      const auth = join && !join.inviteSecret
+        ? accountAuthFor(join.access) ?? request.auth
+        : request.auth;
+      const sensitive = collectSensitiveInputs(auth, snapshot);
       const headers = await requestHeaders(request, sensitive, adaptHeaders);
       addSnapshotQuery(url, snapshot);
 
       const init: RequestInit = {
         method: request.method,
         headers,
+        redirect: "error",
       };
       if (request.method !== "GET" && request.body !== undefined) {
         if (!headers.has("content-type")) {
           headers.set("content-type", "application/json");
         }
-        init.body = JSON.stringify(request.body);
+        init.body = JSON.stringify(join ? joinWireBody(join) : request.body);
       }
 
       const nativeRequest = new Request(url, init);
@@ -209,6 +218,19 @@ function accountAuthFor(access: CloudAccessContext | undefined) {
     return access;
   }
   return access?.kind === "invite" ? access.auth : undefined;
+}
+
+function joinWireBody(body: CloudBackendJoinRoomBody) {
+  const access = body.access;
+  // The HTTP boundary resolves these markers from the credential. Account
+  // identifiers select that credential locally and never become wire proof.
+  if (access?.kind === "account") {
+    return { ...body, access: { kind: "account" } };
+  }
+  if (access?.kind === "invite" && access.auth) {
+    return { ...body, access: { ...access, auth: { kind: "account" } } };
+  }
+  return body;
 }
 
 function compactSensitive(input: CloudBackendFetchSensitiveInputs) {
