@@ -16,6 +16,18 @@ import {
 } from "./backendRouteContracts";
 import type { CloudBackendService } from "./backendService";
 
+export {
+  CloudBackendFetchTransportError,
+  cloudBackendFetchHeaderNames,
+  createCloudBackendFetchTransport,
+  type CloudBackendFetch,
+  type CloudBackendFetchHeaderAdapter,
+  type CloudBackendFetchHeaderContext,
+  type CloudBackendFetchSensitiveInputs,
+  type CloudBackendFetchTransportErrorCode,
+  type CloudBackendFetchTransportOptions,
+} from "./backendFetchTransport";
+
 export type CloudBackendHttpTransport = {
   request: (request: CloudBackendRequest) => Promise<CloudBackendResponse>;
 };

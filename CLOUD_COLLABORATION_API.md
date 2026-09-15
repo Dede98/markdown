@@ -216,6 +216,63 @@ Contract:
 This is still backend/client-boundary work only. It does not add a real
 HTTP server, UI wiring, auth UI, or local file flow changes.
 
+### Fetch transport wire contract
+
+Source: `src/cloudCollaboration/backendFetchTransport.ts`
+
+`createCloudBackendFetchTransport({ baseUrl, fetch?, headers? })` adapts
+the asynchronous `CloudBackendHttpClient` request contract to standard
+`Request`, `Response`, and `Headers` behavior. `baseUrl` is explicit;
+its origin and configured path prefix are retained. Client paths must be
+single-leading-slash relative routes. Absolute, scheme-relative,
+backslash, query/fragment-bearing, malformed, and traversing routes are
+rejected. Dynamic path segments have already been encoded by the typed
+client, so the transport preserves their bytes without decoding or
+encoding them again.
+
+The optional `fetch` implementation is native-compatible and exists for
+hosts and tests. When it is omitted, `globalThis.fetch` is looked up on
+the first request, not at module import or transport construction time.
+There is exactly one fetch call per client request and no automatic
+retry, including for mutations.
+
+POST (and any future non-GET request carrying a body) uses JSON and gets
+`Content-Type: application/json` unless the header adapter already set a
+content type. Every response, including a non-2xx response, is parsed as
+JSON and returned as `{ status, body }` for the shared client validators.
+Non-2xx status is not itself a transport error. Invalid JSON, network
+rejection, abort, unavailable fetch, unsafe routes, and missing header
+mappings have distinct sanitized transport errors.
+
+The `headers(context)` adapter is the only network-credential boundary.
+`CloudAccountAuth.userId` and `tenantId` are trusted in-process identity
+assertions used to select a credential; their values must not be sent as
+proof. Account requests require the adapter to return `Authorization`.
+The server authenticates that credential and derives trusted user and
+tenant identity from it. Anonymous requests with no sensitive material
+work without an adapter. The adapter may also return caller-specific
+headers, and transport-owned content headers do not overwrite them.
+
+Snapshot download is the one existing client GET operation with an
+internal request body. The fetch transport sends no GET body and maps it
+deterministically as follows:
+
+- `access.kind` becomes the `access` query parameter.
+- Anonymous/invite `guestId` becomes the `guestId` query parameter.
+- Account credentials use `Authorization` through the header adapter.
+- `password` uses `X-Cloud-Room-Password` through the header adapter.
+- Anonymous `ownerSecret` uses `X-Cloud-Owner-Capability` through the
+  header adapter.
+- Invite `inviteSecret` uses `X-Cloud-Invite-Capability` through the
+  header adapter.
+
+Password, owner/invite capabilities, asserted account fields, and
+credential material never enter the URL or transport diagnostics. If a
+required sensitive header is absent after adaptation, the request fails
+before fetch rather than silently dropping access input. These names are
+a small wire contract for the current backend boundary, not a production
+authentication-service design.
+
 ## Backend Postgres Schema
 
 Source: `src/cloudCollaboration/backendSchema.ts`
