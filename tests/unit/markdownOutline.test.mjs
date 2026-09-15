@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   createMarkdownOutline,
   extractMarkdownHeadings,
+  renderMarkdownToc,
 } from "../../src/markdownOutline.mjs";
 
 test("returns multiple headings in source order with their levels", () => {
@@ -227,4 +228,69 @@ test("preserves extracted heading levels, text, and source order", () => {
       { level: 2, text: "Second", id: "second" },
     ],
   );
+});
+
+test("renders a Markdown table of contents with nested duplicate headings", () => {
+  assert.equal(
+    renderMarkdownToc("# Title\n## Section\n## Section"),
+    "- [Title](#title)\n  - [Section](#section)\n  - [Section](#section-2)",
+  );
+});
+
+test("indents each heading by exactly two spaces per level beyond one", () => {
+  assert.equal(
+    renderMarkdownToc(
+      "# One\n## Two\n### Three\n#### Four\n##### Five\n###### Six",
+    ),
+    [
+      "- [One](#one)",
+      "  - [Two](#two)",
+      "    - [Three](#three)",
+      "      - [Four](#four)",
+      "        - [Five](#five)",
+      "          - [Six](#six)",
+    ].join("\n"),
+  );
+});
+
+test("renders CRLF input identically to equivalent LF input", () => {
+  const expected = "- [Title](#title)\n  - [Section](#section)";
+
+  assert.equal(renderMarkdownToc("# Title\n## Section"), expected);
+  assert.equal(renderMarkdownToc("# Title\r\n## Section"), expected);
+});
+
+test("omits heading-like text inside fenced code blocks", () => {
+  assert.equal(
+    renderMarkdownToc(
+      "# Visible\n```md\n## Hidden\n```\n~~~\n### Also hidden\n~~~\n## Shown",
+    ),
+    "- [Visible](#visible)\n  - [Shown](#shown)",
+  );
+});
+
+test("uses the outline's existing suffixed IDs for duplicate headings", () => {
+  assert.equal(
+    renderMarkdownToc("# Repeat\n## Repeat\n### Repeat"),
+    "- [Repeat](#repeat)\n  - [Repeat](#repeat-2)\n    - [Repeat](#repeat-3)",
+  );
+});
+
+test("escapes backslashes and square brackets in heading display text", () => {
+  assert.equal(
+    renderMarkdownToc(String.raw`# Path\to [open] and ]close[ bracket`),
+    String.raw`- [Path\\to \[open\] and \]close\[ bracket](#path-to-open-and-close-bracket)`,
+  );
+});
+
+test("returns an empty string when no recognized headings exist", () => {
+  assert.equal(renderMarkdownToc(""), "");
+  assert.equal(renderMarkdownToc("Plain text\nTitle\n====="), "");
+});
+
+test("uses newline separators without a trailing newline", () => {
+  const toc = renderMarkdownToc("# First\n## Second");
+
+  assert.equal(toc, "- [First](#first)\n  - [Second](#second)");
+  assert.equal(toc.endsWith("\n"), false);
 });

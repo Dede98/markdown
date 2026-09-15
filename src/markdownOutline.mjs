@@ -75,3 +75,13 @@ export function createMarkdownOutline(source) {
     return { level, text, id };
   });
 }
+
+export function renderMarkdownToc(source) {
+  return createMarkdownOutline(source)
+    .map(({ level, text, id }) => {
+      const escapedText = text.replace(/\\/g, "\\\\").replace(/[\[\]]/g, "\\$&");
+
+      return `${"  ".repeat(level - 1)}- [${escapedText}](#${id})`;
+    })
+    .join("\n");
+}
