@@ -76,9 +76,18 @@ export type CloudBackendAiSessionBody = {
   displayName: string;
 };
 
+/**
+ * JSON-safe room ticket returned by HTTP routes. Runtime materialization and
+ * comment helpers belong to the in-process backend contract, not the wire.
+ */
+export type CloudBackendRoomTicket = Omit<
+  CloudRoomTicket,
+  "materializeMarkdown" | "getCommentMappingSummary"
+>;
+
 export type CloudBackendRouteSuccessBodies = {
-  "create-room": CloudRoomTicket;
-  "join-room": CloudRoomTicket;
+  "create-room": CloudBackendRoomTicket;
+  "join-room": CloudBackendRoomTicket;
   "claim-room": CloudRoomMetadata;
   "create-room-invite": CloudRoomInvite;
   "update-room-password": CloudRoomPasswordUpdate;
@@ -313,7 +322,7 @@ function optionalRequestAccountAuth(input: Record<string, unknown>, key: string)
   };
 }
 
-function validateRoomTicket(body: unknown): CloudRoomTicket {
+function validateRoomTicket(body: unknown): CloudBackendRoomTicket {
   const input = expectObject(body, "Room ticket response body");
   return {
     roomId: expectString(input, "roomId"),
@@ -323,8 +332,6 @@ function validateRoomTicket(body: unknown): CloudRoomTicket {
     ownerSecret: optionalString(input, "ownerSecret"),
     expiresAt: optionalString(input, "expiresAt"),
     persistence: validatePersistenceBoundary(input.persistence),
-    materializeMarkdown: expectFunction(input, "materializeMarkdown"),
-    getCommentMappingSummary: expectFunction(input, "getCommentMappingSummary"),
   };
 }
 
@@ -492,15 +499,4 @@ function expectOneOf<const TValues extends readonly string[]>(
     return value;
   }
   throw new CloudBackendRouteResponseValidationError(`Response field "${key}" must be one of: ${values.join(", ")}.`);
-}
-
-function expectFunction<TFunction extends (...args: never[]) => unknown>(
-  input: Record<string, unknown>,
-  key: string,
-): TFunction {
-  const value = input[key];
-  if (typeof value !== "function") {
-    throw new CloudBackendRouteResponseValidationError(`Response field "${key}" must be a function.`);
-  }
-  return value as TFunction;
 }

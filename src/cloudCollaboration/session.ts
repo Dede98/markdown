@@ -56,11 +56,11 @@ export type CloudRoomJoinOptions = {
   participantId?: string;
 };
 
-export type CloudSessionProvider = {
+export type CloudSessionProvider<TRoomResult = CloudRoomHandle> = {
   id: string;
   label: string;
-  createRoom: (options: CloudRoomCreateOptions) => CloudRoomHandle;
-  joinRoom: (options: CloudRoomJoinOptions) => CloudRoomHandle;
+  createRoom: (options: CloudRoomCreateOptions) => TRoomResult;
+  joinRoom: (options: CloudRoomJoinOptions) => TRoomResult;
 };
 
 export type CommentMappingSummary = {

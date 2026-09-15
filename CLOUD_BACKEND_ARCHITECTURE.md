@@ -57,12 +57,13 @@ receives typed route results.
 
 `src/cloudCollaboration/backendHttpClient.ts` adds the first typed
 client boundary over that route shape. It maps backend client methods to
-encoded HTTP-shaped requests, adapts the in-memory service as a
-transport, preserves explicit route errors, and lets the non-wired
-WebSocket provider consume route-issued room tickets without building a
-real HTTP server or wiring UI/local file flows. The client now also
-validates transport envelopes, route error payloads, and successful
-response bodies before returning typed values to providers, with
+encoded HTTP-shaped requests over a Promise-based transport, adapts the
+in-memory service through that asynchronous boundary, preserves explicit
+route errors, and lets the non-wired WebSocket provider await route-issued
+room tickets without building a real HTTP server or wiring UI/local file
+flows. The client validates transport envelopes, route error payloads,
+and successful response bodies after transport completion and before
+returning typed values to providers, with
 malformed transport data reported as explicit `invalid_response`
 client errors.
 

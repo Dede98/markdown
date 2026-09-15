@@ -188,12 +188,39 @@ instead of keeping its own copy. This keeps the backend/client contract
 backend-owned without introducing a real server, fetch transport, UI
 wiring, auth UI, provider UI, or local file flow changes.
 
-Next backend slice: continue the backend/client contract toward a real
-runtime boundary only if explicitly requested. Reasonable next steps
-would be a fetch-backed transport contract for
-`CloudBackendHttpClient`, still without a real WebSocket server, DB
-driver, migration runner, auth UI, editor UI, provider UI, or local file
-flow wiring.
+The asynchronous client boundary slice has landed. The HTTP transport
+and all `CloudBackendHttpClient` operations now return Promises, while
+the in-process service adapter exposes its existing route harness through
+the same asynchronous contract. `CloudSessionProvider` is generic over
+its room-opening result: the in-memory provider and local editor remain
+synchronous, and the non-wired WebSocket provider awaits a validated
+ticket before invoking its fake connection boundary. Delayed route
+failures and malformed resolved responses open no room.
+
+The fetch-backed native HTTP integration slice has landed. Create/join
+routes now return a JSON-safe, data-only room ticket; in-process
+materialization and comment-summary functions stay on the backend/runtime
+connection instead of pretending to cross JSON. The non-wired WebSocket
+provider derives both operations from its realtime connection.
+
+`tests/e2e/cloudBackendFetchHttp.spec.ts` runs the typed client through
+the production fetch transport, native Node `fetch`, and a real
+`node:http` fixture bound only to `127.0.0.1` on an OS-assigned port. The
+fixture maps wire requests into the existing backend service.
+Authentication is explicitly test-owned: the credential header resolves
+fixture credentials, and client-provided user/tenant assertions are not
+trusted as proof. Protected snapshot inputs use the documented
+query/header mapping, so GET requests have no body and passwords/owner
+capabilities do not enter URLs. Coverage includes room creation and
+joining, metadata, snapshot content, denied access, a delayed success,
+malformed JSON, a real closed-endpoint network failure, and evidence that
+requests reached loopback HTTP.
+
+Remaining limits are unchanged: there is no production auth provider or
+deployed HTTP server, editor/provider UI wiring, real WebSocket transport,
+database driver/migration runner, or cloud impact on account-free local
+Markdown editing. A subsequent backend slice should address one of those
+only when explicitly requested.
 
 ## What landed in the auto-update + OSS session
 

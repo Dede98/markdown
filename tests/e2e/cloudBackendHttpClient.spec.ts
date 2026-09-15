@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type { CloudAccountAuth, CloudRoomTicket } from "../../src/cloudCollaboration/backendContract";
+import type { CloudAccountAuth } from "../../src/cloudCollaboration/backendContract";
+import type { CloudBackendRoomTicket } from "../../src/cloudCollaboration/backendRouteContracts";
 import {
   CloudBackendHttpClientError,
   createCloudBackendHttpClient,
@@ -21,12 +22,12 @@ const ownerAuth: CloudAccountAuth = {
 };
 
 test.describe("cloud backend HTTP client boundary", () => {
-  test("maps typed client calls onto encoded HTTP-shaped routes", () => {
+  test("maps typed client calls onto encoded HTTP-shaped routes", async () => {
     const requests: CloudBackendRequest[] = [];
     const client = createCloudBackendHttpClient({
       auth: ownerAuth,
       transport: {
-        request(request) {
+        async request(request) {
           requests.push(request);
           if (request.method === "DELETE") {
             return {
@@ -43,12 +44,12 @@ test.describe("cloud backend HTTP client boundary", () => {
       },
     });
 
-    client.joinRoom({
+    await client.joinRoom({
       roomId: "room/with space",
       access: { kind: "anonymous", guestId: "guest_1" },
       password: "room-pass",
     });
-    client.removeRoomMember({
+    await client.removeRoomMember({
       roomId: "room/with space",
       userId: "user/with space",
     });
@@ -72,10 +73,10 @@ test.describe("cloud backend HTTP client boundary", () => {
     ]);
   });
 
-  test("surfaces route failures as explicit client errors", () => {
+  test("surfaces route failures as explicit client errors", async () => {
     const client = createCloudBackendHttpClient({
       transport: {
-        request() {
+        async request() {
           return { status: 403, body: { error: "Joining this room requires a valid password." } };
         },
       },
@@ -83,7 +84,7 @@ test.describe("cloud backend HTTP client boundary", () => {
 
     let thrown: unknown;
     try {
-      client.joinRoom({
+      await client.joinRoom({
         roomId: "room_0001",
         access: { kind: "anonymous", guestId: "guest_1" },
       });
@@ -102,10 +103,10 @@ test.describe("cloud backend HTTP client boundary", () => {
     expect((thrown as CloudBackendHttpClientError).message).toMatch(/valid password/i);
   });
 
-  test("rejects malformed successful response bodies before returning them", () => {
+  test("rejects malformed successful response bodies before returning them", async () => {
     const client = createCloudBackendHttpClient({
       transport: {
-        request() {
+        async request() {
           return {
             status: 200,
             body: {
@@ -119,7 +120,7 @@ test.describe("cloud backend HTTP client boundary", () => {
       },
     });
 
-    const thrown = captureError(() =>
+    const thrown = await captureError(() =>
       client.createRoom({
         mode: "anonymous",
         source: "local-file",
@@ -139,16 +140,16 @@ test.describe("cloud backend HTTP client boundary", () => {
     expect((thrown as CloudBackendHttpClientError).message).toMatch(/field "role".*owner.*guest-owner/i);
   });
 
-  test("rejects malformed route error responses from the transport", () => {
+  test("rejects malformed route error responses from the transport", async () => {
     const client = createCloudBackendHttpClient({
       transport: {
-        request() {
+        async request() {
           return { status: 403, body: { message: "Forbidden without route error shape." } };
         },
       },
     });
 
-    const thrown = captureError(() =>
+    const thrown = await captureError(() =>
       client.joinRoom({
         roomId: "room_0001",
         access: { kind: "anonymous", guestId: "guest_1" },
@@ -166,16 +167,16 @@ test.describe("cloud backend HTTP client boundary", () => {
     expect((thrown as CloudBackendHttpClientError).message).toMatch(/field "error".*non-empty string/i);
   });
 
-  test("rejects malformed transport envelopes", () => {
+  test("rejects malformed transport envelopes", async () => {
     const client = createCloudBackendHttpClient({
       transport: {
-        request() {
+        async request() {
           return null as never;
         },
       },
     });
 
-    const thrown = captureError(() => client.getRoomMetadata("room_0001"));
+    const thrown = await captureError(() => client.getRoomMetadata("room_0001"));
 
     expect(thrown).toBeInstanceOf(CloudBackendHttpClientError);
     expect(thrown).toMatchObject({
@@ -188,7 +189,7 @@ test.describe("cloud backend HTTP client boundary", () => {
     expect((thrown as CloudBackendHttpClientError).message).toMatch(/response must be an object/i);
   });
 
-  test("lets the WebSocket provider consume route tickets through the client boundary", () => {
+  test("lets the WebSocket provider consume route tickets through the client boundary", async () => {
     const realtime = createInMemoryCloudRealtimeBackend();
     const mount = createCloudRealtimeServerMount({ hooks: realtime.hooks });
     const service = createInMemoryCloudBackendService(createCloudRouteRealtimeBridge(realtime));
@@ -204,7 +205,7 @@ test.describe("cloud backend HTTP client boundary", () => {
       password: "room-pass",
     });
 
-    const handle = provider.createRoom({
+    const handle = await provider.createRoom({
       title: "HTTP client provider room",
       seedMarkdown: "# HTTP client\n\nRoute ticket.",
       participantId: "user_owner",
@@ -217,7 +218,7 @@ test.describe("cloud backend HTTP client boundary", () => {
       role: "owner",
       canWrite: true,
     });
-    expect(client.getRoomMetadata(handle.roomId)).toMatchObject({
+    expect(await client.getRoomMetadata(handle.roomId)).toMatchObject({
       roomId: handle.roomId,
       title: "HTTP client provider room",
       mode: "account",
@@ -226,7 +227,7 @@ test.describe("cloud backend HTTP client boundary", () => {
   });
 });
 
-function ticketFor(roomId: string): CloudRoomTicket {
+function ticketFor(roomId: string): CloudBackendRoomTicket {
   return {
     roomId,
     websocketUrl: `wss://cloud.local/rooms/${roomId}/realtime`,
@@ -237,14 +238,12 @@ function ticketFor(roomId: string): CloudRoomTicket {
       yjsUpdateArchive: encryptedRef("yjs-update-archive"),
       markdownSnapshot: encryptedRef("markdown-snapshot"),
     },
-    materializeMarkdown: () => "# Mock",
-    getCommentMappingSummary: () => ({ anchors: 0, threads: 0, orphaned: 0 }),
   };
 }
 
-function captureError(action: () => unknown) {
+async function captureError(action: () => unknown | Promise<unknown>) {
   try {
-    action();
+    await action();
   } catch (error) {
     return error;
   }

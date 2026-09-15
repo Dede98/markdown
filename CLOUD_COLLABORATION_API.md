@@ -16,16 +16,21 @@ Product-level entrypoint for room lifecycle.
 Source: `src/cloudCollaboration/session.ts`
 
 ```ts
-type CloudSessionProvider = {
+type CloudSessionProvider<TRoomResult = CloudRoomHandle> = {
   id: string;
   label: string;
-  createRoom(options: CloudRoomCreateOptions): CloudRoomHandle;
-  joinRoom(options: CloudRoomJoinOptions): CloudRoomHandle;
+  createRoom(options: CloudRoomCreateOptions): TRoomResult;
+  joinRoom(options: CloudRoomJoinOptions): TRoomResult;
 };
 ```
 
 Use this from app/UI code. Do not construct `Y.Doc`, `Y.Text`, or
 awareness clients in app components.
+
+The in-memory provider keeps the default synchronous `CloudRoomHandle`
+result used by the local editor. Providers that must acquire backend
+credentials first use `Promise<CloudRoomHandle>`; the non-wired
+WebSocket provider follows that asynchronous contract.
 
 ### `CloudRoomTransport`
 
@@ -188,27 +193,108 @@ non-2xx route errors in one backend-owned module.
 Contract:
 
 - `createCloudBackendHttpClient({ transport, auth? })` exposes typed
-  methods for room creation, join, claim, invite creation, password
+  Promise-returning methods for room creation, join, claim, invite creation, password
   update, member removal, snapshot download, AI-session creation, and
   room metadata.
 - `createCloudBackendServiceTransport(service)` adapts the existing
   in-memory `CloudBackendService` route harness into that client
-  transport contract.
+  asynchronous transport contract by Promise-wrapping service results
+  and failures.
 - `CloudBackendHttpClientError` preserves the route id, method, path,
   status, error code, and route error text for provider-level error
   mapping. It distinguishes non-2xx route failures from malformed
   transport or response bodies.
 - `webSocketCloudSessionProvider.ts` consumes this client boundary for
-  route-issued room tickets before connecting through
+  route-issued room tickets and awaits validation before connecting through
   `CloudRoomTransport` and the realtime server mount.
 - The client validates transport envelopes, non-2xx route error bodies,
   and every successful route response body before returning typed
   values to providers. Malformed success responses and malformed error
   payloads fail as explicit `invalid_response` client errors instead
   of leaking unchecked transport data into the provider layer.
+- Create/join responses use a JSON-safe room ticket containing only
+  wire data. The in-process backend ticket's Markdown materialization
+  and comment-summary functions remain runtime helpers; provider handles
+  derive those operations from their realtime connection.
 
-This is still backend/client-boundary work only. It does not add a real
-HTTP server, UI wiring, auth UI, or local file flow changes.
+This is still backend/client-boundary work only. A loopback fixture
+verifies typed client → native fetch → HTTP → backend service, but there
+is no production HTTP server, UI wiring, auth UI, or local file flow
+change.
+
+### Fetch transport wire contract
+
+Source: `src/cloudCollaboration/backendFetchTransport.ts`
+
+`createCloudBackendFetchTransport({ baseUrl, fetch?, headers? })` adapts
+the asynchronous `CloudBackendHttpClient` request contract to standard
+`Request`, `Response`, and `Headers` behavior. `baseUrl` is explicit;
+its origin and configured path prefix are retained. Client paths must be
+single-leading-slash relative routes. Absolute, scheme-relative,
+backslash, query/fragment-bearing, malformed, and traversing routes are
+rejected. Dynamic path segments have already been encoded by the typed
+client, so the transport preserves their bytes without decoding or
+encoding them again.
+
+The optional `fetch` implementation is native-compatible and exists for
+hosts and tests. When it is omitted, `globalThis.fetch` is looked up on
+the first request, not at module import or transport construction time.
+There is exactly one fetch call per client request and no automatic
+retry, including for mutations. HTTP redirects are rejected, so password and
+capability headers cannot be forwarded to a different endpoint.
+
+POST (and any future non-GET request carrying a body) uses JSON and gets
+`Content-Type: application/json` unless the header adapter already set a
+content type. Every response, including a non-2xx response, is parsed as
+JSON and returned as `{ status, body }` for the shared client validators.
+Non-2xx status is not itself a transport error. Invalid JSON, network
+rejection, abort, unavailable fetch, unsafe routes, and missing header
+mappings have distinct sanitized transport errors.
+
+The `headers(context)` adapter is the only network-credential boundary.
+`CloudAccountAuth.userId` and `tenantId` are trusted in-process identity
+assertions used to select a credential; their values must not be sent as
+proof. Account requests require the adapter to return `Authorization`.
+The server authenticates that credential and derives trusted user and
+tenant identity from it. This applies to both top-level auth and account
+identities nested in join access or invite access. Explicit nested account
+access selects its own credential; a top-level invite retains the service's
+top-level auth precedence. Join payloads carry only `{ kind: "account" }`
+markers in place of account identities, including nested invite auth. The
+HTTP server must replace those markers with its credential-derived identity
+before calling the trusted in-process service. Never pass client account
+assertions directly to that service. Anonymous requests with no sensitive material
+work without an adapter. The adapter may also return caller-specific
+headers, and transport-owned content headers do not overwrite them.
+
+Snapshot download is the one existing client GET operation with an
+internal request body. The fetch transport sends no GET body and maps it
+deterministically as follows:
+
+- `access.kind` becomes the `access` query parameter.
+- Anonymous/invite `guestId` becomes the `guestId` query parameter.
+- Account credentials use `Authorization` through the header adapter.
+- `password` uses `X-Cloud-Room-Password` through the header adapter.
+- Anonymous `ownerSecret` uses `X-Cloud-Owner-Capability` through the
+  header adapter.
+- Invite `inviteSecret` uses `X-Cloud-Invite-Capability` through the
+  header adapter.
+
+Password, owner/invite capabilities, asserted account fields, and
+credential material never enter the URL or transport diagnostics. If a
+required sensitive header is absent after adaptation, the request fails
+before fetch rather than silently dropping access input. These names are
+a small wire contract for the current backend boundary, not a production
+authentication-service design.
+
+`tests/e2e/cloudBackendFetchHttp.spec.ts` exercises this mapping through
+a real `node:http` server bound to an OS-assigned `127.0.0.1` port. Its
+credential directory is fixture-owned: `Authorization` selects test
+auth, and client-supplied account ids are never accepted as proof. The
+fixture covers room creation/joining, metadata, protected snapshots,
+denied access, delayed responses, malformed JSON, and an actual closed-
+endpoint transport failure. It is integration evidence only, not a
+deployable server or production auth design.
 
 ## Backend Postgres Schema
 

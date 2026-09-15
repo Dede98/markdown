@@ -24,6 +24,7 @@ import {
   parseUpdatePasswordBody,
   type CloudBackendErrorResponse,
   type CloudBackendGetSnapshotBody,
+  type CloudBackendRoomTicket,
   type CloudBackendRequest,
   type CloudBackendResponse,
   type CloudBackendRoute,
@@ -94,7 +95,7 @@ function handleRequest(backend: CloudRoomBackendContract, request: CloudBackendR
   }
 }
 
-function createRoom(backend: CloudRoomBackendContract, request: CloudBackendRequest): CloudBackendResponse<CloudRoomTicket> {
+function createRoom(backend: CloudRoomBackendContract, request: CloudBackendRequest): CloudBackendResponse<CloudBackendRoomTicket> {
   const body = parseCreateRoomBody(request.body);
   const ticket = backend.createRoom({
     ...body,
@@ -102,7 +103,7 @@ function createRoom(backend: CloudRoomBackendContract, request: CloudBackendRequ
   });
   return {
     status: 201,
-    body: ticket,
+    body: wireTicket(ticket),
   };
 }
 
@@ -110,7 +111,7 @@ function joinRoom(
   backend: CloudRoomBackendContract,
   roomId: string,
   request: CloudBackendRequest,
-): CloudBackendResponse<CloudRoomTicket> {
+): CloudBackendResponse<CloudBackendRoomTicket> {
   const body = parseJoinRoomBody(request.body);
   const access = body.inviteSecret
     ? {
@@ -125,12 +126,17 @@ function joinRoom(
   }
   return {
     status: 200,
-    body: backend.joinRoom({
+    body: wireTicket(backend.joinRoom({
       roomId,
       access,
       password: body.password,
-    }),
+    })),
   };
+}
+
+function wireTicket(ticket: CloudRoomTicket): CloudBackendRoomTicket {
+  const { materializeMarkdown: _materializeMarkdown, getCommentMappingSummary: _getCommentMappingSummary, ...wire } = ticket;
+  return wire;
 }
 
 function claimRoom(
