@@ -205,7 +205,7 @@ function collectSensitiveInputs(
 ): CloudBackendFetchSensitiveInputs {
   const access = snapshot?.access;
   return compactSensitive({
-    accountAuth: auth ?? accountAuthFor(access),
+    accountAuth: accountAuthFor(access) ?? auth,
     inviteSecret: access?.kind === "invite" ? access.inviteSecret : undefined,
     ownerSecret:
       snapshot?.ownerSecret ?? (access?.kind === "anonymous" ? access.ownerSecret : undefined),

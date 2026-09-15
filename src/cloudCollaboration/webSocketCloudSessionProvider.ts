@@ -6,8 +6,8 @@ import type {
   CloudAccessContext,
   CloudAccountAuth,
   CloudRoomCreateRequest,
-  CloudRoomTicket,
 } from "./backendContract";
+import type { CloudBackendRoomTicket } from "./backendRouteContracts";
 import {
   CloudBackendHttpClientError,
   createCloudBackendHttpClient,
@@ -321,8 +321,8 @@ function requireClient(
 
 async function requestTicket(
   phase: "createRoom" | "joinRoom",
-  request: () => Promise<CloudRoomTicket>,
-): Promise<CloudRoomTicket> {
+  request: () => Promise<CloudBackendRoomTicket>,
+): Promise<CloudBackendRoomTicket> {
   try {
     return await request();
   } catch (error) {
@@ -358,7 +358,7 @@ function handleFromTicket({
   title: string;
   participantId?: string;
   transport: WebSocketCloudRoomTransport;
-  ticket: CloudRoomTicket;
+  ticket: CloudBackendRoomTicket;
   password?: string;
 }): CloudRoomHandle {
   const participants = createProviderParticipants(participantId ?? ticket.role);

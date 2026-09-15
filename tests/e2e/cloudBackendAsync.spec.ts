@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
-import type { CloudAccountAuth, CloudRoomTicket } from "../../src/cloudCollaboration/backendContract";
+import type { CloudAccountAuth } from "../../src/cloudCollaboration/backendContract";
+import type { CloudBackendRoomTicket } from "../../src/cloudCollaboration/backendRouteContracts";
 import {
   CloudBackendHttpClientError,
   createCloudBackendHttpClient,
@@ -285,7 +286,7 @@ function createTicket(service: ReturnType<typeof createHarness>["service"]) {
     },
   });
   expect(response.status).toBe(201);
-  return response.body as CloudRoomTicket;
+  return response.body as CloudBackendRoomTicket;
 }
 
 function deferred<T>() {
@@ -307,7 +308,7 @@ async function captureError(action: () => unknown | Promise<unknown>) {
   throw new Error("Expected action to fail.");
 }
 
-function ticketFor(roomId: string): CloudRoomTicket {
+function ticketFor(roomId: string): CloudBackendRoomTicket {
   return {
     roomId,
     websocketUrl: `wss://cloud.local/rooms/${roomId}/realtime`,
@@ -318,8 +319,6 @@ function ticketFor(roomId: string): CloudRoomTicket {
       yjsUpdateArchive: encryptedRef("yjs-update-archive"),
       markdownSnapshot: encryptedRef("markdown-snapshot"),
     },
-    materializeMarkdown: () => "# Mock",
-    getCommentMappingSummary: () => ({ anchors: 0, threads: 0, orphaned: 0 }),
   };
 }
 

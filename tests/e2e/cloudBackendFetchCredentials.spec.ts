@@ -51,3 +51,19 @@ test("preserves the service's top-level invite precedence", async () => {
   await expect(client.joinRoom({ roomId: "private-room", inviteSecret: "top-level-invite", access: account })).rejects.toMatchObject({ code: "route_failed" });
   expect(selected).toEqual(defaultAccount);
 });
+
+for (const access of contexts) {
+  test(`uses explicit ${access.kind} snapshot credentials instead of default account`, async () => {
+    let selected: CloudAccountAuth | undefined;
+    const client = createCloudBackendHttpClient({ auth: defaultAccount, transport: createCloudBackendFetchTransport({
+      baseUrl: "https://cloud.invalid",
+      headers: ({ sensitive }) => {
+        selected = sensitive.accountAuth;
+        return { authorization: "Bearer selected-credential", "x-cloud-invite-capability": sensitive.inviteSecret ?? "" };
+      },
+      fetch: async () => Response.json({ error: "Denied" }, { status: 403 }),
+    }) });
+    await expect(client.getMarkdownSnapshot({ roomId: "private-room", versionId: "latest", access })).rejects.toMatchObject({ code: "route_failed" });
+    expect(selected).toEqual(account);
+  });
+}
