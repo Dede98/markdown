@@ -52,3 +52,26 @@ export function extractMarkdownHeadings(source) {
 
   return headings;
 }
+
+export function createMarkdownOutline(source) {
+  const usedIds = new Set();
+
+  return extractMarkdownHeadings(source).map(({ level, text }) => {
+    const baseId =
+      text
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "") || "section";
+    let id = baseId;
+    let suffix = 2;
+
+    while (usedIds.has(id)) {
+      id = `${baseId}-${suffix}`;
+      suffix += 1;
+    }
+
+    usedIds.add(id);
+
+    return { level, text, id };
+  });
+}

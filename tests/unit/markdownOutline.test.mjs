@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { extractMarkdownHeadings } from "../../src/markdownOutline.mjs";
+import {
+  createMarkdownOutline,
+  extractMarkdownHeadings,
+} from "../../src/markdownOutline.mjs";
 
 test("returns multiple headings in source order with their levels", () => {
   assert.deepEqual(
@@ -164,5 +167,64 @@ test("an unclosed fence hides the remainder of the document", () => {
   assert.deepEqual(
     extractMarkdownHeadings("# Visible\n~~~md\n## Hidden\n### Also hidden"),
     [{ level: 1, text: "Visible" }],
+  );
+});
+
+test("creates normalized ASCII IDs for headings", () => {
+  assert.deepEqual(
+    createMarkdownOutline(
+      "# Hello, World!\n## Multiple   separators___together\n### --Edge punctuation--",
+    ),
+    [
+      { level: 1, text: "Hello, World!", id: "hello-world" },
+      {
+        level: 2,
+        text: "Multiple   separators___together",
+        id: "multiple-separators-together",
+      },
+      { level: 3, text: "--Edge punctuation--", id: "edge-punctuation" },
+    ],
+  );
+});
+
+test("uses section when heading text has no ASCII letters or digits", () => {
+  assert.deepEqual(createMarkdownOutline("# !!!\n## café 🎉"), [
+    { level: 1, text: "!!!", id: "section" },
+    { level: 2, text: "café 🎉", id: "caf" },
+  ]);
+});
+
+test("adds incrementing suffixes to repeated heading IDs", () => {
+  assert.deepEqual(createMarkdownOutline("# Repeat\n## Repeat\n### Repeat"), [
+    { level: 1, text: "Repeat", id: "repeat" },
+    { level: 2, text: "Repeat", id: "repeat-2" },
+    { level: 3, text: "Repeat", id: "repeat-3" },
+  ]);
+});
+
+test("avoids collisions with naturally suffixed headings", () => {
+  assert.deepEqual(
+    createMarkdownOutline("# Same\n## Same\n# Same-2\n# !!!\n# !!!").map(
+      ({ id }) => id,
+    ),
+    ["same", "same-2", "same-2-2", "section", "section-2"],
+  );
+});
+
+test("keeps generated IDs independent between calls", () => {
+  const source = "# Same\n## Same";
+
+  assert.deepEqual(createMarkdownOutline(source), createMarkdownOutline(source));
+  assert.equal(createMarkdownOutline(source)[0].id, "same");
+});
+
+test("preserves extracted heading levels, text, and source order", () => {
+  assert.deepEqual(
+    createMarkdownOutline("text\n### Third *marked*\n# First\n## Second"),
+    [
+      { level: 3, text: "Third *marked*", id: "third-marked" },
+      { level: 1, text: "First", id: "first" },
+      { level: 2, text: "Second", id: "second" },
+    ],
   );
 });
