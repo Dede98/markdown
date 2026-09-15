@@ -188,6 +188,15 @@ instead of keeping its own copy. This keeps the backend/client contract
 backend-owned without introducing a real server, fetch transport, UI
 wiring, auth UI, provider UI, or local file flow changes.
 
+The asynchronous client boundary slice has landed. The HTTP transport
+and all `CloudBackendHttpClient` operations now return Promises, while
+the in-process service adapter exposes its existing route harness through
+the same asynchronous contract. `CloudSessionProvider` is generic over
+its room-opening result: the in-memory provider and local editor remain
+synchronous, and the non-wired WebSocket provider awaits a validated
+ticket before invoking its fake connection boundary. Delayed route
+failures and malformed resolved responses open no room.
+
 Next backend slice: continue the backend/client contract toward a real
 runtime boundary only if explicitly requested. Reasonable next steps
 would be a fetch-backed transport contract for

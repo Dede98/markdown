@@ -17,7 +17,7 @@ import {
 import type { CloudBackendService } from "./backendService";
 
 export type CloudBackendHttpTransport = {
-  request: (request: CloudBackendRequest) => CloudBackendResponse;
+  request: (request: CloudBackendRequest) => Promise<CloudBackendResponse>;
 };
 
 export type CloudBackendHttpClientOptions = {
@@ -85,30 +85,30 @@ export type CloudBackendHttpClientCreateAiSessionRequest = {
 };
 
 export type CloudBackendHttpClient = {
-  createRoom: (request: CloudBackendHttpClientCreateRoomRequest) => CloudBackendRouteSuccessBodies["create-room"];
-  joinRoom: (request: CloudBackendHttpClientJoinRoomRequest) => CloudBackendRouteSuccessBodies["join-room"];
+  createRoom: (request: CloudBackendHttpClientCreateRoomRequest) => Promise<CloudBackendRouteSuccessBodies["create-room"]>;
+  joinRoom: (request: CloudBackendHttpClientJoinRoomRequest) => Promise<CloudBackendRouteSuccessBodies["join-room"]>;
   claimAnonymousRoom: (
     request: CloudBackendHttpClientClaimRoomRequest,
-  ) => CloudBackendRouteSuccessBodies["claim-room"];
+  ) => Promise<CloudBackendRouteSuccessBodies["claim-room"]>;
   createInvite: (
     request: CloudBackendHttpClientCreateInviteRequest,
-  ) => CloudBackendRouteSuccessBodies["create-room-invite"];
+  ) => Promise<CloudBackendRouteSuccessBodies["create-room-invite"]>;
   updateRoomPassword: (
     request: CloudBackendHttpClientUpdatePasswordRequest,
-  ) => CloudBackendRouteSuccessBodies["update-room-password"];
+  ) => Promise<CloudBackendRouteSuccessBodies["update-room-password"]>;
   removeRoomMember: (
     request: CloudBackendHttpClientRemoveMemberRequest,
-  ) => CloudBackendRouteSuccessBodies["remove-room-member"];
+  ) => Promise<CloudBackendRouteSuccessBodies["remove-room-member"]>;
   getMarkdownSnapshot: (
     request: CloudBackendHttpClientGetSnapshotRequest,
-  ) => CloudBackendRouteSuccessBodies["get-markdown-snapshot"];
+  ) => Promise<CloudBackendRouteSuccessBodies["get-markdown-snapshot"]>;
   requestAiSession: (
     request: CloudBackendHttpClientCreateAiSessionRequest,
-  ) => CloudBackendRouteSuccessBodies["create-ai-session"];
+  ) => Promise<CloudBackendRouteSuccessBodies["create-ai-session"]>;
   getRoomMetadata: (
     roomId: string,
     options?: { auth?: CloudAccountAuth },
-  ) => CloudBackendRouteSuccessBodies["get-room"];
+  ) => Promise<CloudBackendRouteSuccessBodies["get-room"]>;
 };
 
 export type CloudBackendHttpClientErrorCode = "invalid_response" | "route_failed";
@@ -132,7 +132,7 @@ export function createCloudBackendHttpClient({
   transport,
   auth,
 }: CloudBackendHttpClientOptions): CloudBackendHttpClient {
-  const send = <TBody>(
+  const send = async <TBody>(
     routeId: CloudBackendRouteId,
     method: CloudBackendHttpMethod,
     path: string,
@@ -144,7 +144,7 @@ export function createCloudBackendHttpClient({
       routeId,
       method,
       path,
-      transport.request({
+      await transport.request({
         method,
         path,
         auth: requestAuth ?? auth,
@@ -263,7 +263,7 @@ export function createCloudBackendHttpClient({
 
 export function createCloudBackendServiceTransport(service: CloudBackendService): CloudBackendHttpTransport {
   return {
-    request: (request) => service.handle(request),
+    request: async (request) => service.handle(request),
   };
 }
 

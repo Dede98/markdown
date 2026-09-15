@@ -259,6 +259,10 @@ Contract:
   a room and returns the creator's joined room handle.
 - `joinRoom({ roomId, participantId })` joins an existing room and
   returns a second joined room handle.
+- The provider contract is generic over that room-opening result. The
+  in-memory provider keeps returning handles synchronously for the local
+  editor, while backend-backed providers may return a Promise after
+  acquiring and validating their room ticket.
 - The provider owns room lifecycle and delegates low-level realtime
   connection work to a `CloudRoomTransport`.
 - Each returned handle exposes the `DocumentSession`, a
@@ -281,8 +285,9 @@ Current implementation:
   network, or persistence, but it exercises the same create/join/leave
   lifecycle a future Hocuspocus/WebSocket provider should implement.
 - `src/cloudCollaboration/webSocketCloudSessionProvider.ts` is a
-  non-wired contract stub. It must not be exposed in UI until a real
-  transport implementation exists.
+  non-wired asynchronous contract stub. It waits for a validated backend
+  room ticket before opening its fake connection and must not be exposed
+  in UI until a real transport implementation exists.
 - Backend transport, auth, permissions, persistence, and provider
   selection UI remain out of scope for this spike.
 

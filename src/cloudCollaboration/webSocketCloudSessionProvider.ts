@@ -93,15 +93,17 @@ export function createWebSocketCloudRoomTransport({
   };
 }
 
-export function createWebSocketCloudSessionProvider(options: WebSocketCloudSessionProviderOptions): CloudSessionProvider {
+export function createWebSocketCloudSessionProvider(
+  options: WebSocketCloudSessionProviderOptions,
+): CloudSessionProvider<Promise<CloudRoomHandle>> {
   const transport = requireTransport(options);
 
   return {
     id: "websocket",
     label: "WebSocket room",
-    createRoom: (roomOptions) => {
+    createRoom: async (roomOptions) => {
       const client = requireClient(options, "createRoom");
-      const ticket = requestTicket(
+      const ticket = await requestTicket(
         "createRoom",
         () =>
           client.createRoom({
@@ -122,9 +124,9 @@ export function createWebSocketCloudSessionProvider(options: WebSocketCloudSessi
         password: options.password,
       });
     },
-    joinRoom: (roomOptions) => {
+    joinRoom: async (roomOptions) => {
       const client = requireClient(options, "joinRoom");
-      const ticket = requestTicket(
+      const ticket = await requestTicket(
         "joinRoom",
         () =>
           client.joinRoom({
@@ -317,12 +319,12 @@ function requireClient(
   );
 }
 
-function requestTicket(
+async function requestTicket(
   phase: "createRoom" | "joinRoom",
-  request: () => CloudRoomTicket,
-): CloudRoomTicket {
+  request: () => Promise<CloudRoomTicket>,
+): Promise<CloudRoomTicket> {
   try {
-    return request();
+    return await request();
   } catch (error) {
     if (error instanceof WebSocketCloudSessionProviderError) {
       throw error;

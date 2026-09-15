@@ -75,7 +75,7 @@ test.describe("cloud backend WebSocket provider boundary", () => {
     );
   });
 
-  test("keeps createWebSocketCloudSessionProvider non-wired but usable as a backend contract harness", () => {
+  test("keeps createWebSocketCloudSessionProvider non-wired but usable as a backend contract harness", async () => {
     const { service, mount } = createHarness();
     const provider = createWebSocketCloudSessionProvider({
       endpointUrl: "wss://cloud.local",
@@ -85,7 +85,7 @@ test.describe("cloud backend WebSocket provider boundary", () => {
       password: "room-pass",
     });
 
-    const handle = provider.createRoom({
+    const handle = await provider.createRoom({
       title: "Provider harness room",
       seedMarkdown: "# Provider\n\nRoute-created.",
       participantId: "user_owner",

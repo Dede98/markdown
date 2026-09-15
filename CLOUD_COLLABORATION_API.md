@@ -16,16 +16,21 @@ Product-level entrypoint for room lifecycle.
 Source: `src/cloudCollaboration/session.ts`
 
 ```ts
-type CloudSessionProvider = {
+type CloudSessionProvider<TRoomResult = CloudRoomHandle> = {
   id: string;
   label: string;
-  createRoom(options: CloudRoomCreateOptions): CloudRoomHandle;
-  joinRoom(options: CloudRoomJoinOptions): CloudRoomHandle;
+  createRoom(options: CloudRoomCreateOptions): TRoomResult;
+  joinRoom(options: CloudRoomJoinOptions): TRoomResult;
 };
 ```
 
 Use this from app/UI code. Do not construct `Y.Doc`, `Y.Text`, or
 awareness clients in app components.
+
+The in-memory provider keeps the default synchronous `CloudRoomHandle`
+result used by the local editor. Providers that must acquire backend
+credentials first use `Promise<CloudRoomHandle>`; the non-wired
+WebSocket provider follows that asynchronous contract.
 
 ### `CloudRoomTransport`
 
@@ -188,18 +193,19 @@ non-2xx route errors in one backend-owned module.
 Contract:
 
 - `createCloudBackendHttpClient({ transport, auth? })` exposes typed
-  methods for room creation, join, claim, invite creation, password
+  Promise-returning methods for room creation, join, claim, invite creation, password
   update, member removal, snapshot download, AI-session creation, and
   room metadata.
 - `createCloudBackendServiceTransport(service)` adapts the existing
   in-memory `CloudBackendService` route harness into that client
-  transport contract.
+  asynchronous transport contract by Promise-wrapping service results
+  and failures.
 - `CloudBackendHttpClientError` preserves the route id, method, path,
   status, error code, and route error text for provider-level error
   mapping. It distinguishes non-2xx route failures from malformed
   transport or response bodies.
 - `webSocketCloudSessionProvider.ts` consumes this client boundary for
-  route-issued room tickets before connecting through
+  route-issued room tickets and awaits validation before connecting through
   `CloudRoomTransport` and the realtime server mount.
 - The client validates transport envelopes, non-2xx route error bodies,
   and every successful route response body before returning typed
