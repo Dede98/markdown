@@ -12,6 +12,7 @@ import {
   MessageSquare,
   Monitor,
   Moon,
+  PanelLeftOpen,
   Save,
   Settings,
   Sun,
@@ -63,6 +64,7 @@ import { createLocalFileSession } from "./documentSession";
 import { emptyFormat, type ActiveFormat } from "./editorFormat";
 import type { EditorContribution } from "./editorContributions";
 import { FloatingHeadings } from "./FloatingHeadings";
+import { FileSidebar } from "./FileSidebar";
 import {
   DEFAULT_NEW_FILE_NAME,
   type FileAdapter,
@@ -88,6 +90,15 @@ import { markdownToolbarItems, type ToolbarContext, type ToolbarItem } from "./t
 import { checkForUpdate, installAndRelaunch, type Update, type UpdateProgress } from "./updater";
 import { getStoredRaw, getStoredZen, storeRaw, storeZen } from "./viewMode";
 import { webFileAdapter } from "./webFileAdapter";
+import {
+  addLocalFile,
+  applyLocalFileSave,
+  createLocalFiles,
+  removeLocalFile,
+  selectLocalFile,
+  updateLocalFileContents,
+  type LocalFilesState,
+} from "./localFiles";
 
 const initialMarkdown = `# On the Quiet Hour
 
@@ -168,6 +179,21 @@ const initialFile: FileState = {
   savedContents: initialMarkdown,
 };
 
+let localFileSequence = 0;
+
+function createLocalFileId(): string {
+  localFileSequence += 1;
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return `local-${crypto.randomUUID()}`;
+  }
+  return `local-${Date.now()}-${localFileSequence}`;
+}
+
+const initialLocalFiles = createLocalFiles(
+  { name: initialFile.name, contents: initialMarkdown, handle: initialFile.handle },
+  createLocalFileId(),
+);
+
 // Render the modifier key the way the host platform writes it. Mac uses ⌘ +
 // composed glyphs; everywhere else falls back to "Ctrl+". Resolved once at
 // module load — there is no SSR in this project, but the `typeof navigator`
@@ -204,8 +230,9 @@ const PRINT_RESTORE_FALLBACK_MS = 30_000;
 const PRINT_RESTORE_AFTER_FOCUS_MS = 500;
 
 export function App() {
-  const [file, setFile] = useState<FileState>(initialFile);
+  const [localFiles, setLocalFiles] = useState<LocalFilesState>(initialLocalFiles);
   const [markdown, setMarkdown] = useState(initialMarkdown);
+  const [fileSidebarVisible, setFileSidebarVisible] = useState(true);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [headings, setHeadings] = useState<MarkdownHeading[]>([]);
@@ -242,6 +269,17 @@ export function App() {
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<UpdateCheckStatus>("idle");
   const editorRef = useRef<EditorView | null>(null);
+  const localFilesRef = useRef(localFiles);
+  localFilesRef.current = localFiles;
+  const activeLocalFile =
+    localFiles.entries.find((entry) => entry.id === localFiles.activeId) ?? null;
+  const file: FileState = activeLocalFile
+    ? {
+        name: activeLocalFile.name,
+        handle: activeLocalFile.handle,
+        savedContents: activeLocalFile.savedContents,
+      }
+    : { name: DEFAULT_NEW_FILE_NAME, handle: null, savedContents: "" };
   // Latest editor text. Saving from a keyboard shortcut runs in the same tick
   // as `setMarkdown`, so a closure-captured `markdown` would be stale; reading
   // through the ref guarantees the on-disk content matches what the user sees.
@@ -253,17 +291,15 @@ export function App() {
   saveStatusRef.current = saveStatus;
   const commentAuthorRef = useRef(commentAuthor);
   commentAuthorRef.current = commentAuthor;
-  // Mirror `fileVersion` so async save callbacks can detect that the user
-  // switched files mid-save (replaceFile bumps fileVersion). Without this an
-  // in-flight save would clobber the freshly-opened file's name/handle/savedContents.
-  const fileVersionRef = useRef(fileVersion);
-  fileVersionRef.current = fileVersion;
   const activeCloudRoomRef = useRef(activeCloudRoom);
   activeCloudRoomRef.current = activeCloudRoom;
   const peerCloudRoomRef = useRef(peerCloudRoom);
   peerCloudRoomRef.current = peerCloudRoom;
 
-  const dirty = markdown !== file.savedContents;
+  const dirty = activeLocalFile ? markdown !== activeLocalFile.savedContents : false;
+  const hasDirtyLocalFiles = localFiles.entries.some(
+    (entry) => entry.contents !== entry.savedContents,
+  );
   const commentsParse = useMemo(() => parseComments(markdown), [markdown]);
   const badge = useMemo(
     () => describeStatus({ saveStatus, dirty, hasHandle: file.handle !== null }),
@@ -441,6 +477,9 @@ export function App() {
       setCloudPanelOpen(true);
       return;
     }
+    if (!localFilesRef.current.activeId) {
+      return;
+    }
     const cloudRoom = inMemoryCloudSessionProvider.createRoom({
       seedMarkdown: markdownRef.current,
     });
@@ -467,6 +506,10 @@ export function App() {
     setPeerCloudRoom(null);
     setCloudPanelOpen(false);
     setMarkdown(snapshot);
+    const activeId = localFilesRef.current.activeId;
+    if (activeId) {
+      setLocalFiles((current) => updateLocalFileContents(current, activeId, snapshot));
+    }
     setFileVersion((value) => value + 1);
   }, []);
 
@@ -515,9 +558,7 @@ export function App() {
     [activeFormat, hasEditorSelection, commentsParse.readOnlyReason],
   );
 
-  const replaceFile = useCallback((next: LocalFile) => {
-    setFile({ name: next.name, handle: next.handle, savedContents: next.contents });
-    setMarkdown(next.contents);
+  const resetTransientFileUi = useCallback(() => {
     setSaveStatus("idle");
     setSaveError(null);
     setSelectedCommentId(null);
@@ -527,89 +568,149 @@ export function App() {
     setFileVersion((value) => value + 1);
   }, []);
 
-  const guardDirty = useCallback(
-    (intent: "new" | "open") => {
-      if (!dirty || typeof window === "undefined") {
-        return true;
-      }
-      const message =
-        intent === "new"
-          ? "Discard unsaved changes and start a new file?"
-          : "Discard unsaved changes and open another file?";
-      return window.confirm(message);
-    },
-    [dirty],
-  );
+  const addFileSession = useCallback((next: LocalFile) => {
+    const id = createLocalFileId();
+    setLocalFiles((current) => addLocalFile(current, next, id));
+    setMarkdown(next.contents);
+    resetTransientFileUi();
+  }, [resetTransientFileUi]);
+
+  const allowLocalFileAction = useCallback(() => {
+    if (!activeCloudRoomRef.current) {
+      return true;
+    }
+    if (typeof window !== "undefined") {
+      window.alert("Leave the collaboration room before changing local files.");
+    }
+    return false;
+  }, []);
 
   const handleNew = useCallback(() => {
-    if (!guardDirty("new")) {
+    if (!allowLocalFileAction()) {
       return;
     }
     const adapter = getActiveAdapter();
     const fresh = adapter.newFile();
-    replaceFile(fresh);
-  }, [guardDirty, replaceFile]);
+    addFileSession(fresh);
+  }, [addFileSession, allowLocalFileAction]);
 
   const handleOpen = useCallback(async () => {
-    if (!guardDirty("open")) {
+    if (!allowLocalFileAction()) {
       return;
     }
     const adapter = getActiveAdapter();
 
     try {
       const opened = await adapter.openFile();
-      if (!opened) {
+      if (!opened || activeCloudRoomRef.current) {
         return;
       }
-      replaceFile(opened);
+      addFileSession(opened);
     } catch (error) {
       console.error("Open failed", error);
       setSaveStatus("error");
       setSaveError(error instanceof Error ? error.message : "Open failed");
     }
-  }, [guardDirty, replaceFile]);
+  }, [addFileSession, allowLocalFileAction]);
+
+  const handleSelectLocalFile = useCallback((id: string) => {
+    if (!allowLocalFileAction()) {
+      return;
+    }
+    const entry = localFilesRef.current.entries.find((candidate) => candidate.id === id);
+    if (!entry || localFilesRef.current.activeId === id) {
+      return;
+    }
+    setLocalFiles((current) => selectLocalFile(current, id));
+    setMarkdown(entry.contents);
+    resetTransientFileUi();
+  }, [allowLocalFileAction, resetTransientFileUi]);
+
+  const handleCloseLocalFile = useCallback((id: string) => {
+    if (!allowLocalFileAction()) {
+      return;
+    }
+    const current = localFilesRef.current;
+    const entry = current.entries.find((candidate) => candidate.id === id);
+    if (!entry) {
+      return;
+    }
+    if (
+      entry.contents !== entry.savedContents &&
+      typeof window !== "undefined" &&
+      !window.confirm(`Discard unsaved changes to ${entry.name}?`)
+    ) {
+      return;
+    }
+    const nextState = removeLocalFile(current, id);
+    setLocalFiles(nextState);
+    if (current.activeId === id) {
+      const nextEntry =
+        nextState.entries.find((candidate) => candidate.id === nextState.activeId) ?? null;
+      setMarkdown(nextEntry?.contents ?? "");
+      resetTransientFileUi();
+    }
+  }, [allowLocalFileAction, resetTransientFileUi]);
+
+  const handleMarkdownChange = useCallback((contents: string) => {
+    setMarkdown(contents);
+    if (activeCloudRoomRef.current) {
+      return;
+    }
+    const activeId = localFilesRef.current.activeId;
+    if (activeId) {
+      setLocalFiles((current) => updateLocalFileContents(current, activeId, contents));
+    }
+  }, []);
 
   const handleSaveAs = useCallback(async () => {
+    const entry = localFilesRef.current.entries.find(
+      (candidate) => candidate.id === localFilesRef.current.activeId,
+    );
+    if (!entry || activeCloudRoomRef.current) {
+      return;
+    }
     const adapter = getActiveAdapter();
     setSaveStatus("saving");
     setSaveError(null);
 
-    // Snapshot the current text and file identity so a save that races a
-    // file switch never clobbers the new file's state. `fileVersionRef`
-    // bumps in `replaceFile`; if it has changed by the time the picker
-    // resolves, the post-await commit is dropped.
     const contents = markdownRef.current;
-    const startVersion = fileVersionRef.current;
-    const stillCurrent = () => fileVersionRef.current === startVersion;
+    const entryId = entry.id;
+    const isActive = () => localFilesRef.current.activeId === entryId;
 
     try {
-      const result = await adapter.saveFileAs(file.name || DEFAULT_NEW_FILE_NAME, contents);
-      if (!stillCurrent()) {
-        return;
-      }
+      const result = await adapter.saveFileAs(entry.name || DEFAULT_NEW_FILE_NAME, contents);
       if (!result) {
-        setSaveStatus("idle");
+        if (isActive()) {
+          setSaveStatus("idle");
+        }
         return;
       }
-      setFile({ name: result.name, handle: result.handle, savedContents: contents });
-      setSaveStatus("idle");
+      setLocalFiles((current) => applyLocalFileSave(current, entryId, result, contents));
+      if (isActive()) {
+        setSaveStatus("idle");
+      }
     } catch (error) {
-      if (!stillCurrent()) {
-        // Don't pollute the new file's badge, but never silently swallow a
-        // failed write — log so the operator can see the original failure.
-        console.error("Save-as failed (file switched mid-save)", error);
+      if (!isActive()) {
+        console.error("Save-as failed for inactive file", error);
         return;
       }
       console.error("Save-as failed", error);
       setSaveStatus("error");
       setSaveError(error instanceof Error ? error.message : "Save failed");
     }
-  }, [file.name]);
+  }, []);
 
   const performSave = useCallback(async (intent: "manual" | "autosave") => {
+    const entry = localFilesRef.current.entries.find(
+      (candidate) => candidate.id === localFilesRef.current.activeId,
+    );
+    if (!entry || activeCloudRoomRef.current) {
+      return;
+    }
     const adapter = getActiveAdapter();
 
-    if (!file.handle) {
+    if (!entry.handle) {
       if (intent === "manual") {
         await handleSaveAs();
       }
@@ -620,26 +721,25 @@ export function App() {
     setSaveError(null);
 
     const contents = markdownRef.current;
-    const startVersion = fileVersionRef.current;
-    const stillCurrent = () => fileVersionRef.current === startVersion;
+    const entryId = entry.id;
+    const isActive = () => localFilesRef.current.activeId === entryId;
 
     try {
-      const result = await adapter.saveFile(file.handle, contents, file.name);
-      if (!stillCurrent()) {
-        return;
+      const result = await adapter.saveFile(entry.handle, contents, entry.name);
+      setLocalFiles((current) => applyLocalFileSave(current, entryId, result, contents));
+      if (isActive()) {
+        setSaveStatus("idle");
       }
-      setFile({ name: result.name, handle: result.handle, savedContents: contents });
-      setSaveStatus("idle");
     } catch (error) {
-      if (!stillCurrent()) {
-        console.error("Save failed (file switched mid-save)", error);
+      if (!isActive()) {
+        console.error("Save failed for inactive file", error);
         return;
       }
       console.error("Save failed", error);
       setSaveStatus("error");
       setSaveError(error instanceof Error ? error.message : "Save failed");
     }
-  }, [file.handle, file.name, handleSaveAs]);
+  }, [handleSaveAs]);
 
   const handleSave = useCallback(async () => {
     await performSave("manual");
@@ -722,13 +822,13 @@ export function App() {
       if (!path || !isMarkdownPath(path)) {
         return;
       }
-      if (!guardDirty("open")) {
+      if (!allowLocalFileAction()) {
         return;
       }
       try {
         const next = await openMarkdownFromPath(path);
-        if (next) {
-          replaceFile(next);
+        if (next && !activeCloudRoomRef.current) {
+          addFileSession(next);
         }
       } catch (error) {
         console.error("Failed to open path", path, error);
@@ -736,36 +836,38 @@ export function App() {
         setSaveError(error instanceof Error ? error.message : "Failed to open file");
       }
     },
-    [guardDirty, replaceFile],
+    [addFileSession, allowLocalFileAction],
   );
 
   // Web sibling of `loadPathFile`: read a `File` object dropped onto the
   // window. The Tauri build receives an absolute path through the
   // `tauri://drag-drop` IPC event; the browser receives the file's bytes
-  // directly via the HTML5 drop event. Both shells funnel through the same
-  // `replaceFile` so the dirty-guard prompt and downstream UI behave
-  // identically regardless of how the file arrived.
+  // directly via the HTML5 drop event. Both shells add a new local session,
+  // so an existing dirty buffer stays open regardless of how the file arrived.
   const loadDroppedFile = useCallback(
     async (droppedFile: File) => {
       if (!droppedFile || !isMarkdownPath(droppedFile.name)) {
         return;
       }
-      if (!guardDirty("open")) {
+      if (!allowLocalFileAction()) {
         return;
       }
       try {
         const contents = await droppedFile.text();
+        if (activeCloudRoomRef.current) {
+          return;
+        }
         // `handle: null` because a DOM drop event does not surface a File
         // System Access handle. Subsequent Save will route through Save-As,
         // matching the input-fallback path in `webFileAdapter.openFile`.
-        replaceFile({ name: droppedFile.name, contents, handle: null });
+        addFileSession({ name: droppedFile.name, contents, handle: null });
       } catch (error) {
         console.error("Failed to read dropped file", droppedFile.name, error);
         setSaveStatus("error");
         setSaveError(error instanceof Error ? error.message : "Failed to open file");
       }
     },
-    [guardDirty, replaceFile],
+    [addFileSession, allowLocalFileAction],
   );
 
   // Keyboard shortcuts at the window level so they catch Cmd/Ctrl-O/N
@@ -1085,9 +1187,9 @@ export function App() {
     });
   }, []);
 
-  // Beforeunload guard: warn the user if they navigate away with unsaved changes.
+  // Warn if any open local buffer is dirty, not only the visible one.
   useEffect(() => {
-    if (!dirty) {
+    if (!hasDirtyLocalFiles) {
       return;
     }
     const onBeforeUnload = (event: BeforeUnloadEvent) => {
@@ -1096,7 +1198,7 @@ export function App() {
     };
     window.addEventListener("beforeunload", onBeforeUnload);
     return () => window.removeEventListener("beforeunload", onBeforeUnload);
-  }, [dirty]);
+  }, [hasDirtyLocalFiles]);
 
   // Expose the active adapter on window so spikes/tests can introspect or override it.
   // Gated to the local dev origin so production builds do not surface internals
@@ -1271,12 +1373,25 @@ export function App() {
       <header className="topbar" data-tauri-drag-region>
         {!zen ? (
           <div className="fileActions" role="toolbar" aria-label="File actions">
-            <button className="iconButton" type="button" title="New file" aria-label="New file" onClick={handleNew}>
-              <FilePlus size={16} />
-            </button>
-            <button className="iconButton" type="button" title="Open file" aria-label="Open file" onClick={handleOpen}>
-              <FolderOpen size={16} />
-            </button>
+            {!fileSidebarVisible && (
+              <>
+                <button
+                  className="iconButton"
+                  type="button"
+                  title="Show file sidebar"
+                  aria-label="Show file sidebar"
+                  onClick={() => setFileSidebarVisible(true)}
+                >
+                  <PanelLeftOpen size={16} />
+                </button>
+                <button className="iconButton" type="button" title="New file" aria-label="New file" onClick={handleNew}>
+                  <FilePlus size={16} />
+                </button>
+                <button className="iconButton" type="button" title="Open file" aria-label="Open file" onClick={handleOpen}>
+                  <FolderOpen size={16} />
+                </button>
+              </>
+            )}
             <button
               className="iconButton"
               type="button"
@@ -1439,15 +1554,32 @@ export function App() {
         </nav>
       )}
 
-      <section className={workspaceClass} aria-label="Editor workspace">
-        <section className="editorShell" aria-label="Markdown editor">
+      <div className="workspaceFrame">
+        {!zen && fileSidebarVisible && (
+          <FileSidebar
+            files={localFiles.entries.map((entry) => ({
+              id: entry.id,
+              name: entry.name,
+              dirty: entry.contents !== entry.savedContents,
+            }))}
+            activeId={localFiles.activeId}
+            onNew={handleNew}
+            onOpen={() => void handleOpen()}
+            onSelect={handleSelectLocalFile}
+            onClose={handleCloseLocalFile}
+            onHide={() => setFileSidebarVisible(false)}
+            disabled={Boolean(activeCloudRoom)}
+          />
+        )}
+        <section className={workspaceClass} aria-label="Editor workspace">
+          <section className="editorShell" aria-label="Markdown editor">
           <MarkdownEditor
-            key={fileVersion}
+            key={`${localFiles.activeId ?? "no-file"}-${fileVersion}`}
             value={markdown}
             zen={zen}
             raw={raw}
             contentWidth={contentWidth}
-            onChange={setMarkdown}
+            onChange={handleMarkdownChange}
             onFormatChange={setActiveFormat}
             onSelectionChange={setHasEditorSelection}
             onHeadingsChange={setHeadings}
@@ -1463,27 +1595,28 @@ export function App() {
               onNavigate={handleNavigateToHeading}
             />
           )}
+          </section>
+          {commentsOpen && (
+            <CommentsSidebar
+              parseResult={commentsParse}
+              selectedThreadId={selectedCommentId}
+              raw={raw}
+              onSelectThread={handleSelectCommentThread}
+              onClose={() => setCommentsOpen(false)}
+              onAddReply={handleAddCommentReply}
+              onResolveThread={handleResolveCommentThread}
+              onReanchorThread={handleReanchorCommentThread}
+              onDeleteThread={handleDeleteCommentThread}
+              canReanchorThread={hasEditorSelection}
+            />
+          )}
+          {panelContributions.map((panel) => (
+            <div className="contributionPanelSlot" key={panel.id}>
+              {panel.render(appContributionContext)}
+            </div>
+          ))}
         </section>
-        {commentsOpen && (
-          <CommentsSidebar
-            parseResult={commentsParse}
-            selectedThreadId={selectedCommentId}
-            raw={raw}
-            onSelectThread={handleSelectCommentThread}
-            onClose={() => setCommentsOpen(false)}
-            onAddReply={handleAddCommentReply}
-            onResolveThread={handleResolveCommentThread}
-            onReanchorThread={handleReanchorCommentThread}
-            onDeleteThread={handleDeleteCommentThread}
-            canReanchorThread={hasEditorSelection}
-          />
-        )}
-        {panelContributions.map((panel) => (
-          <div className="contributionPanelSlot" key={panel.id}>
-            {panel.render(appContributionContext)}
-          </div>
-        ))}
-      </section>
+      </div>
 
       {settingsOpen && (
         <SettingsPanel

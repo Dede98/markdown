@@ -2015,36 +2015,25 @@ test.describe("editor core", () => {
     await expect(page.locator(".cm-content")).toContainText("On the Quiet Hour");
   });
 
-  test("dropping a .md file while dirty prompts before replacing", async ({ page }) => {
+  test("dropping a .md file while dirty preserves the previous session", async ({ page }) => {
     await page.goto("/");
 
-    // Dirty the buffer so guardDirty triggers the confirm prompt — same path
-    // taken by the file-open dialog when the user has unsaved changes.
     await setEditorText(page, "user typed this and has not saved yet");
     await expectEditorSource(page, "user typed this and has not saved yet");
 
-    // First drop: dismiss the confirm — the dropped file is discarded and
-    // the working buffer survives untouched.
-    page.once("dialog", (dialog) => void dialog.dismiss());
-    const firstDrop = await page.evaluateHandle(() => {
+    const drop = await page.evaluateHandle(() => {
       const dt = new DataTransfer();
-      dt.items.add(new File(["# Replacement"], "incoming.md", { type: "text/markdown" }));
+      dt.items.add(new File(["# Incoming\n\nbody"], "incoming.md", { type: "text/markdown" }));
       return dt;
     });
-    await page.dispatchEvent("body", "drop", { dataTransfer: firstDrop });
-    await expect(page.locator(".documentTitle")).not.toContainText("incoming.md");
-    await expectEditorSource(page, "user typed this and has not saved yet");
+    await page.dispatchEvent("body", "drop", { dataTransfer: drop });
 
-    // Second drop: accept the confirm — file replaces the buffer.
-    page.once("dialog", (dialog) => void dialog.accept());
-    const secondDrop = await page.evaluateHandle(() => {
-      const dt = new DataTransfer();
-      dt.items.add(new File(["# Replacement\n\nbody"], "incoming.md", { type: "text/markdown" }));
-      return dt;
-    });
-    await page.dispatchEvent("body", "drop", { dataTransfer: secondDrop });
     await expect(page.locator(".documentTitle")).toContainText("incoming.md");
-    await expectEditorSource(page, "# Replacement");
+    await expectEditorSource(page, "# Incoming");
+    await expect(page.getByRole("button", { name: "Select untitled.md, unsaved changes" })).toBeVisible();
+
+    await page.getByRole("button", { name: "Select untitled.md, unsaved changes" }).click();
+    await expectEditorSource(page, "user typed this and has not saved yet");
   });
 
   test("dropping multiple files picks the first markdown one", async ({ page }) => {

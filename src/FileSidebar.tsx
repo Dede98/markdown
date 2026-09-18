@@ -10,6 +10,7 @@ type FileSidebarProps = {
   onSelect: (id: string) => void;
   onClose: (id: string) => void;
   onHide: () => void;
+  disabled?: boolean;
 };
 
 export function FileSidebar({
@@ -20,6 +21,7 @@ export function FileSidebar({
   onSelect,
   onClose,
   onHide,
+  disabled = false,
 }: FileSidebarProps) {
   const closeFile = (event: MouseEvent<HTMLButtonElement>, id: string) => {
     event.stopPropagation();
@@ -27,14 +29,19 @@ export function FileSidebar({
   };
 
   return (
-    <nav className="fileSidebar" aria-label="Open files">
+    <nav
+      className="fileSidebar"
+      aria-label="Open files"
+      aria-disabled={disabled || undefined}
+      title={disabled ? "Leave the collaboration room to change local files" : undefined}
+    >
       <div className="fileSidebarHeader">
         <h2>Files</h2>
         <div className="fileSidebarActions" aria-label="File actions">
-          <button type="button" aria-label="New file" title="New file" onClick={onNew}>
+          <button type="button" aria-label="New file" title="New file" onClick={onNew} disabled={disabled}>
             <FilePlus size={16} aria-hidden="true" />
           </button>
-          <button type="button" aria-label="Open file" title="Open file" onClick={onOpen}>
+          <button type="button" aria-label="Open file" title="Open file" onClick={onOpen} disabled={disabled}>
             <FolderOpen size={16} aria-hidden="true" />
           </button>
           <button
@@ -69,6 +76,7 @@ export function FileSidebar({
                   aria-label={`Select ${file.name}${dirtySuffix}`}
                   title={file.name}
                   onClick={() => onSelect(file.id)}
+                  disabled={disabled}
                 >
                   <span className="fileSidebarDirtyDot" aria-hidden="true" />
                   <span className="fileSidebarName">{file.name}</span>
@@ -79,6 +87,7 @@ export function FileSidebar({
                   aria-label={`Close ${file.name}`}
                   title={`Close ${file.name}`}
                   onClick={(event) => closeFile(event, file.id)}
+                  disabled={disabled}
                 >
                   <X size={14} aria-hidden="true" />
                 </button>
