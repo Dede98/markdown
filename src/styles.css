@@ -435,9 +435,19 @@ button {
   background: var(--rule);
 }
 
+.workspaceFrame {
+  position: relative;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
 .workspace {
   display: grid;
+  flex: 1 1 auto;
   grid-template-columns: minmax(0, 1fr);
+  min-width: 0;
   min-height: 0;
   overflow: hidden;
 }
@@ -2301,6 +2311,15 @@ button {
 
   .editorShell {
     padding-top: 32px;
+  }
+
+  .editorMount {
+    --editor-content-padding: 12px;
+  }
+
+  .fileSidebar {
+    flex-basis: min(180px, 48vw);
+    width: min(180px, 48vw);
   }
 
   .statusbar div:first-child {

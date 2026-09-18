@@ -56,6 +56,16 @@
   color: var(--fg-icon-strong);
 }
 
+.fileSidebar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.fileSidebar button:disabled:hover {
+  background: transparent;
+  color: var(--fg-icon);
+}
+
 .fileSidebarActions button:focus-visible,
 .fileSidebarSelect:focus-visible,
 .fileSidebarClose:focus-visible {
@@ -151,5 +161,50 @@
 @media (prefers-reduced-motion: no-preference) {
   .fileSidebarClose {
     transition: opacity 120ms ease;
+  }
+}
+
+/* Preserve a useful editor width on phone-sized screens. The rail keeps all
+ * file actions and session selection in the keyboard/accessibility tree while
+ * names remain available through each button's label and title. */
+@media (max-width: 480px) {
+  .workspaceFrame .fileSidebar {
+    flex-basis: 48px;
+    width: 48px;
+  }
+
+  .workspaceFrame .fileSidebarHeader {
+    flex-direction: column;
+    justify-content: flex-start;
+    padding: 6px 4px;
+  }
+
+  .workspaceFrame .fileSidebarHeader h2,
+  .workspaceFrame .fileSidebarName,
+  .workspaceFrame .fileSidebarClose {
+    display: none;
+  }
+
+  .workspaceFrame .fileSidebarActions {
+    flex-direction: column;
+  }
+
+  .workspaceFrame .fileSidebarList {
+    padding: 4px;
+  }
+
+  .workspaceFrame .fileSidebarItem {
+    display: block;
+  }
+
+  .workspaceFrame .fileSidebarSelect {
+    justify-content: center;
+    width: 100%;
+    padding: 0;
+    border-radius: 6px;
+  }
+
+  .workspaceFrame .fileSidebarDirtyDot {
+    margin-right: 0;
   }
 }

@@ -11,6 +11,8 @@ editable in any other Markdown tool.
 - Comments live inside the `.md` file as hidden metadata, so a copied file
   keeps its review threads without requiring a sidecar or account.
 - Open / save real `.md` files on disk. No accounts, no cloud sync.
+- Keep several local files and untitled drafts open in the file sidebar without
+  losing unsaved work when switching between them.
 
 Realtime collaboration, history, and MCP support are planned for later
 milestones — see [`PRODUCT_PLAN.md`](PRODUCT_PLAN.md).
@@ -116,6 +118,12 @@ Not deployed yet. You can run the web build locally with `pnpm dev` (see
 - Drag a `.md` file onto the window to open it (web and desktop).
 - Native desktop integrations: file associations, open-with, drag/drop
   `.md` files, and native File / Edit / View / Window menus.
+
+In Normal mode, use the left file sidebar to create, open, switch, or close
+independent Markdown buffers. A dot marks unsaved changes; closing a dirty
+buffer asks before discarding it. Hide the sidebar from its header and restore
+it from the topbar. Zen mode hides it temporarily and restores the prior
+visibility when you return to Normal mode.
 
 ## Development
 
