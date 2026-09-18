@@ -443,6 +443,16 @@ button {
   overflow: hidden;
 }
 
+.emptyFileEditor {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--fg-muted);
+}
+
+.emptyFileEditor button {
+  margin: 8px;
+}
+
 .workspace {
   display: grid;
   flex: 1 1 auto;

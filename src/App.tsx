@@ -645,6 +645,9 @@ export function App() {
     const nextState = removeLocalFile(current, id);
     setLocalFiles(nextState);
     if (current.activeId === id) {
+      editorRef.current = null;
+      setActiveFormat(emptyFormat);
+      setHasEditorSelection(false);
       const nextEntry =
         nextState.entries.find((candidate) => candidate.id === nextState.activeId) ?? null;
       setMarkdown(nextEntry?.contents ?? "");
@@ -757,7 +760,7 @@ export function App() {
   }, []);
 
   const handleExportPdf = useCallback(() => {
-    if (typeof window === "undefined") {
+    if (typeof window === "undefined" || !localFilesRef.current.activeId) {
       return;
     }
 
@@ -1398,7 +1401,7 @@ export function App() {
               title="Save file"
               aria-label="Save file"
               onClick={() => void handleSave()}
-              disabled={saveStatus === "saving"}
+              disabled={!activeLocalFile || saveStatus === "saving"}
             >
               <Save size={16} />
             </button>
@@ -1408,6 +1411,7 @@ export function App() {
               title="Export rendered PDF"
               aria-label="Export rendered PDF"
               onClick={handleExportPdf}
+              disabled={!activeLocalFile}
             >
               <FileDown size={16} />
             </button>
@@ -1417,8 +1421,8 @@ export function App() {
         )}
 
         <div className="titleCluster">
-          <div className="documentTitle">{file.name || DEFAULT_NEW_FILE_NAME}</div>
-          {!zen && (
+          <div className="documentTitle">{activeLocalFile ? file.name : "No file open"}</div>
+          {!zen && activeLocalFile && (
             <div
               className={`documentState documentState--${badge.tone}`}
               data-state={badge.tone}
@@ -1545,7 +1549,7 @@ export function App() {
           <div className="toolbarSide toolbarSideLeft" aria-hidden="true" />
 
           <div className="toolbarCenter">
-            {toolbarItems.map((item) => renderToolbarItem(item, toolbarContext, withEditor))}
+            {toolbarItems.map((item) => renderToolbarItem(item, toolbarContext, withEditor, !activeLocalFile))}
           </div>
 
           <div className="toolbarSide toolbarSideRight">
@@ -1573,6 +1577,7 @@ export function App() {
         )}
         <section className={workspaceClass} aria-label="Editor workspace">
           <section className="editorShell" aria-label="Markdown editor">
+          {activeLocalFile ? (
           <MarkdownEditor
             key={`${localFiles.activeId ?? "no-file"}-${fileVersion}`}
             value={markdown}
@@ -1587,6 +1592,13 @@ export function App() {
             onReady={handleReady}
             contributions={editorContributions}
           />
+          ) : (
+            <div className="emptyFileEditor">
+              <p>Open or create a Markdown file to start writing.</p>
+              <button type="button" onClick={handleNew}>Create a file</button>
+              <button type="button" onClick={() => void handleOpen()}>Choose a file</button>
+            </div>
+          )}
           {headings.length >= 2 && (
             <FloatingHeadings
               headings={headings}
@@ -1649,7 +1661,7 @@ export function App() {
         <footer className="statusbar">
           <div>
             <FileText size={12} />
-            <span>{file.name || DEFAULT_NEW_FILE_NAME}</span>
+            <span>{activeLocalFile ? file.name : "No file open"}</span>
           </div>
           <div>
             <span>Markdown</span>
@@ -1704,6 +1716,7 @@ function renderToolbarItem(
   item: ToolbarItem,
   context: ToolbarContext,
   withEditor: (command: (view: EditorView) => void) => void,
+  unavailable = false,
 ) {
   if (item.type === "divider") {
     return <span className="toolbarDivider" key={item.id} />;
@@ -1716,6 +1729,7 @@ function renderToolbarItem(
         <span className="srOnly">{item.label}</span>
         <select
           aria-label={item.label}
+          disabled={unavailable}
           value={item.value(context)}
           onChange={(event) => {
             const value = event.currentTarget.value;
@@ -1736,7 +1750,7 @@ function renderToolbarItem(
 
   const Icon = item.icon;
   const active = item.isActive?.(context) ?? false;
-  const disabled = item.isDisabled?.(context) ?? false;
+  const disabled = unavailable || (item.isDisabled?.(context) ?? false);
   return (
     <button
       className={active ? "isActive" : undefined}
