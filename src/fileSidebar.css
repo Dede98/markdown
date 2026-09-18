@@ -1,0 +1,200 @@
+.fileSidebar {
+  display: flex;
+  flex: 0 0 232px;
+  flex-direction: column;
+  width: 232px;
+  min-width: 0;
+  height: 100%;
+  overflow: hidden;
+  border-right: 1px solid var(--rule);
+  background: var(--bg-chrome);
+  color: var(--fg-body);
+}
+
+.fileSidebarHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 6px 8px 6px 12px;
+  border-bottom: 1px solid var(--rule);
+}
+
+.fileSidebarHeader h2 {
+  margin: 0;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.fileSidebarActions {
+  display: flex;
+  align-items: center;
+  gap: 1px;
+}
+
+.fileSidebarActions button,
+.fileSidebarClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg-icon);
+  cursor: pointer;
+}
+
+.fileSidebarActions button:hover,
+.fileSidebarClose:hover {
+  background: var(--bg-surface-hover);
+  color: var(--fg-icon-strong);
+}
+
+.fileSidebar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.fileSidebar button:disabled:hover {
+  background: transparent;
+  color: var(--fg-icon);
+}
+
+.fileSidebarActions button:focus-visible,
+.fileSidebarSelect:focus-visible,
+.fileSidebarClose:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.fileSidebarList {
+  min-height: 0;
+  padding: 6px;
+  margin: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.fileSidebarItem {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 28px;
+  align-items: center;
+  min-width: 0;
+  border-radius: 6px;
+}
+
+.fileSidebarItem:hover {
+  background: var(--bg-surface-hover);
+}
+
+.fileSidebarItem.isActive {
+  background: var(--bg-active);
+}
+
+.fileSidebarSelect {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  height: 32px;
+  padding: 0 4px 0 8px;
+  border: 0;
+  border-radius: 6px 0 0 6px;
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fileSidebarItem.isActive .fileSidebarSelect {
+  color: var(--fg-strong);
+  font-weight: 600;
+}
+
+.fileSidebarName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fileSidebarDirtyDot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  margin-right: 7px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.fileSidebarItem.isDirty .fileSidebarDirtyDot {
+  background: var(--tone-unsaved-dot);
+}
+
+.fileSidebarClose {
+  margin-right: 2px;
+  opacity: 0;
+}
+
+.fileSidebarItem:hover .fileSidebarClose,
+.fileSidebarItem:focus-within .fileSidebarClose,
+.fileSidebarItem.isActive .fileSidebarClose {
+  opacity: 1;
+}
+
+.fileSidebarEmpty {
+  padding: 22px 12px;
+  margin: 0;
+  color: var(--fg-faint);
+  font-size: 12px;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .fileSidebarClose {
+    transition: opacity 120ms ease;
+  }
+}
+
+/* Keep filenames and close actions available without narrowing the phone editor. */
+@media (max-width: 480px) {
+  .workspaceFrame {
+    flex-direction: column;
+  }
+
+  .workspaceFrame .fileSidebar {
+    flex: 0 0 auto;
+    width: 100%;
+    height: auto;
+    max-height: 160px;
+    border-right: 0;
+    border-bottom: 1px solid var(--rule);
+  }
+
+  .workspaceFrame .fileSidebarHeader {
+    padding: 6px 12px;
+  }
+
+  .workspaceFrame .fileSidebarList {
+    display: flex;
+    gap: 4px;
+    overflow-x: auto;
+  }
+
+  .workspaceFrame .fileSidebarItem {
+    flex: 0 0 auto;
+    max-width: 200px;
+  }
+
+  .workspaceFrame .fileSidebarClose {
+    opacity: 1;
+  }
+}
