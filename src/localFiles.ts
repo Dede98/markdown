@@ -1,4 +1,14 @@
 import type { FileHandle, LocalFile, SaveResult } from "./fileAdapter";
+import type { PersistedFileReference } from "./sessionPersistence";
+
+export type LocalFileRecoveryStatus =
+  | "ready"
+  | "conflict"
+  | "missing"
+  | "permission-needed"
+  | "upload-required"
+  | "denied"
+  | "unavailable";
 
 export type LocalFileEntry = {
   id: string;
@@ -6,6 +16,9 @@ export type LocalFileEntry = {
   contents: string;
   savedContents: string;
   handle: FileHandle | null;
+  reopen: PersistedFileReference;
+  recoveryStatus: LocalFileRecoveryStatus;
+  externalContents?: string;
 };
 
 export type LocalFilesState = {
@@ -13,19 +26,29 @@ export type LocalFilesState = {
   activeId: string | null;
 };
 
-function createEntry(file: LocalFile, id: string): LocalFileEntry {
+function createEntry(
+  file: LocalFile,
+  id: string,
+  reopen: PersistedFileReference = { kind: "untitled" },
+): LocalFileEntry {
   return {
     id,
     name: file.name,
     contents: file.contents,
     savedContents: file.contents,
     handle: file.handle,
+    reopen,
+    recoveryStatus: "ready",
   };
 }
 
-export function createLocalFiles(file: LocalFile, id: string): LocalFilesState {
+export function createLocalFiles(
+  file: LocalFile,
+  id: string,
+  reopen?: PersistedFileReference,
+): LocalFilesState {
   return {
-    entries: [createEntry(file, id)],
+    entries: [createEntry(file, id, reopen)],
     activeId: id,
   };
 }
@@ -34,14 +57,16 @@ export function addLocalFile(
   state: LocalFilesState,
   file: LocalFile,
   id: string,
+  reopen?: PersistedFileReference,
+  activate = true,
 ): LocalFilesState {
   if (state.entries.some((entry) => entry.id === id)) {
     throw new Error(`Local file id already exists: ${id}`);
   }
 
   return {
-    entries: [...state.entries, createEntry(file, id)],
-    activeId: id,
+    entries: [...state.entries, createEntry(file, id, reopen)],
+    activeId: activate ? id : state.activeId,
   };
 }
 
@@ -91,8 +116,35 @@ export function applyLocalFileSave(
     contents: current.contents === savedContents ? savedContents : current.contents,
     savedContents,
     handle: result.handle,
+    recoveryStatus: "ready",
+    externalContents: undefined,
   };
 
+  return { ...state, entries };
+}
+
+export function updateLocalFileReference(
+  state: LocalFilesState,
+  id: string,
+  reopen: PersistedFileReference,
+): LocalFilesState {
+  const index = state.entries.findIndex((entry) => entry.id === id);
+  if (index === -1) return state;
+  const entries = [...state.entries];
+  entries[index] = { ...entries[index], reopen };
+  return { ...state, entries };
+}
+
+export function updateLocalFileRecovery(
+  state: LocalFilesState,
+  id: string,
+  recoveryStatus: LocalFileRecoveryStatus,
+  externalContents?: string,
+): LocalFilesState {
+  const index = state.entries.findIndex((entry) => entry.id === id);
+  if (index === -1) return state;
+  const entries = [...state.entries];
+  entries[index] = { ...entries[index], recoveryStatus, externalContents };
   return { ...state, entries };
 }
 

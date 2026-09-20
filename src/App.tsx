@@ -74,7 +74,12 @@ import {
 import { MarkdownEditor } from "./MarkdownEditor";
 import { MarkdownPrintDocument } from "./MarkdownPrintDocument";
 import type { MarkdownHeading } from "./headingNavigation";
-import { isMarkdownPath, openMarkdownFromPath, tauriFileAdapter } from "./tauriFileAdapter";
+import {
+  isMarkdownPath,
+  openMarkdownFromPath,
+  tauriFileAdapter,
+  tauriSessionFileAdapter,
+} from "./tauriFileAdapter";
 import {
   applyTheme,
   describeTheme,
@@ -89,7 +94,7 @@ import {
 import { markdownToolbarItems, type ToolbarContext, type ToolbarItem } from "./toolbarRegistry";
 import { checkForUpdate, installAndRelaunch, type Update, type UpdateProgress } from "./updater";
 import { getStoredRaw, getStoredZen, storeRaw, storeZen } from "./viewMode";
-import { webFileAdapter } from "./webFileAdapter";
+import { webFileAdapter, webSessionFileAdapter } from "./webFileAdapter";
 import {
   addLocalFile,
   applyLocalFileSave,
@@ -97,8 +102,18 @@ import {
   removeLocalFile,
   selectLocalFile,
   updateLocalFileContents,
+  updateLocalFileRecovery,
+  updateLocalFileReference,
+  type LocalFileEntry,
+  type LocalFileRecoveryStatus,
   type LocalFilesState,
 } from "./localFiles";
+import {
+  createLocalSessionPersistence,
+  createLocalStorageSessionStorage,
+  type PersistedLocalFile,
+  type SessionFileAdapter,
+} from "./sessionPersistence";
 
 const initialMarkdown = `# On the Quiet Hour
 
@@ -189,10 +204,60 @@ function createLocalFileId(): string {
   return `local-${Date.now()}-${localFileSequence}`;
 }
 
-const initialLocalFiles = createLocalFiles(
-  { name: initialFile.name, contents: initialMarkdown, handle: initialFile.handle },
-  createLocalFileId(),
-);
+const emptyLocalFiles: LocalFilesState = { entries: [], activeId: null };
+
+function getSessionFileAdapter(): SessionFileAdapter {
+  return isTauriRuntime() ? tauriSessionFileAdapter : webSessionFileAdapter;
+}
+
+function recoveryMessage(status: LocalFileRecoveryStatus): string | null {
+  switch (status) {
+    case "conflict": return "The file changed outside the editor. Saving requires confirmation.";
+    case "missing": return "The original file is missing. Your recovered draft is still available.";
+    case "permission-needed": return "Reconnect this browser file before saving. Your recovered draft is still available.";
+    case "upload-required": return "Choose the original browser file again to reconnect this recovered draft.";
+    case "denied": return "Permission to reopen this file was denied. Your recovered draft is still available.";
+    case "unavailable": return "The original file could not be reopened. Your recovered draft is still available.";
+    case "ready": return null;
+  }
+}
+
+async function recoverPersistedFile(
+  persisted: PersistedLocalFile,
+  adapter: SessionFileAdapter,
+): Promise<LocalFileEntry> {
+  const retained = (recoveryStatus: LocalFileRecoveryStatus): LocalFileEntry => ({
+    id: persisted.id,
+    name: persisted.displayName,
+    contents: persisted.draft,
+    savedContents: persisted.savedBaseline,
+    handle: null,
+    reopen: persisted.reopen,
+    recoveryStatus,
+  });
+  if (persisted.reopen.kind === "untitled") return retained("ready");
+  const result = await adapter.reconnect(persisted.reopen);
+  if (result.status !== "reopened") {
+    const status = result.status === "unsupported" ? "unavailable" : result.status;
+    return retained(status);
+  }
+  if (!persisted.dirty) {
+    return {
+      ...retained("ready"),
+      name: result.file.name,
+      contents: result.file.contents,
+      savedContents: result.file.contents,
+      handle: result.file.handle,
+    };
+  }
+  const conflicted = result.file.contents !== persisted.savedBaseline;
+  return {
+    ...retained(conflicted ? "conflict" : "ready"),
+    name: result.file.name,
+    handle: result.file.handle,
+    ...(conflicted ? { externalContents: result.file.contents } : {}),
+  };
+}
 
 // Render the modifier key the way the host platform writes it. Mac uses ⌘ +
 // composed glyphs; everywhere else falls back to "Ctrl+". Resolved once at
@@ -230,9 +295,29 @@ const PRINT_RESTORE_FALLBACK_MS = 30_000;
 const PRINT_RESTORE_AFTER_FOCUS_MS = 500;
 
 export function App() {
-  const [localFiles, setLocalFiles] = useState<LocalFilesState>(initialLocalFiles);
-  const [markdown, setMarkdown] = useState(initialMarkdown);
+  // An absent primary snapshot is a synchronously-known fresh launch, so the
+  // welcome document can mount immediately. Any present or unreadable value
+  // stays behind the hydration gate and can never be overwritten by defaults.
+  const [startup] = useState(() => {
+    try {
+      if (typeof localStorage !== "undefined" && localStorage.getItem("markdown.localSession.v1") === null) {
+        const files = createLocalFiles(
+          { name: initialFile.name, contents: initialMarkdown, handle: null },
+          createLocalFileId(),
+          { kind: "untitled" },
+        );
+        return { fresh: true, files, markdown: initialMarkdown };
+      }
+    } catch {
+      // The async persistence read below owns the user-visible failure.
+    }
+    return { fresh: false, files: emptyLocalFiles, markdown: "" };
+  });
+  const [localFiles, setLocalFiles] = useState<LocalFilesState>(startup.files);
+  const [markdown, setMarkdown] = useState(startup.markdown);
   const [fileSidebarVisible, setFileSidebarVisible] = useState(true);
+  const [hydrated, setHydrated] = useState(startup.fresh);
+  const [hydrationChecked, setHydrationChecked] = useState(false);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
   const [hasEditorSelection, setHasEditorSelection] = useState(false);
   const [headings, setHeadings] = useState<MarkdownHeading[]>([]);
@@ -269,6 +354,17 @@ export function App() {
   const [updateProgress, setUpdateProgress] = useState<UpdateProgress | null>(null);
   const [updateCheckStatus, setUpdateCheckStatus] = useState<UpdateCheckStatus>("idle");
   const editorRef = useRef<EditorView | null>(null);
+  const mountedRef = useRef(true);
+  const hydratedRef = useRef(startup.fresh);
+  const queuedOpenPathsRef = useRef<string[]>([]);
+  const selectionVersionRef = useRef(0);
+  const saveOperationSequenceRef = useRef(0);
+  const latestCompletedSaveAsRef = useRef(new Map<string, number>());
+  const saveTailsRef = useRef(new Map<string, Promise<void>>());
+  const savedBaselineRef = useRef(new Map<string, { handle: FileHandle; contents: string }>());
+  const sessionPersistenceRef = useRef(
+    createLocalSessionPersistence(createLocalStorageSessionStorage()),
+  );
   const localFilesRef = useRef(localFiles);
   localFilesRef.current = localFiles;
   const activeLocalFile =
@@ -296,14 +392,172 @@ export function App() {
   const peerCloudRoomRef = useRef(peerCloudRoom);
   peerCloudRoomRef.current = peerCloudRoom;
 
+  useEffect(() => {
+    mountedRef.current = true;
+    let cancelled = false;
+    void (async () => {
+      const persistence = sessionPersistenceRef.current;
+      const result = await persistence.read();
+      if (cancelled || !mountedRef.current) return;
+
+      if (startup.fresh && result.status === "empty") {
+        setHydrationChecked(true);
+        return;
+      }
+
+      let restored = emptyLocalFiles;
+      let restoredSidebarVisible = true;
+      let hydrationError: string | null = null;
+
+      if (result.status === "ok") {
+        const entries = await Promise.all(
+          [...result.snapshot.files]
+            .sort((left, right) => left.order - right.order)
+            .map((entry) => recoverPersistedFile(entry, getSessionFileAdapter())),
+        );
+        if (cancelled || !mountedRef.current) return;
+        restored = {
+          entries,
+          activeId: entries.some((entry) => entry.id === result.snapshot.activeFileId)
+            ? result.snapshot.activeFileId
+            : entries[0]?.id ?? null,
+        };
+        restoredSidebarVisible = result.snapshot.sidebarVisible ?? true;
+        if (result.recoveredFromBackup) {
+          hydrationError = "The latest session was damaged, so the previous recovery snapshot was restored.";
+        }
+      } else if (result.status === "empty") {
+        const id = createLocalFileId();
+        restored = createLocalFiles(
+          { name: initialFile.name, contents: initialMarkdown, handle: null },
+          id,
+          { kind: "untitled" },
+        );
+      } else if (result.status === "unsupported-version") {
+        hydrationError = "This editor cannot safely update recovery data created by a newer version.";
+      } else {
+        hydrationError = "Session recovery storage is unavailable. Changes may not survive restart.";
+        if (result.lastUsable) {
+          const entries = await Promise.all(
+            [...result.lastUsable.files]
+              .sort((left, right) => left.order - right.order)
+              .map((entry) => recoverPersistedFile(entry, getSessionFileAdapter())),
+          );
+          if (cancelled || !mountedRef.current) return;
+          restored = {
+            entries,
+            activeId: entries.some((entry) => entry.id === result.lastUsable?.activeFileId)
+              ? result.lastUsable.activeFileId
+              : entries[0]?.id ?? null,
+          };
+          restoredSidebarVisible = result.lastUsable.sidebarVisible ?? true;
+        } else {
+          restored = createLocalFiles(
+            { name: initialFile.name, contents: initialMarkdown, handle: null },
+            createLocalFileId(),
+            { kind: "untitled" },
+          );
+        }
+      }
+
+      const active = restored.entries.find((entry) => entry.id === restored.activeId) ?? null;
+      setLocalFiles(restored);
+      setMarkdown(active?.contents ?? "");
+      setFileSidebarVisible(restoredSidebarVisible);
+      const activeRecoveryMessage = active ? recoveryMessage(active.recoveryStatus) : null;
+      if (activeRecoveryMessage || hydrationError) {
+        setSaveStatus("error");
+        setSaveError(activeRecoveryMessage ?? hydrationError);
+      }
+      hydratedRef.current = true;
+      setHydrated(true);
+      setHydrationChecked(true);
+    })();
+    return () => {
+      cancelled = true;
+      mountedRef.current = false;
+    };
+  }, [startup.fresh]);
+
+  useEffect(() => {
+    if (!hydrated || !hydrationChecked) return;
+    const snapshot = {
+      activeFileId: localFiles.activeId,
+      sidebarVisible: fileSidebarVisible,
+      files: localFiles.entries.map((entry, order) => ({
+        id: entry.id,
+        displayName: entry.name,
+        order,
+        draft: entry.contents,
+        savedBaseline: entry.savedContents,
+        dirty: entry.contents !== entry.savedContents,
+        untitled: entry.reopen.kind === "untitled",
+        reopen: entry.reopen,
+      })),
+    };
+    void sessionPersistenceRef.current.write(snapshot).then((result) => {
+      if (!mountedRef.current || result.status === "written") return;
+      setSaveStatus("error");
+      setSaveError(
+        result.status === "stale"
+          ? "Recovery data changed in another window. This window will not overwrite it."
+          : "Session recovery could not be saved. Changes may not survive restart.",
+      );
+    });
+  }, [fileSidebarVisible, hydrated, hydrationChecked, localFiles]);
+
+  useEffect(() => {
+    if (!hydrated || !hydrationChecked) return;
+    const flush = () => { void sessionPersistenceRef.current.flush(); };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flush);
+      flush();
+    };
+  }, [hydrated, hydrationChecked]);
+
+  useEffect(() => {
+    if (!hydrated || !hydrationChecked || !isTauriRuntime()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+      const appWindow = getCurrentWindow();
+      const stop = await appWindow.onCloseRequested(async (event) => {
+        event.preventDefault();
+        const result = await sessionPersistenceRef.current.flush();
+        if (result.status !== "flushed") {
+          setSaveStatus("error");
+          setSaveError("The editor could not flush recovery data before closing.");
+          return;
+        }
+        await appWindow.destroy();
+      });
+      if (disposed) stop();
+      else unlisten = stop;
+    }).catch((error) => {
+      console.error("Failed to bind session close flush", error);
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [hydrated, hydrationChecked]);
+
   const dirty = activeLocalFile ? markdown !== activeLocalFile.savedContents : false;
   const hasDirtyLocalFiles = localFiles.entries.some(
     (entry) => entry.contents !== entry.savedContents,
   );
   const commentsParse = useMemo(() => parseComments(markdown), [markdown]);
   const badge = useMemo(
-    () => describeStatus({ saveStatus, dirty, hasHandle: file.handle !== null }),
-    [saveStatus, dirty, file.handle],
+    () => describeStatus({
+      saveStatus,
+      dirty,
+      hasHandle: file.handle !== null,
+      recoveryStatus: activeLocalFile?.recoveryStatus,
+    }),
+    [activeLocalFile?.recoveryStatus, saveStatus, dirty, file.handle],
   );
 
   const withEditor = useCallback((command: (view: EditorView) => void) => {
@@ -568,14 +822,36 @@ export function App() {
     setFileVersion((value) => value + 1);
   }, []);
 
-  const addFileSession = useCallback((next: LocalFile) => {
+  const addFileSession = useCallback(async (
+    next: LocalFile,
+    activate = true,
+    isUntitled = false,
+  ) => {
     const id = createLocalFileId();
-    setLocalFiles((current) => addLocalFile(current, next, id));
-    setMarkdown(next.contents);
-    resetTransientFileUi();
+    let reopen;
+    try {
+      reopen = await getSessionFileAdapter().createReference(next.handle, isUntitled);
+    } catch (error) {
+      console.error("Could not retain the file reference", error);
+      reopen = isUntitled
+        ? { kind: "untitled" } as const
+        : { kind: "browser-upload-only", status: "upload-only" } as const;
+      setSaveStatus("error");
+      setSaveError("The file is open, but its reconnect permission could not be saved.");
+    }
+    if (!mountedRef.current || activeCloudRoomRef.current) return;
+    setLocalFiles((current) => addLocalFile(current, next, id, reopen, activate));
+    if (activate) {
+      selectionVersionRef.current += 1;
+      setMarkdown(next.contents);
+      resetTransientFileUi();
+    }
   }, [resetTransientFileUi]);
 
   const allowLocalFileAction = useCallback(() => {
+    if (!hydratedRef.current) {
+      return false;
+    }
     if (!activeCloudRoomRef.current) {
       return true;
     }
@@ -591,7 +867,7 @@ export function App() {
     }
     const adapter = getActiveAdapter();
     const fresh = adapter.newFile();
-    addFileSession(fresh);
+    void addFileSession(fresh, true, true);
   }, [addFileSession, allowLocalFileAction]);
 
   const handleOpen = useCallback(async () => {
@@ -599,13 +875,14 @@ export function App() {
       return;
     }
     const adapter = getActiveAdapter();
+    const selectionVersion = selectionVersionRef.current;
 
     try {
       const opened = await adapter.openFile();
       if (!opened || activeCloudRoomRef.current) {
         return;
       }
-      addFileSession(opened);
+      await addFileSession(opened, selectionVersionRef.current === selectionVersion);
     } catch (error) {
       console.error("Open failed", error);
       setSaveStatus("error");
@@ -622,8 +899,14 @@ export function App() {
       return;
     }
     setLocalFiles((current) => selectLocalFile(current, id));
+    selectionVersionRef.current += 1;
     setMarkdown(entry.contents);
     resetTransientFileUi();
+    const message = recoveryMessage(entry.recoveryStatus);
+    if (message) {
+      setSaveStatus("error");
+      setSaveError(message);
+    }
   }, [allowLocalFileAction, resetTransientFileUi]);
 
   const handleCloseLocalFile = useCallback((id: string) => {
@@ -643,6 +926,7 @@ export function App() {
       return;
     }
     const nextState = removeLocalFile(current, id);
+    selectionVersionRef.current += 1;
     setLocalFiles(nextState);
     if (current.activeId === id) {
       editorRef.current = null;
@@ -679,6 +963,7 @@ export function App() {
 
     const contents = markdownRef.current;
     const entryId = entry.id;
+    const operation = ++saveOperationSequenceRef.current;
     const isActive = () => localFilesRef.current.activeId === entryId;
 
     try {
@@ -689,7 +974,42 @@ export function App() {
         }
         return;
       }
-      setLocalFiles((current) => applyLocalFileSave(current, entryId, result, contents));
+      // A cancelled picker does not supersede a prior successful destination.
+      // Once bytes were actually written, however, this operation owns the
+      // destination unless a later Save As also writes successfully.
+      const newerCompletedSaveAs = latestCompletedSaveAsRef.current.get(entryId) ?? 0;
+      if (newerCompletedSaveAs > operation) return;
+      latestCompletedSaveAsRef.current.set(entryId, operation);
+      let reopen;
+      try {
+        reopen = await getSessionFileAdapter().createReference(result.handle, false);
+      } catch (error) {
+        console.error("Could not retain saved file reference", error);
+        if (latestCompletedSaveAsRef.current.get(entryId) !== operation) return;
+        const fallback = { kind: "browser-upload-only", status: "upload-only" } as const;
+        savedBaselineRef.current.set(entryId, { handle: result.handle, contents });
+        setLocalFiles((current) =>
+          updateLocalFileReference(
+            applyLocalFileSave(current, entryId, result, contents),
+            entryId,
+            fallback,
+          ),
+        );
+        if (isActive()) {
+          setSaveStatus("error");
+          setSaveError("The file was saved, but its reconnect permission could not be retained.");
+        }
+        return;
+      }
+      if (latestCompletedSaveAsRef.current.get(entryId) !== operation) return;
+      savedBaselineRef.current.set(entryId, { handle: result.handle, contents });
+      setLocalFiles((current) =>
+        updateLocalFileReference(
+          applyLocalFileSave(current, entryId, result, contents),
+          entryId,
+          reopen,
+        ),
+      );
       if (isActive()) {
         setSaveStatus("idle");
       }
@@ -702,6 +1022,40 @@ export function App() {
       setSaveStatus("error");
       setSaveError(error instanceof Error ? error.message : "Save failed");
     }
+  }, []);
+
+  const allowOverwriteCurrentSource = useCallback(async (
+    entry: LocalFileEntry,
+    intent: "manual" | "autosave",
+  ): Promise<boolean> => {
+    if (entry.reopen.kind !== "desktop-path" && entry.reopen.kind !== "browser-capability") {
+      return true;
+    }
+    const reopened = await getSessionFileAdapter().reconnect(entry.reopen);
+    if (reopened.status !== "reopened") {
+      const status = reopened.status === "unsupported" ? "unavailable" : reopened.status;
+      setLocalFiles((current) => updateLocalFileRecovery(current, entry.id, status));
+      if (localFilesRef.current.activeId === entry.id) {
+        setSaveStatus("error");
+        setSaveError(recoveryMessage(status));
+      }
+      return false;
+    }
+    const externalChanged = reopened.file.contents !== entry.savedContents;
+    if (!externalChanged) return true;
+    setLocalFiles((current) =>
+      updateLocalFileRecovery(current, entry.id, "conflict", reopened.file.contents),
+    );
+    if (intent === "autosave") {
+      if (localFilesRef.current.activeId === entry.id) {
+        setSaveStatus("error");
+        setSaveError("Autosave stopped because the file changed outside the editor.");
+      }
+      return false;
+    }
+    return typeof window !== "undefined" && window.confirm(
+      `${entry.name} changed outside the editor. Overwrite the external version with this recovered draft?`,
+    );
   }, []);
 
   const performSave = useCallback(async (intent: "manual" | "autosave") => {
@@ -720,29 +1074,71 @@ export function App() {
       return;
     }
 
-    setSaveStatus(intent === "autosave" ? "autosaving" : "saving");
-    setSaveError(null);
-
+    // Capture the document bytes with the target identity before any
+    // asynchronous reconnect/conflict check. Reading the global editor after
+    // that await could pair a newly selected document's text with this
+    // entry's handle.
     const contents = markdownRef.current;
     const entryId = entry.id;
-    const isActive = () => localFilesRef.current.activeId === entryId;
+    const handle = entry.handle;
 
-    try {
-      const result = await adapter.saveFile(entry.handle, contents, entry.name);
-      setLocalFiles((current) => applyLocalFileSave(current, entryId, result, contents));
-      if (isActive()) {
-        setSaveStatus("idle");
+    const run = async () => {
+      // Re-read state after earlier saves for this file settle. The handle
+      // identity still guards close/Save As destination changes, while the
+      // baseline may legitimately have advanced because of the prior save.
+      const currentEntry = localFilesRef.current.entries.find(
+        (candidate) => candidate.id === entryId,
+      );
+      if (!currentEntry || currentEntry.handle !== handle) return;
+      const immediateBaseline = savedBaselineRef.current.get(entryId);
+      const entryForCheck = immediateBaseline?.handle === handle
+        ? { ...currentEntry, savedContents: immediateBaseline.contents }
+        : currentEntry;
+
+      if (!(await allowOverwriteCurrentSource(entryForCheck, intent))) return;
+
+      const checkedEntry = localFilesRef.current.entries.find(
+        (candidate) => candidate.id === entryId,
+      );
+      if (!checkedEntry || checkedEntry.handle !== handle) return;
+
+      setSaveStatus(intent === "autosave" ? "autosaving" : "saving");
+      setSaveError(null);
+      const isActive = () => localFilesRef.current.activeId === entryId;
+
+      try {
+        const result = await adapter.saveFile(handle, contents, entry.name);
+        const destinationStillCurrent = localFilesRef.current.entries.some(
+          (candidate) => candidate.id === entryId && candidate.handle === handle,
+        );
+        if (!destinationStillCurrent) return;
+        savedBaselineRef.current.set(entryId, { handle, contents });
+        setLocalFiles((current) => {
+          const target = current.entries.find((candidate) => candidate.id === entryId);
+          return !target || target.handle !== handle
+            ? current
+            : applyLocalFileSave(current, entryId, result, contents);
+        });
+        if (isActive()) setSaveStatus("idle");
+      } catch (error) {
+        if (!isActive()) {
+          console.error("Save failed for inactive file", error);
+          return;
+        }
+        console.error("Save failed", error);
+        setSaveStatus("error");
+        setSaveError(error instanceof Error ? error.message : "Save failed");
       }
-    } catch (error) {
-      if (!isActive()) {
-        console.error("Save failed for inactive file", error);
-        return;
-      }
-      console.error("Save failed", error);
-      setSaveStatus("error");
-      setSaveError(error instanceof Error ? error.message : "Save failed");
+    };
+
+    const previous = saveTailsRef.current.get(entryId) ?? Promise.resolve();
+    const queued = previous.then(run, run);
+    saveTailsRef.current.set(entryId, queued);
+    await queued;
+    if (saveTailsRef.current.get(entryId) === queued) {
+      saveTailsRef.current.delete(entryId);
     }
-  }, [handleSaveAs]);
+  }, [allowOverwriteCurrentSource, handleSaveAs]);
 
   const handleSave = useCallback(async () => {
     await performSave("manual");
@@ -825,6 +1221,10 @@ export function App() {
       if (!path || !isMarkdownPath(path)) {
         return;
       }
+      if (!hydratedRef.current) {
+        queuedOpenPathsRef.current.push(path);
+        return;
+      }
       if (!allowLocalFileAction()) {
         return;
       }
@@ -841,6 +1241,14 @@ export function App() {
     },
     [addFileSession, allowLocalFileAction],
   );
+
+  useEffect(() => {
+    if (!hydrated || queuedOpenPathsRef.current.length === 0) return;
+    const queued = queuedOpenPathsRef.current.splice(0);
+    for (const path of queued) {
+      void loadPathFile(path);
+    }
+  }, [hydrated, loadPathFile]);
 
   // Web sibling of `loadPathFile`: read a `File` object dropped onto the
   // window. The Tauri build receives an absolute path through the
@@ -1421,7 +1829,9 @@ export function App() {
         )}
 
         <div className="titleCluster">
-          <div className="documentTitle">{activeLocalFile ? file.name : "No file open"}</div>
+          <div className="documentTitle">
+            {!hydrated ? "Restoring session…" : activeLocalFile ? file.name : "No file open"}
+          </div>
           {!zen && activeLocalFile && (
             <div
               className={`documentState documentState--${badge.tone}`}
@@ -1592,6 +2002,10 @@ export function App() {
             onReady={handleReady}
             contributions={editorContributions}
           />
+          ) : !hydrated ? (
+            <div className="emptyFileEditor" aria-live="polite">
+              <p>Restoring your editor session…</p>
+            </div>
           ) : (
             <div className="emptyFileEditor">
               <p>Open or create a Markdown file to start writing.</p>
@@ -1689,16 +2103,24 @@ function describeStatus({
   saveStatus,
   dirty,
   hasHandle,
+  recoveryStatus,
 }: {
   saveStatus: SaveStatus;
   dirty: boolean;
   hasHandle: boolean;
+  recoveryStatus?: LocalFileRecoveryStatus;
 }): { label: string; tone: "saved" | "unsaved" | "saving" | "error" | "new" } {
   if (saveStatus === "saving") {
     return { label: "Saving…", tone: "saving" };
   }
   if (saveStatus === "autosaving") {
     return { label: "Autosaving…", tone: "saving" };
+  }
+  if (recoveryStatus && recoveryStatus !== "ready") {
+    return {
+      label: recoveryStatus === "conflict" ? "External changes" : "Reconnect needed",
+      tone: "error",
+    };
   }
   if (saveStatus === "error") {
     return { label: "Save failed", tone: "error" };
