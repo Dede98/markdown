@@ -12,7 +12,11 @@ import {
   type FileHandle,
   type LocalFile,
   type SaveResult,
-} from "./fileAdapter";
+} from "./fileAdapter.ts";
+import type {
+  PersistedFileReference,
+  SessionFileAdapter,
+} from "./sessionPersistence.ts";
 
 const MARKDOWN_FILTERS = [
   {
@@ -188,3 +192,41 @@ export function isMarkdownPath(path: string): boolean {
   }
   return MARKDOWN_EXTENSIONS.has(trimmed.slice(dot + 1).toLowerCase());
 }
+
+function nativeReconnectFailure(error: unknown): "missing" | "denied" | "unavailable" {
+  const text = error instanceof Error ? `${error.name} ${error.message}` : String(error);
+  if (/not found|no such file|enoent/i.test(text)) return "missing";
+  if (/permission|denied|not allowed|scope|eacces|eperm/i.test(text)) return "denied";
+  return "unavailable";
+}
+
+/**
+ * Session references retain the path string already used by the Tauri file
+ * adapter. Reopening still goes through the scoped fs plugin, so a path that
+ * was usable in one process may explicitly fail permission checks in the next.
+ */
+export function createTauriSessionFileAdapter(
+  read: (path: string) => Promise<string> = readPath,
+): SessionFileAdapter {
+  return {
+    async createReference(handle, untitled): Promise<PersistedFileReference> {
+      if (untitled || !isPathHandle(handle)) return { kind: "untitled" };
+      return { kind: "desktop-path", path: handle };
+    },
+
+    async reconnect(reference) {
+      if (reference.kind !== "desktop-path") return { status: "unsupported" };
+      try {
+        const contents = await read(reference.path);
+        return {
+          status: "reopened",
+          file: { name: basename(reference.path), contents, handle: reference.path },
+        };
+      } catch (error) {
+        return { status: nativeReconnectFailure(error), error };
+      }
+    },
+  };
+}
+
+export const tauriSessionFileAdapter = createTauriSessionFileAdapter();

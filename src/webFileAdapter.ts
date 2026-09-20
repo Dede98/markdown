@@ -5,7 +5,12 @@ import {
   type FileHandle,
   type LocalFile,
   type SaveResult,
-} from "./fileAdapter";
+} from "./fileAdapter.ts";
+import type {
+  BrowserReopenStatus,
+  PersistedFileReference,
+  SessionFileAdapter,
+} from "./sessionPersistence.ts";
 
 // Minimal FSA shape so we don't need DOM lib types beyond what we use.
 type FileSystemWritableFileStream = {
@@ -18,6 +23,8 @@ type FileSystemFileHandle = {
   name: string;
   getFile(): Promise<File>;
   createWritable(): Promise<FileSystemWritableFileStream>;
+  queryPermission?: (descriptor?: { mode: "read" | "readwrite" }) => Promise<PermissionState>;
+  requestPermission?: (descriptor?: { mode: "read" | "readwrite" }) => Promise<PermissionState>;
 };
 
 type FilePickerOptions = {
@@ -236,3 +243,131 @@ export const webFileAdapter: FileAdapter = {
     return downloadFallback(name, contents);
   },
 };
+
+export type BrowserCapabilityStore = {
+  get(id: string): Promise<FileSystemFileHandle | undefined>;
+  put(id: string, handle: FileSystemFileHandle): Promise<void>;
+};
+
+const CAPABILITY_DATABASE = "markdown-local-capabilities";
+const CAPABILITY_STORE = "file-handles";
+
+function openCapabilityDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === "undefined") {
+      reject(new Error("IndexedDB is unavailable"));
+      return;
+    }
+    const request = indexedDB.open(CAPABILITY_DATABASE, 1);
+    request.onupgradeneeded = () => {
+      if (!request.result.objectStoreNames.contains(CAPABILITY_STORE)) {
+        request.result.createObjectStore(CAPABILITY_STORE);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error ?? new Error("Could not open capability storage"));
+  });
+}
+
+export const indexedDbBrowserCapabilityStore: BrowserCapabilityStore = {
+  async get(id) {
+    const database = await openCapabilityDatabase();
+    try {
+      return await new Promise<FileSystemFileHandle | undefined>((resolve, reject) => {
+        const request = database.transaction(CAPABILITY_STORE, "readonly").objectStore(CAPABILITY_STORE).get(id);
+        request.onsuccess = () => resolve(request.result as FileSystemFileHandle | undefined);
+        request.onerror = () => reject(request.error ?? new Error("Could not read file capability"));
+      });
+    } finally {
+      database.close();
+    }
+  },
+  async put(id, handle) {
+    const database = await openCapabilityDatabase();
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const transaction = database.transaction(CAPABILITY_STORE, "readwrite");
+        transaction.objectStore(CAPABILITY_STORE).put(handle, id);
+        transaction.oncomplete = () => resolve();
+        transaction.onerror = () => reject(transaction.error ?? new Error("Could not store file capability"));
+        transaction.onabort = () => reject(transaction.error ?? new Error("File capability write was aborted"));
+      });
+    } finally {
+      database.close();
+    }
+  },
+};
+
+async function browserPermissionStatus(
+  handle: FileSystemFileHandle,
+): Promise<Exclude<BrowserReopenStatus, "upload-only">> {
+  if (!handle.queryPermission) return "permission-needed";
+  return (await handle.queryPermission({ mode: "readwrite" })) === "granted"
+    ? "granted"
+    : "permission-needed";
+}
+
+function newCapabilityId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `file-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+/**
+ * IndexedDB stores the structured-cloneable File System Access handle. The
+ * persisted JSON receives only its random capability id and permission state.
+ */
+export function createWebSessionFileAdapter(
+  capabilities: BrowserCapabilityStore = indexedDbBrowserCapabilityStore,
+): SessionFileAdapter {
+  return {
+    async createReference(handle, untitled): Promise<PersistedFileReference> {
+      if (untitled) return { kind: "untitled" };
+      if (!isFsaHandle(handle)) return { kind: "browser-upload-only", status: "upload-only" };
+      const capabilityId = newCapabilityId();
+      await capabilities.put(capabilityId, handle);
+      return {
+        kind: "browser-capability",
+        capabilityId,
+        status: await browserPermissionStatus(handle),
+      };
+    },
+
+    async reconnect(reference, options) {
+      if (reference.kind === "browser-upload-only") return { status: "upload-required" };
+      if (reference.kind !== "browser-capability") return { status: "unsupported" };
+      let handle: FileSystemFileHandle | undefined;
+      try {
+        handle = await capabilities.get(reference.capabilityId);
+      } catch (error) {
+        return { status: "unavailable", error };
+      }
+      if (!handle) return { status: "unavailable" };
+      try {
+        if (!handle.queryPermission) return { status: "permission-needed" };
+        let permission = await handle.queryPermission({ mode: "readwrite" });
+        if (permission === "prompt" && options?.requestPermission && handle.requestPermission) {
+          permission = await handle.requestPermission({ mode: "readwrite" });
+        }
+        if (permission === "prompt") return { status: "permission-needed" };
+        if (permission === "denied") return { status: "denied" };
+        const file = await handle.getFile();
+        return {
+          status: "reopened",
+          file: { name: handle.name, contents: await file.text(), handle },
+        };
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "NotFoundError") {
+          return { status: "missing", error };
+        }
+        if (error instanceof DOMException && (error.name === "NotAllowedError" || error.name === "SecurityError")) {
+          return { status: "denied", error };
+        }
+        return { status: "unavailable", error };
+      }
+    },
+  };
+}
+
+export const webSessionFileAdapter = createWebSessionFileAdapter();
