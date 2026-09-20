@@ -206,6 +206,14 @@ function createLocalFileId(): string {
 
 const emptyLocalFiles: LocalFilesState = { entries: [], activeId: null };
 
+function parentFolderLabel(path: string): string | undefined {
+  const parts = path.replaceAll("\\", "/").split("/");
+  parts.pop();
+  const parent = parts.filter(Boolean).at(-1);
+  if (parent) return parent;
+  return path.startsWith("/") ? "/" : undefined;
+}
+
 function getSessionFileAdapter(): SessionFileAdapter {
   return isTauriRuntime() ? tauriSessionFileAdapter : webSessionFileAdapter;
 }
@@ -369,6 +377,20 @@ export function App() {
   localFilesRef.current = localFiles;
   const activeLocalFile =
     localFiles.entries.find((entry) => entry.id === localFiles.activeId) ?? null;
+  const sidebarFiles = useMemo(() => {
+    const nameCounts = new Map<string, number>();
+    for (const entry of localFiles.entries) {
+      nameCounts.set(entry.name, (nameCounts.get(entry.name) ?? 0) + 1);
+    }
+    return localFiles.entries.map((entry) => ({
+      id: entry.id,
+      name: entry.name,
+      dirty: entry.contents !== entry.savedContents,
+      ...(nameCounts.get(entry.name)! > 1 && entry.reopen.kind === "desktop-path"
+        ? { location: parentFolderLabel(entry.reopen.path) }
+        : {}),
+    }));
+  }, [localFiles.entries]);
   const file: FileState = activeLocalFile
     ? {
         name: activeLocalFile.name,
@@ -1971,11 +1993,7 @@ export function App() {
       <div className="workspaceFrame">
         {!zen && fileSidebarVisible && (
           <FileSidebar
-            files={localFiles.entries.map((entry) => ({
-              id: entry.id,
-              name: entry.name,
-              dirty: entry.contents !== entry.savedContents,
-            }))}
+            files={sidebarFiles}
             activeId={localFiles.activeId}
             onNew={handleNew}
             onOpen={() => void handleOpen()}

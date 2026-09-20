@@ -264,6 +264,8 @@ test.describe("file sidebar integration", () => {
     await expect(selectors.nth(0)).toHaveAttribute("aria-label", "Select notes.md");
     await expect(selectors.nth(1)).toHaveAttribute("aria-label", "Select notes.md, unsaved changes");
     await expect(selectors.nth(2)).toHaveAttribute("aria-label", "Select untitled.md, unsaved changes");
+    await expect(selectors.nth(0)).toHaveAccessibleDescription("left");
+    await expect(selectors.nth(1)).toHaveAccessibleDescription("right");
 
     await selectors.nth(0).click();
     await expect.poll(() => getEditorSource(page)).toBe("left from disk");

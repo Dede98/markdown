@@ -1,8 +1,8 @@
 .fileSidebar {
   display: flex;
-  flex: 0 0 232px;
+  flex: 0 0 240px;
   flex-direction: column;
-  width: 232px;
+  width: 240px;
   min-width: 0;
   height: 100%;
   overflow: hidden;
@@ -15,24 +15,23 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  min-height: 42px;
-  padding: 6px 8px 6px 12px;
+  min-height: 44px;
+  padding: 6px 7px 6px 12px;
   border-bottom: 1px solid var(--rule);
 }
 
 .fileSidebarHeader h2 {
   margin: 0;
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
 }
 
 .fileSidebarActions {
   display: flex;
   align-items: center;
-  gap: 1px;
+  gap: 2px;
 }
 
 .fileSidebarActions button,
@@ -40,7 +39,6 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
   height: 28px;
   padding: 0;
   border: 0;
@@ -48,6 +46,20 @@
   background: transparent;
   color: var(--fg-icon);
   cursor: pointer;
+}
+
+.fileSidebarActions .fileSidebarAction {
+  gap: 4px;
+  width: auto;
+  padding: 0 6px;
+  color: var(--fg-muted);
+  font-size: 11px;
+  font-weight: 550;
+}
+
+.fileSidebarHide,
+.fileSidebarClose {
+  width: 28px;
 }
 
 .fileSidebarActions button:hover,
@@ -75,10 +87,11 @@
 
 .fileSidebarList {
   min-height: 0;
-  padding: 6px;
+  padding: 6px 7px 10px;
   margin: 0;
   overflow-x: hidden;
   overflow-y: auto;
+  scrollbar-gutter: stable;
   list-style: none;
 }
 
@@ -88,7 +101,8 @@
   grid-template-columns: minmax(0, 1fr) 28px;
   align-items: center;
   min-width: 0;
-  border-radius: 6px;
+  margin-bottom: 1px;
+  border-radius: 7px;
 }
 
 .fileSidebarItem:hover {
@@ -97,14 +111,16 @@
 
 .fileSidebarItem.isActive {
   background: var(--bg-active);
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .fileSidebarSelect {
   display: flex;
   align-items: center;
+  gap: 8px;
   min-width: 0;
-  height: 32px;
-  padding: 0 4px 0 8px;
+  min-height: 38px;
+  padding: 4px 3px 4px 9px;
   border: 0;
   border-radius: 6px 0 0 6px;
   background: transparent;
@@ -114,12 +130,38 @@
   cursor: pointer;
 }
 
+.fileSidebarFileIcon {
+  flex: 0 0 auto;
+  color: var(--fg-faint);
+}
+
+.fileSidebarItem.isActive .fileSidebarFileIcon {
+  color: var(--accent-fg);
+}
+
+.fileSidebarLabel,
+.fileSidebarNameLine {
+  display: flex;
+  min-width: 0;
+}
+
+.fileSidebarLabel {
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.fileSidebarNameLine {
+  align-items: center;
+}
+
 .fileSidebarItem.isActive .fileSidebarSelect {
   color: var(--fg-strong);
   font-weight: 600;
 }
 
 .fileSidebarName {
+  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -130,9 +172,19 @@
   flex: 0 0 auto;
   width: 6px;
   height: 6px;
-  margin-right: 7px;
+  margin-left: 6px;
   border-radius: 50%;
   background: transparent;
+}
+
+.fileSidebarLocation {
+  overflow: hidden;
+  color: var(--fg-faint);
+  font-size: 10px;
+  font-weight: 450;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fileSidebarItem.isDirty .fileSidebarDirtyDot {
@@ -140,7 +192,7 @@
 }
 
 .fileSidebarClose {
-  margin-right: 2px;
+  margin-right: 3px;
   opacity: 0;
 }
 
@@ -151,11 +203,28 @@
 }
 
 .fileSidebarEmpty {
-  padding: 22px 12px;
-  margin: 0;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 132px;
+  padding: 24px 20px;
   color: var(--fg-faint);
-  font-size: 12px;
   text-align: center;
+}
+
+.fileSidebarEmpty p {
+  margin: 9px 0 3px;
+  color: var(--fg-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.fileSidebarEmpty span {
+  max-width: 180px;
+  font-size: 11px;
+  line-height: 1.45;
 }
 
 @media (prefers-reduced-motion: no-preference) {
@@ -164,8 +233,14 @@
   }
 }
 
-/* Keep filenames and close actions available without narrowing the phone editor. */
-@media (max-width: 480px) {
+@media (hover: none), (pointer: coarse) {
+  .fileSidebarClose {
+    opacity: 1;
+  }
+}
+
+/* Keep the navigator useful without squeezing the editor into a narrow rail. */
+@media (max-width: 720px) {
   .workspaceFrame {
     flex-direction: column;
   }
@@ -174,7 +249,7 @@
     flex: 0 0 auto;
     width: 100%;
     height: auto;
-    max-height: 160px;
+    max-height: min(32vh, 220px);
     border-right: 0;
     border-bottom: 1px solid var(--rule);
   }
@@ -184,17 +259,29 @@
   }
 
   .workspaceFrame .fileSidebarList {
-    display: flex;
-    gap: 4px;
-    overflow-x: auto;
+    padding-right: 8px;
   }
 
   .workspaceFrame .fileSidebarItem {
-    flex: 0 0 auto;
-    max-width: 200px;
+    width: 100%;
   }
 
   .workspaceFrame .fileSidebarClose {
     opacity: 1;
+  }
+}
+
+@media (max-width: 380px) {
+  .fileSidebarHeader h2 {
+    position: absolute;
+    overflow: hidden;
+    width: 1px;
+    height: 1px;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .fileSidebarHeader {
+    justify-content: flex-end;
   }
 }
