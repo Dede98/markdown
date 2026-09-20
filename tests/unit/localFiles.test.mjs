@@ -4,7 +4,9 @@ import test from "node:test";
 import {
   addLocalFile,
   applyLocalFileSave,
+  closeLocalFile,
   createLocalFiles,
+  reconnectLocalFile,
   removeLocalFile,
   selectLocalFile,
   updateLocalFileContents,
@@ -224,4 +226,70 @@ test("removing the final file returns an empty state", () => {
   const state = createLocalFiles(file("only.md", "only", null), "only");
 
   assert.deepEqual(removeLocalFile(state, "only"), { entries: [], activeId: null });
+});
+
+test("closing and reopening an editor preserves the same draft buffer and identity", () => {
+  const drafted = updateLocalFileContents(
+    createLocalFiles(file("draft.md", "saved", null), "stable-id"),
+    "stable-id",
+    "unsaved draft bytes",
+  );
+  const closed = closeLocalFile(drafted, "stable-id");
+
+  assert.equal(closed.activeId, null);
+  assert.equal(closed.entries[0].open, false);
+  assert.equal(closed.entries[0].contents, "unsaved draft bytes");
+
+  const reopened = selectLocalFile(closed, "stable-id");
+  assert.equal(reopened.activeId, "stable-id");
+  assert.equal(reopened.entries[0].open, true);
+  assert.equal(reopened.entries[0].contents, "unsaved draft bytes");
+});
+
+test("reconnecting a relocated file updates only its physical reference", () => {
+  const drafted = updateLocalFileContents(
+    createLocalFiles(file("notes.md", "disk baseline", "/old/notes.md"), "stable-id", {
+      kind: "desktop-path",
+      path: "/old/notes.md",
+    }),
+    "stable-id",
+    "unsaved draft bytes",
+  );
+
+  const reconnected = reconnectLocalFile(
+    drafted,
+    "stable-id",
+    file("renamed.md", "new disk bytes", "/new/renamed.md"),
+    { kind: "desktop-path", path: "/new/renamed.md" },
+  );
+
+  assert.equal(reconnected.entries[0].id, "stable-id");
+  assert.equal(reconnected.entries[0].contents, "unsaved draft bytes");
+  assert.equal(reconnected.entries[0].savedContents, "disk baseline");
+  assert.equal(reconnected.entries[0].name, "renamed.md");
+  assert.equal(reconnected.entries[0].handle, "/new/renamed.md");
+  assert.deepEqual(reconnected.entries[0].reopen, {
+    kind: "desktop-path",
+    path: "/new/renamed.md",
+  });
+});
+
+
+test("removing the last open editor retains closed references without selecting them", () => {
+  let state = createLocalFiles(file("untitled.md", "", null), "draft");
+  state = addLocalFile(state, file("notes.md", "saved", "/notes.md"), "notes");
+  state = closeLocalFile(state, "notes");
+  state = removeLocalFile(state, "draft");
+  assert.equal(state.activeId, null);
+  assert.equal(state.entries[0].open, false);
+  assert.equal(selectLocalFile(state, "notes").activeId, "notes");
+});
+
+test("removing an active editor skips closed neighbors in both directions", () => {
+  let state = createLocalFiles(file("a.md", "a", null), "a");
+  for (const id of ["b", "c", "d"]) state = addLocalFile(state, file(id + ".md", id, null), id);
+  state = closeLocalFile(state, "b");
+  state = closeLocalFile(state, "c");
+  assert.equal(removeLocalFile(selectLocalFile(state, "a"), "a").activeId, "d");
+  assert.equal(removeLocalFile(state, "d").activeId, "a");
 });

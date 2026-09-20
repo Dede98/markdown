@@ -120,10 +120,19 @@ Not deployed yet. You can run the web build locally with `pnpm dev` (see
   `.md` files, and native File / Edit / View / Window menus.
 
 In Normal mode, use the left file sidebar to create, open, switch, or close
-independent Markdown buffers. A dot marks unsaved changes; closing a dirty
-buffer asks before discarding it. Hide the sidebar from its header and restore
-it from the topbar. Zen mode hides it temporarily and restores the prior
-visibility when you return to Normal mode.
+Markdown files. Your file references, unsaved drafts, active editor and sidebar
+state are restored when you reopen the app. Browser file permissions may need
+to be granted again; a recovered draft remains available if its source is missing.
+
+Create virtual folders such as “Tech” to group files from different locations.
+Folder actions organize references without moving, renaming or deleting files
+on disk. New files remain drafts until you save them. Closing a grouped editor
+keeps its reference and draft for reopening; closing an ungrouped dirty buffer
+asks before discarding it. Removing a folder leaves its files ungrouped.
+
+Use a file's reconnect action to select its new location while retaining the
+existing draft and folder. Hide the sidebar from its header and restore it from
+the topbar. Zen mode temporarily hides it and restores its prior visibility.
 
 ## Development
 

@@ -65,8 +65,10 @@ import { emptyFormat, type ActiveFormat } from "./editorFormat";
 import type { EditorContribution } from "./editorContributions";
 import { FloatingHeadings } from "./FloatingHeadings";
 import { FileSidebar } from "./FileSidebar";
+import { FolderDialog, type FolderDialogRequest } from "./FolderDialog";
 import {
   DEFAULT_NEW_FILE_NAME,
+  fileHandlesReferToSameEntry,
   type FileAdapter,
   type FileHandle,
   type LocalFile,
@@ -98,7 +100,9 @@ import { webFileAdapter, webSessionFileAdapter } from "./webFileAdapter";
 import {
   addLocalFile,
   applyLocalFileSave,
+  closeLocalFile,
   createLocalFiles,
+  reconnectLocalFile,
   removeLocalFile,
   selectLocalFile,
   updateLocalFileContents,
@@ -114,6 +118,21 @@ import {
   type PersistedLocalFile,
   type SessionFileAdapter,
 } from "./sessionPersistence";
+import {
+  addFileReference,
+  assignFile,
+  createFolder,
+  fileId,
+  folderId,
+  migrateFlatFileCollection,
+  orderedFolders,
+  removeFolder,
+  renameFolder,
+  serializeVirtualFolderState,
+  setFolderCollapsed,
+  unassignFile,
+  type VirtualFolderState,
+} from "./virtualFolders";
 
 const initialMarkdown = `# On the Quiet Hour
 
@@ -242,6 +261,7 @@ async function recoverPersistedFile(
     handle: null,
     reopen: persisted.reopen,
     recoveryStatus,
+    ...(persisted.open === false ? { open: false } : {}),
   });
   if (persisted.reopen.kind === "untitled") return retained("ready");
   const result = await adapter.reconnect(persisted.reopen);
@@ -322,8 +342,12 @@ export function App() {
     return { fresh: false, files: emptyLocalFiles, markdown: "" };
   });
   const [localFiles, setLocalFiles] = useState<LocalFilesState>(startup.files);
+  const [virtualFolders, setVirtualFolders] = useState<VirtualFolderState>(() =>
+    migrateFlatFileCollection(startup.files.entries).state,
+  );
   const [markdown, setMarkdown] = useState(startup.markdown);
   const [fileSidebarVisible, setFileSidebarVisible] = useState(true);
+  const [folderDialog, setFolderDialog] = useState<FolderDialogRequest | null>(null);
   const [hydrated, setHydrated] = useState(startup.fresh);
   const [hydrationChecked, setHydrationChecked] = useState(false);
   const [activeFormat, setActiveFormat] = useState<ActiveFormat>(emptyFormat);
@@ -375,6 +399,8 @@ export function App() {
   );
   const localFilesRef = useRef(localFiles);
   localFilesRef.current = localFiles;
+  const virtualFoldersRef = useRef(virtualFolders);
+  virtualFoldersRef.current = virtualFolders;
   const activeLocalFile =
     localFiles.entries.find((entry) => entry.id === localFiles.activeId) ?? null;
   const sidebarFiles = useMemo(() => {
@@ -386,11 +412,21 @@ export function App() {
       id: entry.id,
       name: entry.name,
       dirty: entry.contents !== entry.savedContents,
+      folderId: virtualFolders.memberships[entry.id] ?? null,
+      open: entry.open,
+      recoveryStatus: entry.recoveryStatus,
+      canReconnect: entry.reopen.kind !== "untitled",
       ...(nameCounts.get(entry.name)! > 1 && entry.reopen.kind === "desktop-path"
         ? { location: parentFolderLabel(entry.reopen.path) }
-        : {}),
+        : nameCounts.get(entry.name)! > 1
+          ? { location: entry.reopen.kind === "untitled" ? "Unsaved draft" : `Browser file ${localFiles.entries.indexOf(entry) + 1}` }
+          : {}),
     }));
-  }, [localFiles.entries]);
+  }, [localFiles.entries, virtualFolders.memberships]);
+  const sidebarFolders = useMemo(
+    () => orderedFolders(virtualFolders).map(({ id, name, collapsed }) => ({ id, name, collapsed })),
+    [virtualFolders],
+  );
   const file: FileState = activeLocalFile
     ? {
         name: activeLocalFile.name,
@@ -428,6 +464,7 @@ export function App() {
       }
 
       let restored = emptyLocalFiles;
+      let restoredFolders = migrateFlatFileCollection([]).state;
       let restoredSidebarVisible = true;
       let hydrationError: string | null = null;
 
@@ -440,10 +477,13 @@ export function App() {
         if (cancelled || !mountedRef.current) return;
         restored = {
           entries,
-          activeId: entries.some((entry) => entry.id === result.snapshot.activeFileId)
+          activeId: entries.some((entry) => entry.id === result.snapshot.activeFileId && entry.open !== false)
             ? result.snapshot.activeFileId
-            : entries[0]?.id ?? null,
+            : entries.find((entry) => entry.open !== false)?.id ?? null,
         };
+        restoredFolders = result.snapshot.virtualFolders
+          ? migrateFlatFileCollection(result.snapshot.virtualFolders).state
+          : migrateFlatFileCollection(result.snapshot.files).state;
         restoredSidebarVisible = result.snapshot.sidebarVisible ?? true;
         if (result.recoveredFromBackup) {
           hydrationError = "The latest session was damaged, so the previous recovery snapshot was restored.";
@@ -455,6 +495,7 @@ export function App() {
           id,
           { kind: "untitled" },
         );
+        restoredFolders = migrateFlatFileCollection(restored.entries).state;
       } else if (result.status === "unsupported-version") {
         hydrationError = "This editor cannot safely update recovery data created by a newer version.";
       } else {
@@ -468,10 +509,13 @@ export function App() {
           if (cancelled || !mountedRef.current) return;
           restored = {
             entries,
-            activeId: entries.some((entry) => entry.id === result.lastUsable?.activeFileId)
+            activeId: entries.some((entry) => entry.id === result.lastUsable?.activeFileId && entry.open !== false)
               ? result.lastUsable.activeFileId
-              : entries[0]?.id ?? null,
+              : entries.find((entry) => entry.open !== false)?.id ?? null,
           };
+          restoredFolders = result.lastUsable.virtualFolders
+            ? migrateFlatFileCollection(result.lastUsable.virtualFolders).state
+            : migrateFlatFileCollection(result.lastUsable.files).state;
           restoredSidebarVisible = result.lastUsable.sidebarVisible ?? true;
         } else {
           restored = createLocalFiles(
@@ -479,11 +523,13 @@ export function App() {
             createLocalFileId(),
             { kind: "untitled" },
           );
+          restoredFolders = migrateFlatFileCollection(restored.entries).state;
         }
       }
 
       const active = restored.entries.find((entry) => entry.id === restored.activeId) ?? null;
       setLocalFiles(restored);
+      setVirtualFolders(restoredFolders);
       setMarkdown(active?.contents ?? "");
       setFileSidebarVisible(restoredSidebarVisible);
       const activeRecoveryMessage = active ? recoveryMessage(active.recoveryStatus) : null;
@@ -506,6 +552,18 @@ export function App() {
     const snapshot = {
       activeFileId: localFiles.activeId,
       sidebarVisible: fileSidebarVisible,
+      virtualFolders: serializeVirtualFolderState({
+        ...virtualFolders,
+        files: localFiles.entries.map((entry, order) => ({
+          id: fileId(entry.id),
+          displayName: entry.name,
+          order,
+        })),
+        memberships: Object.fromEntries(localFiles.entries.map((entry) => [
+          entry.id,
+          virtualFolders.memberships[entry.id] ?? null,
+        ])),
+      }),
       files: localFiles.entries.map((entry, order) => ({
         id: entry.id,
         displayName: entry.name,
@@ -514,6 +572,7 @@ export function App() {
         savedBaseline: entry.savedContents,
         dirty: entry.contents !== entry.savedContents,
         untitled: entry.reopen.kind === "untitled",
+        ...(entry.open === false ? { open: false } : {}),
         reopen: entry.reopen,
       })),
     };
@@ -526,7 +585,7 @@ export function App() {
           : "Session recovery could not be saved. Changes may not survive restart.",
       );
     });
-  }, [fileSidebarVisible, hydrated, hydrationChecked, localFiles]);
+  }, [fileSidebarVisible, hydrated, hydrationChecked, localFiles, virtualFolders]);
 
   useEffect(() => {
     if (!hydrated || !hydrationChecked) return;
@@ -844,11 +903,48 @@ export function App() {
     setFileVersion((value) => value + 1);
   }, []);
 
+  const handleSelectLocalFileRef = useRef<(id: string) => void>(() => undefined);
+
   const addFileSession = useCallback(async (
     next: LocalFile,
     activate = true,
     isUntitled = false,
+    targetFolderId?: string,
   ) => {
+    const targetStillExists = () => !targetFolderId || virtualFoldersRef.current.folders.some(
+      (folder) => folder.id === targetFolderId,
+    );
+    if (!targetStillExists()) return;
+
+    let existing: LocalFileEntry | undefined;
+    if (next.handle !== null) {
+      for (const entry of localFilesRef.current.entries) {
+        if (await fileHandlesReferToSameEntry(entry.handle, next.handle)) {
+          existing = entry;
+          break;
+        }
+      }
+    }
+    if (!mountedRef.current || activeCloudRoomRef.current || !targetStillExists()) return;
+    if (existing) {
+      if (existing.handle !== next.handle) {
+        try {
+          const reopen = await getSessionFileAdapter().createReference(next.handle, false);
+          if (!mountedRef.current || activeCloudRoomRef.current || !targetStillExists()) return;
+          setLocalFiles((current) => reconnectLocalFile(current, existing.id, next, reopen));
+        } catch (error) {
+          console.error("Could not update the reconnected file reference", error);
+          setSaveStatus("error");
+          setSaveError("The file was found, but its reconnect permission could not be saved.");
+          return;
+        }
+      }
+      if (targetFolderId) {
+        setVirtualFolders((current) => assignFile(current, fileId(existing.id), folderId(targetFolderId)).state);
+      }
+      if (activate) handleSelectLocalFileRef.current(existing.id);
+      return;
+    }
     const id = createLocalFileId();
     let reopen;
     try {
@@ -862,7 +958,14 @@ export function App() {
       setSaveError("The file is open, but its reconnect permission could not be saved.");
     }
     if (!mountedRef.current || activeCloudRoomRef.current) return;
+    if (!targetStillExists()) return;
     setLocalFiles((current) => addLocalFile(current, next, id, reopen, activate));
+    setVirtualFolders((current) => {
+      const added = addFileReference(current, { id: fileId(id), displayName: next.name });
+      return targetFolderId && added.ok
+        ? assignFile(added.state, fileId(id), folderId(targetFolderId)).state
+        : added.state;
+    });
     if (activate) {
       selectionVersionRef.current += 1;
       setMarkdown(next.contents);
@@ -883,16 +986,16 @@ export function App() {
     return false;
   }, []);
 
-  const handleNew = useCallback(() => {
+  const handleNew = useCallback((targetFolderId?: string) => {
     if (!allowLocalFileAction()) {
       return;
     }
     const adapter = getActiveAdapter();
     const fresh = adapter.newFile();
-    void addFileSession(fresh, true, true);
+    void addFileSession(fresh, true, true, targetFolderId);
   }, [addFileSession, allowLocalFileAction]);
 
-  const handleOpen = useCallback(async () => {
+  const handleOpen = useCallback(async (targetFolderId?: string) => {
     if (!allowLocalFileAction()) {
       return;
     }
@@ -904,7 +1007,7 @@ export function App() {
       if (!opened || activeCloudRoomRef.current) {
         return;
       }
-      await addFileSession(opened, selectionVersionRef.current === selectionVersion);
+      await addFileSession(opened, selectionVersionRef.current === selectionVersion, false, targetFolderId);
     } catch (error) {
       console.error("Open failed", error);
       setSaveStatus("error");
@@ -930,6 +1033,7 @@ export function App() {
       setSaveError(message);
     }
   }, [allowLocalFileAction, resetTransientFileUi]);
+  handleSelectLocalFileRef.current = handleSelectLocalFile;
 
   const handleCloseLocalFile = useCallback((id: string) => {
     if (!allowLocalFileAction()) {
@@ -940,14 +1044,22 @@ export function App() {
     if (!entry) {
       return;
     }
-    if (
+    const grouped = (virtualFoldersRef.current.memberships[id] ?? null) !== null;
+    if (!grouped &&
       entry.contents !== entry.savedContents &&
       typeof window !== "undefined" &&
       !window.confirm(`Discard unsaved changes to ${entry.name}?`)
     ) {
       return;
     }
-    const nextState = removeLocalFile(current, id);
+    const nextState = grouped ? closeLocalFile(current, id) : removeLocalFile(current, id);
+    if (!grouped) {
+      setVirtualFolders((folders) => ({
+        ...folders,
+        files: folders.files.filter((reference) => reference.id !== id),
+        memberships: Object.fromEntries(Object.entries(folders.memberships).filter(([file]) => file !== id)),
+      }));
+    }
     selectionVersionRef.current += 1;
     setLocalFiles(nextState);
     if (current.activeId === id) {
@@ -960,6 +1072,77 @@ export function App() {
       resetTransientFileUi();
     }
   }, [allowLocalFileAction, resetTransientFileUi]);
+
+  const handleNewFolder = useCallback(() => {
+    if (allowLocalFileAction()) setFolderDialog({ kind: "create" });
+  }, [allowLocalFileAction]);
+
+  const handleRenameFolder = useCallback((id: string) => {
+    if (!allowLocalFileAction()) return;
+    const folder = virtualFoldersRef.current.folders.find((entry) => entry.id === id);
+    if (folder) setFolderDialog({ kind: "rename", id, name: folder.name });
+  }, [allowLocalFileAction]);
+
+  const submitFolderDialog = (name: string): string | null => {
+    if (!folderDialog || !allowLocalFileAction()) return "Local files are currently unavailable.";
+    const current = virtualFoldersRef.current;
+    const result = folderDialog.kind === "create"
+      ? createFolder(current, { id: folderId(`folder-${createLocalFileId()}`), name })
+      : folderDialog.kind === "rename"
+        ? renameFolder(current, folderId(folderDialog.id), name)
+        : removeFolder(current, folderId(folderDialog.id));
+    if (!result.ok) return result.error.message;
+    setVirtualFolders(result.state);
+    return null;
+  };
+
+  const handleToggleFolder = useCallback((id: string) => {
+    if (!allowLocalFileAction()) return;
+    const current = virtualFoldersRef.current.folders.find((folder) => folder.id === id);
+    if (!current) return;
+    setVirtualFolders(setFolderCollapsed(virtualFoldersRef.current, folderId(id), !current.collapsed).state);
+  }, [allowLocalFileAction]);
+
+  const handleRemoveFolder = useCallback((id: string) => {
+    if (!allowLocalFileAction()) return;
+    const folder = virtualFoldersRef.current.folders.find((entry) => entry.id === id);
+    if (folder) setFolderDialog({ kind: "remove", id, name: folder.name });
+  }, [allowLocalFileAction]);
+
+  const handleReconnectFile = useCallback(async (id: string) => {
+    if (!allowLocalFileAction()) return;
+    const original = localFilesRef.current.entries.find((entry) => entry.id === id);
+    if (!original) return;
+    const stillCurrent = () => mountedRef.current && !activeCloudRoomRef.current
+      && localFilesRef.current.entries.some((entry) => entry.id === id
+        && entry.handle === original.handle && entry.reopen === original.reopen);
+    try {
+      const picked = await getActiveAdapter().openFile();
+      if (!picked || !stillCurrent()) return;
+      for (const entry of localFilesRef.current.entries) {
+        if (entry.id !== id && await fileHandlesReferToSameEntry(entry.handle, picked.handle)) {
+          throw new Error("That file already has an editor. Choose a different file or reopen its existing entry.");
+        }
+      }
+      const reference = await getSessionFileAdapter().createReference(picked.handle, false);
+      if (!stillCurrent()) return;
+      setLocalFiles((current) => reconnectLocalFile(current, id, picked, reference));
+      setSaveStatus("idle");
+      setSaveError(null);
+    } catch (error) {
+      if (!stillCurrent()) return;
+      setSaveStatus("error");
+      setSaveError(error instanceof Error ? error.message : "Could not reconnect this file.");
+    }
+  }, [allowLocalFileAction]);
+
+  const handleMoveFile = useCallback((id: string, targetFolderId: string | null) => {
+    if (!allowLocalFileAction()) return;
+    const result = targetFolderId
+      ? assignFile(virtualFoldersRef.current, fileId(id), folderId(targetFolderId))
+      : unassignFile(virtualFoldersRef.current, fileId(id));
+    if (result.ok) setVirtualFolders(result.state);
+  }, [allowLocalFileAction]);
 
   const handleMarkdownChange = useCallback((contents: string) => {
     setMarkdown(contents);
@@ -1817,10 +2000,10 @@ export function App() {
                 >
                   <PanelLeftOpen size={16} />
                 </button>
-                <button className="iconButton" type="button" title="New file" aria-label="New file" onClick={handleNew}>
+                <button className="iconButton" type="button" title="New file" aria-label="New file" onClick={() => handleNew()}>
                   <FilePlus size={16} />
                 </button>
-                <button className="iconButton" type="button" title="Open file" aria-label="Open file" onClick={handleOpen}>
+                <button className="iconButton" type="button" title="Open file" aria-label="Open file" onClick={() => void handleOpen()}>
                   <FolderOpen size={16} />
                 </button>
               </>
@@ -1990,15 +2173,23 @@ export function App() {
         </nav>
       )}
 
+      {folderDialog && <FolderDialog request={folderDialog} onSubmit={submitFolderDialog} onClose={() => setFolderDialog(null)} />}
       <div className="workspaceFrame">
         {!zen && fileSidebarVisible && (
           <FileSidebar
             files={sidebarFiles}
+            folders={sidebarFolders}
             activeId={localFiles.activeId}
             onNew={handleNew}
-            onOpen={() => void handleOpen()}
+            onOpen={(folder) => void handleOpen(folder)}
+            onNewFolder={handleNewFolder}
+            onRenameFolder={handleRenameFolder}
+            onToggleFolder={handleToggleFolder}
+            onRemoveFolder={handleRemoveFolder}
+            onMoveFile={handleMoveFile}
             onSelect={handleSelectLocalFile}
             onClose={handleCloseLocalFile}
+            onReconnect={(id) => void handleReconnectFile(id)}
             onHide={() => setFileSidebarVisible(false)}
             disabled={Boolean(activeCloudRoom)}
           />
@@ -2027,7 +2218,7 @@ export function App() {
           ) : (
             <div className="emptyFileEditor">
               <p>Open or create a Markdown file to start writing.</p>
-              <button type="button" onClick={handleNew}>Create a file</button>
+              <button type="button" onClick={() => handleNew()}>Create a file</button>
               <button type="button" onClick={() => void handleOpen()}>Choose a file</button>
             </div>
           )}

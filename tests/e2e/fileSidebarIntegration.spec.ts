@@ -1,19 +1,29 @@
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 
+// Keep the existing editor test origin while targeting an isolated Vite server.
+test.beforeEach(async ({ page }) => {
+  const origin = process.env.MARKDOWN_TEST_ORIGIN;
+  if (origin) await page.route("http://127.0.0.1:5173/**", async (route) => {
+    const response = await route.fetch({ url: route.request().url().replace("http://127.0.0.1:5173", origin) });
+    await route.fulfill({ response });
+  });
+});
+
 type OpenFile = { name: string; contents: string; handleId: string };
 
 async function installSessionAdapter(
   page: Page,
   files: OpenFile[],
-  options: { delaySaves?: boolean; cancelSaveAs?: boolean; failOpen?: boolean } = {},
+  options: { delaySaves?: boolean; delayOpen?: boolean; cancelSaveAs?: boolean; failOpen?: boolean } = {},
 ) {
   await page.addInitScript(
-    ({ openFiles, delaySaves, cancelSaveAs, failOpen }) => {
+    ({ openFiles, delaySaves, delayOpen, cancelSaveAs, failOpen }) => {
       type Call = { kind: string; name?: string; contents?: string; handleId?: string };
       const win = window as unknown as {
         __markdownFileAdapterOverride: unknown;
         __sessionCalls: Call[];
         __resolveSessionSaves: () => void;
+        __resolveSessionOpen: () => void;
       };
       let openIndex = 0;
       let releaseSaves: (() => void) | null = null;
@@ -22,14 +32,18 @@ async function installSessionAdapter(
             releaseSaves = resolve;
           })
         : Promise.resolve();
+      let releaseOpen: (() => void) | null = null;
+      const openGate = delayOpen ? new Promise<void>((resolve) => { releaseOpen = resolve; }) : Promise.resolve();
 
       win.__sessionCalls = [];
       win.__resolveSessionSaves = () => releaseSaves?.();
+      win.__resolveSessionOpen = () => releaseOpen?.();
       win.__markdownFileAdapterOverride = {
         canSaveInPlace: () => true,
         newFile: () => ({ name: "untitled.md", contents: "", handle: null }),
         openFile: async () => {
           win.__sessionCalls.push({ kind: "open" });
+          await openGate;
           if (failOpen) {
             throw new Error("picker failed");
           }
@@ -38,7 +52,10 @@ async function installSessionAdapter(
             ? {
                 name: next.name,
                 contents: next.contents,
-                handle: { id: next.handleId },
+                handle: {
+                  id: next.handleId,
+                  isSameEntry: async (other: { id?: string }) => other?.id === next.handleId,
+                },
               }
             : null;
         },
@@ -477,6 +494,7 @@ test.describe("file sidebar integration", () => {
     await page.getByRole("button", { name: "Open file" }).click();
     await page.getByRole("button", { name: "Open file" }).click();
 
+    await expect(page.getByRole("button", { name: "Select two.md", exact: true })).toHaveAttribute("aria-current", "page");
     await setEditorText(page, "two by keyboard");
     await page.keyboard.press("Control+S");
     await expect.poll(async () => (await sessionCalls(page)).filter((call: { kind: string }) => call.kind === "save").length).toBe(1);
@@ -669,6 +687,179 @@ test.describe("file sidebar integration", () => {
     await expect.poll(() => getEditorSource(page)).toBe("native buffer");
     await expect(page.locator(".documentState")).toHaveText("Save failed");
   });
+
+  test("folders persist membership, collapsed state, and grouped draft buffers across a mocked reload", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await seedPersistedSession(page, [
+      { id: "base", name: "base.md", draft: "base bytes", baseline: "base bytes" },
+    ], "base");
+    await page.goto("/");
+    const sidebar = page.getByRole("navigation", { name: "Open files" });
+
+    await sidebar.getByRole("button", { name: "New folder" }).click();
+    await submitFolderName(page, "Tech");
+    await expect(sidebar.getByRole("region", { name: "Tech folder" })).toBeVisible();
+
+    await sidebar.getByRole("combobox", { name: "Move base.md" }).selectOption({ label: "Tech" });
+    await sidebar.getByRole("button", { name: "New file in Tech" }).click();
+    await setEditorText(page, "draft in Tech");
+    await sidebar.getByRole("button", { name: "Close untitled.md" }).click();
+    await expect.poll(() => getEditorSource(page)).toBe("base bytes");
+    await sidebar.getByRole("button", { name: "Reopen untitled.md, unsaved changes" }).click();
+    await expect.poll(() => getEditorSource(page)).toBe("draft in Tech");
+
+    await sidebar.getByRole("button", { name: "Collapse Tech" }).click();
+    await expect.poll(() => page.evaluate(() => {
+      const raw = localStorage.getItem("markdown.localSession.v1");
+      if (!raw) return false;
+      const snapshot = JSON.parse(raw);
+      return snapshot.virtualFolders?.folders?.[0]?.collapsed === true
+        && snapshot.virtualFolders?.memberships?.every(
+          (membership: { folderId: string }) => membership.folderId === snapshot.virtualFolders.folders[0].id,
+        );
+    })).toBe(true);
+
+    await page.reload();
+    await expect(sidebar.getByRole("button", { name: "Expand Tech" })).toBeVisible();
+    await sidebar.getByRole("button", { name: "Expand Tech" }).click();
+    await sidebar.getByRole("button", { name: "Select untitled.md, unsaved changes" }).click();
+    await expect.poll(() => getEditorSource(page)).toBe("draft in Tech");
+
+    await sidebar.getByRole("button", { name: "Rename Tech" }).click();
+    await submitFolderName(page, "Engineering");
+    await sidebar.getByRole("button", { name: "Remove Engineering" }).click();
+    await page.getByRole("dialog", { name: "Remove folder" }).getByRole("button", { name: "Remove", exact: true }).click();
+    await expect(sidebar.getByRole("region", { name: "Engineering folder" })).toHaveCount(0);
+    await expect(sidebar.getByRole("region", { name: "Ungrouped files" }).getByRole("button", {
+      name: "Select untitled.md, unsaved changes",
+    })).toBeVisible();
+    await expect.poll(() => getEditorSource(page)).toBe("draft in Tech");
+  });
+
+  test("a delayed picker cannot attach a file after its target folder is removed", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installSessionAdapter(page, [
+      { name: "late.md", contents: "late picker bytes", handleId: "late" },
+    ], { delayOpen: true });
+    await page.goto("/");
+    const sidebar = page.getByRole("navigation", { name: "Open files" });
+    await sidebar.getByRole("button", { name: "New folder" }).click();
+    await submitFolderName(page, "Tech");
+
+    await sidebar.getByRole("button", { name: "Add existing files to Tech" }).click();
+    await sidebar.getByRole("button", { name: "Remove Tech" }).click();
+    await page.getByRole("dialog", { name: "Remove folder" }).getByRole("button", { name: "Remove", exact: true }).click();
+    await page.evaluate(() => (
+      window as unknown as { __resolveSessionOpen: () => void }
+    ).__resolveSessionOpen());
+
+    await expect(sidebar.getByRole("button", { name: "Select late.md" })).toHaveCount(0);
+    await expect.poll(() => getEditorSource(page)).toContain("On the Quiet Hour");
+  });
+
+  test("reopening a known browser file reuses its buffer, identity, and folder", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installSessionAdapter(page, [
+      { name: "notes.md", contents: "disk baseline", handleId: "stable-browser-entry" },
+      { name: "renamed.md", contents: "relocated disk bytes", handleId: "stable-browser-entry" },
+    ]);
+    await page.goto("/");
+    const sidebar = page.getByRole("navigation", { name: "Open files" });
+
+    await sidebar.getByRole("button", { name: "New folder" }).click();
+    await submitFolderName(page, "Tech");
+    await sidebar.getByRole("button", { name: "Add existing files to Tech" }).click();
+    await setEditorText(page, "preserved draft");
+    await sidebar.getByRole("button", { name: "Add existing files to Tech" }).click();
+
+    await expect(sidebar.locator(".fileSidebarItem")).toHaveCount(2);
+    await expect(sidebar.getByRole("region", { name: "Tech folder" }).getByRole("button", {
+      name: "Select renamed.md, unsaved changes",
+    })).toBeVisible();
+    await expect.poll(() => getEditorSource(page)).toBe("preserved draft");
+    await expect.poll(() => page.evaluate(() => {
+      const snapshot = JSON.parse(localStorage.getItem("markdown.localSession.v1") ?? "null");
+      const grouped = snapshot?.virtualFolders?.memberships?.find(
+        (item: { fileId: string }) => snapshot.files.some(
+          (file: { id: string; displayName: string }) => file.id === item.fileId && file.displayName === "renamed.md",
+        ),
+      );
+      return Boolean(grouped?.folderId);
+    })).toBe(true);
+  });
+
+  test("folder actions are keyboard operable and remain usable at narrow width", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await installSessionAdapter(page, []);
+    await page.goto("/");
+    const sidebar = page.getByRole("navigation", { name: "Open files" });
+
+    await sidebar.getByRole("button", { name: "New folder" }).focus();
+    await page.keyboard.press("Enter");
+    await submitFolderName(page, "Tech");
+    const folder = sidebar.getByRole("region", { name: "Tech folder" });
+    await expect(folder).toBeVisible();
+
+    await folder.getByRole("button", { name: "New file in Tech" }).focus();
+    await page.keyboard.press("Space");
+    await expect(folder.getByRole("button", { name: "Select untitled.md" })).toBeVisible();
+    await folder.getByRole("button", { name: "Add existing files to Tech" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(folder.getByRole("button", { name: "Select untitled.md" })).toBeVisible();
+    await folder.getByRole("button", { name: "Collapse Tech" }).focus();
+    await page.keyboard.press("Enter");
+    await expect(folder.getByRole("button", { name: "Expand Tech" })).toBeVisible();
+    await page.keyboard.press("Enter");
+
+    const move = folder.getByRole("combobox", { name: "Move untitled.md" });
+    await move.focus();
+    await expect(move).toBeFocused();
+    await move.selectOption("");
+    await expect(sidebar.getByRole("region", { name: "Ungrouped files" })
+      .getByRole("button", { name: "Select untitled.md" })).toHaveCount(2);
+
+    await folder.getByRole("button", { name: "Rename Tech" }).focus();
+    await page.keyboard.press("Space");
+    await submitFolderName(page, "Engineering");
+    const renamed = sidebar.getByRole("region", { name: "Engineering folder" });
+    await expect(renamed).toBeVisible();
+    await renamed.getByRole("button", { name: "Remove Engineering" }).focus();
+    await page.keyboard.press("Enter");
+    await page.getByRole("dialog", { name: "Remove folder" }).getByRole("button", { name: "Remove", exact: true }).click();
+    await expect(renamed).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+  });
+
+  test("folder persistence failures are surfaced without undoing in-memory organization", async ({ page }) => {
+    await page.addInitScript(() => {
+      const original = Storage.prototype.setItem;
+      Object.defineProperty(window, "__failFolderSessionWrites", { value: false, writable: true });
+      Storage.prototype.setItem = function setItem(key, value) {
+        if (key === "markdown.localSession.v1" && (
+          window as unknown as { __failFolderSessionWrites: boolean }
+        ).__failFolderSessionWrites) {
+          throw new DOMException("quota", "QuotaExceededError");
+        }
+        return original.call(this, key, value);
+      };
+    });
+    await page.goto("/");
+    const sidebar = page.getByRole("navigation", { name: "Open files" });
+    await sidebar.getByRole("button", { name: "New folder" }).click();
+    await submitFolderName(page, "Tech");
+    await expect(sidebar.getByRole("region", { name: "Tech folder" })).toBeVisible();
+    await page.evaluate(() => {
+      (window as unknown as { __failFolderSessionWrites: boolean }).__failFolderSessionWrites = true;
+    });
+    await sidebar.getByRole("button", { name: "Collapse Tech" }).click();
+
+    await expect(sidebar.getByRole("button", { name: "Expand Tech" })).toBeVisible();
+    await expect(page.locator(".documentState")).toHaveText("Save failed");
+    await expect(page.locator(".documentState")).toHaveAttribute(
+      "title",
+      "Session recovery could not be saved. Changes may not survive restart.",
+    );
+  });
 });
 
 async function setEditorText(page: Page, text: string) {
@@ -730,4 +921,11 @@ function skipMobileKeyboardTest(testInfo: TestInfo) {
     testInfo.project.name === "chrome-mobile",
     "Session mutation paths are covered on desktop; mobile layout has dedicated coverage.",
   );
+}
+
+async function submitFolderName(page: Page, name: string) {
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("textbox", { name: "Folder name" }).fill(name);
+  await dialog.getByRole("textbox", { name: "Folder name" }).press("Enter");
+  await expect(dialog).toHaveCount(0);
 }

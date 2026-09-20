@@ -1,4 +1,8 @@
 import type { FileHandle, LocalFile } from "./fileAdapter.ts";
+import {
+  deserializeVirtualFolderState,
+  type SerializedVirtualFolderStateV1,
+} from "./virtualFolders.ts";
 
 export const LOCAL_SESSION_VERSION = 1 as const;
 
@@ -23,6 +27,8 @@ export type PersistedLocalFile = {
   savedBaseline: string;
   dirty: boolean;
   untitled: boolean;
+  /** False keeps the remembered reference and draft without an open editor. */
+  open?: boolean;
   reopen: PersistedFileReference;
 };
 
@@ -34,6 +40,8 @@ export type PersistedLocalSessionV1 = {
   activeFileId: string | null;
   /** Optional for snapshots written before sidebar persistence shipped. */
   sidebarVisible?: boolean;
+  /** Optional for legacy flat sessions; those migrate to ungrouped on read. */
+  virtualFolders?: SerializedVirtualFolderStateV1;
   files: PersistedLocalFile[];
 };
 
@@ -115,6 +123,7 @@ function validFile(value: unknown): value is PersistedLocalFile {
     typeof value.dirty === "boolean" &&
     value.dirty === (value.draft !== value.savedBaseline) &&
     typeof value.untitled === "boolean" &&
+    (value.open === undefined || typeof value.open === "boolean") &&
     validReference(value.reopen) &&
     value.untitled === (value.reopen.kind === "untitled")
   );
@@ -122,6 +131,7 @@ function validFile(value: unknown): value is PersistedLocalFile {
 
 export function validatePersistedLocalSession(value: unknown): PersistedLocalSessionV1 {
   if (!isRecord(value)) throw new Error("Session snapshot must be an object");
+  let validatedVirtualFolders: SerializedVirtualFolderStateV1 | undefined;
   if (value.version !== LOCAL_SESSION_VERSION) {
     throw new Error(`Unsupported session version: ${String(value.version)}`);
   }
@@ -134,6 +144,24 @@ export function validatePersistedLocalSession(value: unknown): PersistedLocalSes
   if (value.sidebarVisible !== undefined && typeof value.sidebarVisible !== "boolean") {
     throw new Error("Session sidebar visibility is malformed");
   }
+  if (value.virtualFolders !== undefined) {
+    const folders = value.virtualFolders;
+    if (
+      !isRecord(folders) ||
+      folders.schema !== "markdown-virtual-folders" ||
+      folders.version !== 1 ||
+      !Array.isArray(folders.folders) ||
+      !Array.isArray(folders.files) ||
+      !Array.isArray(folders.memberships)
+    ) {
+      throw new Error("Session virtual folders are malformed");
+    }
+    const decoded = deserializeVirtualFolderState(folders);
+    if (decoded.issues.length > 0) {
+      throw new Error("Session virtual folders are malformed");
+    }
+    validatedVirtualFolders = folders as SerializedVirtualFolderStateV1;
+  }
   if (!Array.isArray(value.files) || !value.files.every(validFile)) {
     throw new Error("Session files are malformed");
   }
@@ -141,6 +169,12 @@ export function validatePersistedLocalSession(value: unknown): PersistedLocalSes
   const orders = new Set(value.files.map((file) => file.order));
   if (ids.size !== value.files.length || orders.size !== value.files.length) {
     throw new Error("Session file identities and ordering must be unique");
+  }
+  if (validatedVirtualFolders) {
+    const folderFileIds = new Set(validatedVirtualFolders.files.map((file) => file.id));
+    if (folderFileIds.size !== ids.size || [...ids].some((id) => !folderFileIds.has(id))) {
+      throw new Error("Session virtual-folder references must match persisted files");
+    }
   }
   if (
     value.activeFileId !== null &&
@@ -256,6 +290,9 @@ export function createLocalSessionPersistence(storage: SessionStringStorage) {
       writerId,
       activeFileId: snapshot.activeFileId,
       ...(snapshot.sidebarVisible === undefined ? {} : { sidebarVisible: snapshot.sidebarVisible }),
+      ...(snapshot.virtualFolders === undefined
+        ? {}
+        : { virtualFolders: structuredClone(snapshot.virtualFolders) }),
       // Capture an immutable point-in-time value before entering the async
       // queue. A later editor update must not alter an already queued write.
       files: snapshot.files.map((file) => ({

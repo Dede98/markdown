@@ -229,6 +229,27 @@ test("persists sidebar visibility while accepting older snapshots that omit it",
   }));
 });
 
+test("persists virtual-folder metadata and closed editor state without changing file references", async () => {
+  const memory = memoryStorage();
+  const persistence = createLocalSessionPersistence(memory.storage);
+  await persistence.read();
+  const virtualFolders = {
+    schema: "markdown-virtual-folders",
+    version: 1,
+    folders: [{ id: "tech", name: "Tech", order: 0, collapsed: true }],
+    files: [{ id: "file-a", displayName: "notes.md", order: 0 }],
+    memberships: [{ fileId: "file-a", folderId: "tech" }],
+  };
+  const files = [entry({ open: false, reopen: { kind: "desktop-path", path: "/one/notes.md" } })];
+
+  assert.equal((await persistence.write({ ...snapshot(files, "file-a"), activeFileId: null, virtualFolders })).status, "written");
+  const restored = await createLocalSessionPersistence(memory.storage).read();
+  assert.equal(restored.status, "ok");
+  assert.deepEqual(restored.snapshot.virtualFolders, virtualFolders);
+  assert.equal(restored.snapshot.files[0].open, false);
+  assert.deepEqual(restored.snapshot.files[0].reopen, { kind: "desktop-path", path: "/one/notes.md" });
+});
+
 test("desktop reconnect reports success, missing, denied, and unavailable outcomes", async () => {
   const reference = { kind: "desktop-path", path: "/documents/notes.md" };
   const success = createTauriSessionFileAdapter(async () => "# notes");

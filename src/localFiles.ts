@@ -19,6 +19,8 @@ export type LocalFileEntry = {
   reopen: PersistedFileReference;
   recoveryStatus: LocalFileRecoveryStatus;
   externalContents?: string;
+  /** A closed grouped entry remains remembered and can reuse this buffer. */
+  open?: boolean;
 };
 
 export type LocalFilesState = {
@@ -71,14 +73,50 @@ export function addLocalFile(
 }
 
 export function selectLocalFile(state: LocalFilesState, id: string): LocalFilesState {
-  if (state.activeId === id || !state.entries.some((entry) => entry.id === id)) {
+  const index = state.entries.findIndex((entry) => entry.id === id);
+  if (index === -1) {
     return state;
   }
 
+  const entries = [...state.entries];
+  if (entries[index].open === false) entries[index] = { ...entries[index], open: true };
+  if (state.activeId === id && entries[index] === state.entries[index]) return state;
+
   return {
-    entries: [...state.entries],
+    entries,
     activeId: id,
   };
+}
+
+export function closeLocalFile(state: LocalFilesState, id: string): LocalFilesState {
+  const index = state.entries.findIndex((entry) => entry.id === id);
+  if (index === -1 || state.entries[index].open === false) return state;
+  const entries = [...state.entries];
+  entries[index] = { ...entries[index], open: false };
+  if (state.activeId !== id) return { entries, activeId: state.activeId };
+  const next = entries.slice(index + 1).find((entry) => entry.open !== false)
+    ?? entries.slice(0, index).reverse().find((entry) => entry.open !== false);
+  return { entries, activeId: next?.id ?? null };
+}
+
+/** Replace only the physical reference after the user reconnects a file. */
+export function reconnectLocalFile(
+  state: LocalFilesState,
+  id: string,
+  file: LocalFile,
+  reopen: PersistedFileReference,
+): LocalFilesState {
+  const index = state.entries.findIndex((entry) => entry.id === id);
+  if (index === -1) return state;
+  const entries = [...state.entries];
+  entries[index] = {
+    ...entries[index],
+    name: file.name,
+    handle: file.handle,
+    reopen,
+    recoveryStatus: "ready",
+  };
+  return { entries, activeId: state.activeId };
 }
 
 export function updateLocalFileContents(
@@ -161,6 +199,8 @@ export function removeLocalFile(state: LocalFilesState, id: string): LocalFilesS
 
   return {
     entries,
-    activeId: entries[index]?.id ?? entries[index - 1]?.id ?? null,
+    activeId: entries.slice(index).find((entry) => entry.open !== false)?.id
+      ?? entries.slice(0, index).reverse().find((entry) => entry.open !== false)?.id
+      ?? null,
   };
 }

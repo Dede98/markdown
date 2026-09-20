@@ -3,6 +3,10 @@
 
 export type FileHandle = unknown;
 
+type ComparableFileHandle = {
+  isSameEntry(other: unknown): Promise<boolean>;
+};
+
 export type LocalFile = {
   name: string;
   contents: string;
@@ -50,4 +54,43 @@ export function makeEmptyFile(name = DEFAULT_NEW_FILE_NAME): LocalFile {
     contents: DEFAULT_NEW_FILE_CONTENTS,
     handle: null,
   };
+}
+
+function isComparableFileHandle(handle: FileHandle): handle is ComparableFileHandle {
+  return Boolean(
+    handle &&
+    typeof handle === "object" &&
+    typeof (handle as { isSameEntry?: unknown }).isSameEntry === "function",
+  );
+}
+
+/**
+ * Compare opaque adapter handles without assuming object identity. Browser
+ * pickers may return a fresh FileSystemFileHandle object for an already-known
+ * file; `isSameEntry` is the platform identity check for that case. Native
+ * adapters use the canonical absolute path string as their opaque handle.
+ */
+export async function fileHandlesReferToSameEntry(
+  left: FileHandle | null,
+  right: FileHandle | null,
+): Promise<boolean> {
+  if (left === null || right === null) return false;
+  if (left === right) return true;
+  if (typeof left === "string" && typeof right === "string") return left === right;
+
+  if (isComparableFileHandle(left)) {
+    try {
+      if (await left.isSameEntry(right)) return true;
+    } catch {
+      // The other handle may still be able to compare a revoked capability.
+    }
+  }
+  if (isComparableFileHandle(right)) {
+    try {
+      if (await right.isSameEntry(left)) return true;
+    } catch {
+      // A revoked or incompatible capability is not evidence of identity.
+    }
+  }
+  return false;
 }
