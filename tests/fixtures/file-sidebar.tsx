@@ -8,9 +8,15 @@ document.documentElement.dataset.theme = params.get("theme") === "dark" ? "dark"
 
 const fixtureFiles = params.has("empty")
   ? []
-  : [
-      { id: "duplicate-a", name: "notes.md", dirty: false },
-      { id: "duplicate-b", name: "notes.md", dirty: true },
+  : params.has("longList")
+    ? Array.from({ length: 30 }, (_, index) => ({
+        id: `file-${index}`,
+        name: `chapter-${String(index + 1).padStart(2, "0")}.md`,
+        dirty: index % 7 === 0,
+      }))
+    : [
+      { id: "duplicate-a", name: "notes.md", dirty: false, location: "Work" },
+      { id: "duplicate-b", name: "notes.md", dirty: true, location: "Personal" },
       {
         id: "long-name",
         name: "a-very-long-markdown-filename-that-must-remain-available-to-assistive-technology.md",
@@ -23,7 +29,7 @@ function Fixture() {
   const record = (event: string) => setEvents((current) => [...current, event]);
 
   return (
-    <main style={{ display: "flex", height: "100vh" }}>
+    <main className="workspaceFrame" style={{ height: "100vh" }}>
       <FileSidebar
         files={fixtureFiles}
         activeId={fixtureFiles.length > 0 ? "duplicate-b" : null}

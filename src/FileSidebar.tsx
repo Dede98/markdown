@@ -1,9 +1,17 @@
-import { FilePlus, FolderOpen, PanelLeftClose, X } from "lucide-react";
+import { FilePlus, FileText, FolderOpen, PanelLeftClose, X } from "lucide-react";
 import type { MouseEvent } from "react";
 import "./fileSidebar.css";
 
+export type FileSidebarFile = {
+  id: string;
+  name: string;
+  dirty: boolean;
+  /** Optional, presentation-only context for otherwise ambiguous filenames. */
+  location?: string;
+};
+
 type FileSidebarProps = {
-  files: ReadonlyArray<{ id: string; name: string; dirty: boolean }>;
+  files: ReadonlyArray<FileSidebarFile>;
   activeId: string | null;
   onNew: () => void;
   onOpen: () => void;
@@ -38,30 +46,52 @@ export function FileSidebar({
       <div className="fileSidebarHeader">
         <h2>Files</h2>
         <div className="fileSidebarActions" aria-label="File actions">
-          <button type="button" aria-label="New file" title="New file" onClick={onNew} disabled={disabled}>
-            <FilePlus size={16} aria-hidden="true" />
-          </button>
-          <button type="button" aria-label="Open file" title="Open file" onClick={onOpen} disabled={disabled}>
-            <FolderOpen size={16} aria-hidden="true" />
+          <button
+            className="fileSidebarAction"
+            type="button"
+            aria-label="New file"
+            title="New file"
+            onClick={onNew}
+            disabled={disabled}
+          >
+            <FilePlus size={15} strokeWidth={1.8} aria-hidden="true" />
+            <span>New</span>
           </button>
           <button
+            className="fileSidebarAction"
+            type="button"
+            aria-label="Open file"
+            title="Open file"
+            onClick={onOpen}
+            disabled={disabled}
+          >
+            <FolderOpen size={15} strokeWidth={1.8} aria-hidden="true" />
+            <span>Open</span>
+          </button>
+          <button
+            className="fileSidebarHide"
             type="button"
             aria-label="Hide file sidebar"
             title="Hide file sidebar"
             onClick={onHide}
           >
-            <PanelLeftClose size={16} aria-hidden="true" />
+            <PanelLeftClose size={16} strokeWidth={1.8} aria-hidden="true" />
           </button>
         </div>
       </div>
 
       {files.length === 0 ? (
-        <p className="fileSidebarEmpty">No files open</p>
+        <div className="fileSidebarEmpty">
+          <FileText size={24} strokeWidth={1.35} aria-hidden="true" />
+          <p>No files open</p>
+          <span>Create a new file or open Markdown from your device.</span>
+        </div>
       ) : (
-        <ul className="fileSidebarList">
-          {files.map((file) => {
+        <ul className="fileSidebarList" aria-label={`${files.length} open ${files.length === 1 ? "file" : "files"}`}>
+          {files.map((file, index) => {
             const active = file.id === activeId;
             const dirtySuffix = file.dirty ? ", unsaved changes" : "";
+            const locationId = file.location ? `file-sidebar-location-${index}` : undefined;
 
             return (
               <li
@@ -74,12 +104,23 @@ export function FileSidebar({
                   type="button"
                   aria-current={active ? "page" : undefined}
                   aria-label={`Select ${file.name}${dirtySuffix}`}
-                  title={file.name}
+                  aria-describedby={locationId}
+                  title={file.location ? `${file.name} — ${file.location}` : file.name}
                   onClick={() => onSelect(file.id)}
                   disabled={disabled}
                 >
-                  <span className="fileSidebarDirtyDot" aria-hidden="true" />
-                  <span className="fileSidebarName">{file.name}</span>
+                  <FileText className="fileSidebarFileIcon" size={15} strokeWidth={1.65} aria-hidden="true" />
+                  <span className="fileSidebarLabel">
+                    <span className="fileSidebarNameLine">
+                      <span className="fileSidebarName">{file.name}</span>
+                      <span className="fileSidebarDirtyDot" aria-hidden="true" />
+                    </span>
+                    {file.location && (
+                      <span className="fileSidebarLocation" id={locationId}>
+                        {file.location}
+                      </span>
+                    )}
+                  </span>
                 </button>
                 <button
                   className="fileSidebarClose"
@@ -89,7 +130,7 @@ export function FileSidebar({
                   onClick={(event) => closeFile(event, file.id)}
                   disabled={disabled}
                 >
-                  <X size={14} aria-hidden="true" />
+                  <X size={14} strokeWidth={1.8} aria-hidden="true" />
                 </button>
               </li>
             );
