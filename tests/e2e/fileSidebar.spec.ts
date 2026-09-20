@@ -64,6 +64,17 @@ test.describe("file sidebar", () => {
     expect(await label.evaluate((element) => element.scrollWidth > element.clientWidth)).toBe(true);
   });
 
+  test("disambiguates equal basenames with optional location descriptions", async ({ page }) => {
+    await page.goto(fixturePath);
+
+    const firstNotes = page.getByRole("button", { name: "Select notes.md", exact: true }).first();
+    const secondNotes = page.getByRole("button", { name: "Select notes.md, unsaved changes" });
+    await expect(firstNotes).toHaveAccessibleDescription("Work");
+    await expect(secondNotes).toHaveAccessibleDescription("Personal");
+    await expect(firstNotes.locator(".fileSidebarLocation")).toHaveText("Work");
+    await expect(secondNotes.locator(".fileSidebarLocation")).toHaveText("Personal");
+  });
+
   test("all controls are native buttons in the keyboard tab order", async ({ page }) => {
     await page.goto(fixturePath);
     const controls = page.getByRole("navigation", { name: "Open files" }).getByRole("button");
@@ -78,10 +89,32 @@ test.describe("file sidebar", () => {
     }
 
     await controls.first().focus();
+    await expect(controls.first()).toHaveCSS("outline-style", "solid");
     await page.keyboard.press("Enter");
     await controls.nth(3).focus();
     await page.keyboard.press("Space");
     await expect(events(page)).toHaveText(["new", "select:duplicate-a"]);
+  });
+
+  test("keeps names and close actions reachable in a narrow layout", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await page.goto(fixturePath);
+
+    const sidebar = page.getByRole("navigation", { name: "Open files" });
+    await expect(sidebar).toHaveCSS("width", "360px");
+    await expect(sidebar.getByRole("button", { name: "Close notes.md" }).first()).toBeVisible();
+    await expect(sidebar.getByRole("button", { name: "Select notes.md", exact: true }).first()).toBeVisible();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBe(360);
+  });
+
+  test("contains long file lists in a dedicated scrolling region", async ({ page }) => {
+    await page.setViewportSize({ width: 360, height: 640 });
+    await page.goto(`${fixturePath}?longList=1`);
+
+    const list = page.getByRole("list", { name: "30 open files" });
+    expect(await list.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(true);
+    await list.getByRole("button", { name: "Select chapter-30.md" }).scrollIntoViewIfNeeded();
+    await expect(list.getByRole("button", { name: "Select chapter-30.md" })).toBeVisible();
   });
 
   for (const theme of ["light", "dark"] as const) {
