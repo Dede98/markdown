@@ -200,6 +200,35 @@ test("continues the serialized queue after a failed write", async () => {
   assert.equal(JSON.parse(current).files.length, 1);
 });
 
+test("detects a stale hydrated writer instead of replacing a newer session", async () => {
+  const memory = memoryStorage();
+  const first = createLocalSessionPersistence(memory.storage);
+  await first.read();
+  assert.equal((await first.write(snapshot([entry()], "file-a"))).status, "written");
+
+  const stale = createLocalSessionPersistence(memory.storage);
+  assert.equal((await stale.read()).status, "ok");
+  assert.equal((await first.write(snapshot([entry({ draft: "new", savedBaseline: "new" })], "file-a"))).status, "written");
+
+  const result = await stale.write(snapshot([entry({ draft: "stale", savedBaseline: "stale" })], "file-a"));
+  assert.equal(result.status, "stale");
+  assert.equal((await stale.flush()).status, "stale");
+  assert.equal(JSON.parse(memory.current()).files[0].draft, "new");
+});
+
+test("persists sidebar visibility while accepting older snapshots that omit it", async () => {
+  const memory = memoryStorage();
+  const persistence = createLocalSessionPersistence(memory.storage);
+  await persistence.read();
+  assert.equal((await persistence.write({ ...snapshot(), sidebarVisible: false })).status, "written");
+  assert.equal((await createLocalSessionPersistence(memory.storage).read()).snapshot.sidebarVisible, false);
+  assert.doesNotThrow(() => validatePersistedLocalSession({
+    version: 1,
+    generation: 1,
+    ...snapshot(),
+  }));
+});
+
 test("desktop reconnect reports success, missing, denied, and unavailable outcomes", async () => {
   const reference = { kind: "desktop-path", path: "/documents/notes.md" };
   const success = createTauriSessionFileAdapter(async () => "# notes");

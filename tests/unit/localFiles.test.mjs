@@ -20,7 +20,15 @@ test("creates one active entry with an independent saved snapshot", () => {
   const state = createLocalFiles(source, "one");
 
   assert.deepEqual(state, {
-    entries: [{ id: "one", name: "one.md", contents: "# One", savedContents: "# One", handle }],
+    entries: [{
+      id: "one",
+      name: "one.md",
+      contents: "# One",
+      savedContents: "# One",
+      handle,
+      reopen: { kind: "untitled" },
+      recoveryStatus: "ready",
+    }],
     activeId: "one",
   });
   assert.notStrictEqual(state.entries[0], source);
@@ -131,6 +139,9 @@ test("applies a save to its id without changing selection", () => {
     contents: "text being saved",
     savedContents: "text being saved",
     handle: newHandle,
+    reopen: { kind: "untitled" },
+    recoveryStatus: "ready",
+    externalContents: undefined,
   });
   assert.strictEqual(next.entries[1], drafted.entries[1]);
   assert.strictEqual(next.entries[0].handle, newHandle);

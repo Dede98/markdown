@@ -29,11 +29,15 @@ export type PersistedLocalFile = {
 export type PersistedLocalSessionV1 = {
   version: typeof LOCAL_SESSION_VERSION;
   generation: number;
+  /** Identifies the runtime that last committed this generation. */
+  writerId?: string;
   activeFileId: string | null;
+  /** Optional for snapshots written before sidebar persistence shipped. */
+  sidebarVisible?: boolean;
   files: PersistedLocalFile[];
 };
 
-export type LocalSessionSnapshot = Omit<PersistedLocalSessionV1, "version" | "generation">;
+export type LocalSessionSnapshot = Omit<PersistedLocalSessionV1, "version" | "generation" | "writerId">;
 
 export type SessionReadResult =
   | { status: "ok"; snapshot: PersistedLocalSessionV1; recoveredFromBackup: boolean }
@@ -51,7 +55,7 @@ export type SessionWriteResult =
 
 export type SessionFlushResult =
   | { status: "flushed"; generation: number }
-  | Exclude<SessionWriteResult, { status: "written" } | { status: "stale" }>;
+  | Exclude<SessionWriteResult, { status: "written" }>;
 
 /** String storage only. Platform capability objects must never enter this API. */
 export type SessionStringStorage = {
@@ -122,6 +126,12 @@ export function validatePersistedLocalSession(value: unknown): PersistedLocalSes
   if (!Number.isSafeInteger(value.generation) || (value.generation as number) < 0) {
     throw new Error("Session generation must be a non-negative safe integer");
   }
+  if (value.writerId !== undefined && (typeof value.writerId !== "string" || value.writerId.length === 0)) {
+    throw new Error("Session writer identity is malformed");
+  }
+  if (value.sidebarVisible !== undefined && typeof value.sidebarVisible !== "boolean") {
+    throw new Error("Session sidebar visibility is malformed");
+  }
   if (!Array.isArray(value.files) || !value.files.every(validFile)) {
     throw new Error("Session files are malformed");
   }
@@ -171,12 +181,18 @@ function parseStored(value: string | null): Parsed {
 }
 
 export function createLocalSessionPersistence(storage: SessionStringStorage) {
+  const writerId =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `writer-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   let lastUsable: PersistedLocalSessionV1 | undefined;
   let nextGeneration = 0;
   let durableGeneration = 0;
+  let hasRead = false;
   let writeTail: Promise<SessionWriteResult> = Promise.resolve({ status: "stale", generation: 0 });
 
   async function read(): Promise<SessionReadResult> {
+    hasRead = true;
     let currentRaw: string | null;
     try {
       currentRaw = await storage.readCurrent();
@@ -212,7 +228,9 @@ export function createLocalSessionPersistence(storage: SessionStringStorage) {
     let candidate: PersistedLocalSessionV1 = {
       version: LOCAL_SESSION_VERSION,
       generation: requestedGeneration,
+      writerId,
       activeFileId: snapshot.activeFileId,
+      ...(snapshot.sidebarVisible === undefined ? {} : { sidebarVisible: snapshot.sidebarVisible }),
       // Capture an immutable point-in-time value before entering the async
       // queue. A later editor update must not alter an already queued write.
       files: snapshot.files.map((file) => ({
@@ -236,6 +254,14 @@ export function createLocalSessionPersistence(storage: SessionStringStorage) {
       const old = parseStored(oldRaw);
       if (old.status === "unsupported-version") return old;
       const storedGeneration = old.status === "ok" ? old.snapshot.generation : 0;
+      if (
+        hasRead &&
+        old.status === "ok" &&
+        old.snapshot.writerId !== writerId &&
+        storedGeneration > durableGeneration
+      ) {
+        return { status: "stale", generation: storedGeneration };
+      }
       const generation = Math.max(requestedGeneration, durableGeneration + 1, storedGeneration + 1);
       candidate = { ...candidate, generation };
       nextGeneration = Math.max(nextGeneration, generation);
@@ -258,7 +284,7 @@ export function createLocalSessionPersistence(storage: SessionStringStorage) {
 
   async function flush(): Promise<SessionFlushResult> {
     const result = await writeTail;
-    if (result.status === "written" || result.status === "stale") {
+    if (result.status === "written") {
       return { status: "flushed", generation: durableGeneration };
     }
     return result;

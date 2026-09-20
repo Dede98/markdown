@@ -90,6 +90,42 @@ async function installBrowserPickerFailures(page: Page) {
   });
 }
 
+async function seedPersistedSession(
+  page: Page,
+  files: Array<{
+    id: string;
+    name: string;
+    draft: string;
+    baseline: string;
+    path?: string;
+  }>,
+  activeFileId: string | null,
+  sidebarVisible = true,
+) {
+  await page.addInitScript(({ entries, active, sidebar }) => {
+    if (window.localStorage.getItem("markdown.localSession.v1") !== null) return;
+    window.localStorage.setItem("markdown.localSession.v1", JSON.stringify({
+      version: 1,
+      generation: 4,
+      writerId: "previous-runtime",
+      activeFileId: active,
+      sidebarVisible: sidebar,
+      files: entries.map((entry, order) => ({
+        id: entry.id,
+        displayName: entry.name,
+        order,
+        draft: entry.draft,
+        savedBaseline: entry.baseline,
+        dirty: entry.draft !== entry.baseline,
+        untitled: !entry.path,
+        reopen: entry.path
+          ? { kind: "desktop-path", path: entry.path }
+          : { kind: "untitled" },
+      })),
+    }));
+  }, { entries: files, active: activeFileId, sidebar: sidebarVisible });
+}
+
 async function installTauriIpc(page: Page, pathContents: Record<string, string> = {}) {
   await page.addInitScript((files) => {
     type TauriEvent = { event: string; payload: unknown; id: number };
@@ -106,12 +142,21 @@ async function installTauriIpc(page: Page, pathContents: Record<string, string> 
       __tauriDialogSaveResult: string | null;
       __tauriFailReads: boolean;
       __tauriFailWrites: boolean;
+      __tauriDelayReads: boolean;
+      __tauriPendingReads: number;
+      __resolveTauriReads: () => void;
+      __tauriWrites: Array<{ path: string; contents: string }>;
     };
 
     win.__tauriDialogOpenResult = null;
     win.__tauriDialogSaveResult = null;
     win.__tauriFailReads = false;
     win.__tauriFailWrites = false;
+    win.__tauriDelayReads = false;
+    win.__tauriPendingReads = 0;
+    win.__tauriWrites = [];
+    let releaseReads: (() => void) | null = null;
+    win.__resolveTauriReads = () => releaseReads?.();
     win.__TAURI_INTERNALS__ = {
       metadata: {
         currentWindow: { label: "main" },
@@ -128,7 +173,11 @@ async function installTauriIpc(page: Page, pathContents: Record<string, string> 
       convertFileSrc(path: string) {
         return path;
       },
-      async invoke(cmd: string, args?: Record<string, unknown>) {
+      async invoke(
+        cmd: string,
+        args?: Record<string, unknown>,
+        options?: { headers?: Record<string, string> },
+      ) {
         if (cmd === "plugin:event|listen") {
           const event = String(args?.event);
           const handler = Number(args?.handler);
@@ -154,6 +203,12 @@ async function installTauriIpc(page: Page, pathContents: Record<string, string> 
           if (win.__tauriFailReads) {
             throw new Error("native read failed");
           }
+          if (win.__tauriDelayReads) {
+            win.__tauriPendingReads += 1;
+            await new Promise<void>((resolve) => {
+              releaseReads = resolve;
+            });
+          }
           const value = files[String(args?.path)] ?? "";
           return Array.from(new TextEncoder().encode(value));
         }
@@ -161,6 +216,10 @@ async function installTauriIpc(page: Page, pathContents: Record<string, string> 
           if (win.__tauriFailWrites) {
             throw new Error("native write failed");
           }
+          win.__tauriWrites.push({
+            path: decodeURIComponent(options?.headers?.path ?? ""),
+            contents: new TextDecoder().decode(args as unknown as Uint8Array),
+          });
           return null;
         }
         if (cmd === "plugin:updater|check") {
@@ -183,6 +242,70 @@ async function installTauriIpc(page: Page, pathContents: Record<string, string> 
 }
 
 test.describe("file sidebar integration", () => {
+  test("hydrates order, selection, sidebar preference, clean sources, and dirty drafts", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installTauriIpc(page, {
+      "/left/notes.md": "left from disk",
+      "/right/notes.md": "right baseline",
+    });
+    await seedPersistedSession(page, [
+      { id: "left", name: "notes.md", draft: "stale clean", baseline: "stale clean", path: "/left/notes.md" },
+      { id: "right", name: "notes.md", draft: "right recovered draft", baseline: "right baseline", path: "/right/notes.md" },
+      { id: "draft", name: "untitled.md", draft: "untitled recovery bytes", baseline: "" },
+    ], "right", false);
+
+    await page.goto("/");
+    await expect.poll(() => getEditorSource(page)).toBe("right recovered draft");
+    await expect(page.getByRole("navigation", { name: "Open files" })).toBeHidden();
+    await page.getByRole("button", { name: "Show file sidebar" }).click();
+    const sidebar = page.getByRole("navigation", { name: "Open files" });
+    const selectors = sidebar.locator(".fileSidebarSelect");
+    await expect(selectors).toHaveCount(3);
+    await expect(selectors.nth(0)).toHaveAttribute("aria-label", "Select notes.md");
+    await expect(selectors.nth(1)).toHaveAttribute("aria-label", "Select notes.md, unsaved changes");
+    await expect(selectors.nth(2)).toHaveAttribute("aria-label", "Select untitled.md, unsaved changes");
+
+    await selectors.nth(0).click();
+    await expect.poll(() => getEditorSource(page)).toBe("left from disk");
+    await selectors.nth(2).click();
+    await expect.poll(() => getEditorSource(page)).toBe("untitled recovery bytes");
+  });
+
+  test("blocks overwrite of an externally changed dirty recovery until confirmed", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installTauriIpc(page, { "/docs/conflict.md": "external edit" });
+    await seedPersistedSession(page, [
+      { id: "conflict", name: "conflict.md", draft: "recovered draft", baseline: "old disk", path: "/docs/conflict.md" },
+    ], "conflict");
+
+    await page.goto("/");
+    await expect.poll(() => getEditorSource(page)).toBe("recovered draft");
+    await expect(page.locator(".documentState")).toHaveText("External changes");
+    page.once("dialog", (dialog) => void dialog.dismiss());
+    await page.getByRole("button", { name: "Save file" }).click();
+    await expect(page.locator(".documentState")).toHaveText("External changes");
+
+    page.once("dialog", (dialog) => void dialog.accept());
+    await page.getByRole("button", { name: "Save file" }).click();
+    await expect(page.locator(".documentState")).toHaveText("Saved");
+  });
+
+  test("persists closing the final entry as the safe empty state", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await seedPersistedSession(page, [
+      { id: "only", name: "untitled.md", draft: "", baseline: "" },
+    ], "only");
+    await page.goto("/");
+    await page.getByRole("button", { name: "Close untitled.md" }).click();
+    await expect(page.getByText("Open or create a Markdown file to start writing.")).toBeVisible();
+    await expect.poll(() => page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem("markdown.localSession.v1") ?? "null")?.files?.length,
+    )).toBe(0);
+    await page.reload();
+    await expect(page.getByText("Open or create a Markdown file to start writing.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Select untitled.md" })).toHaveCount(0);
+  });
+
   test("keeps two same-named files and a stable untitled draft independently", async ({ page }, testInfo) => {
     skipMobileKeyboardTest(testInfo);
     await installSessionAdapter(page, [
@@ -278,6 +401,43 @@ test.describe("file sidebar integration", () => {
     await page.getByRole("button", { name: "Select one.md", exact: true }).click();
     await expect.poll(() => getEditorSource(page)).toBe("one changed");
     await expect(page.locator(".documentState")).toHaveText("Saved");
+  });
+
+  test("a document switch during reconnect cannot redirect the saved contents", async ({ page }, testInfo) => {
+    skipMobileKeyboardTest(testInfo);
+    await installTauriIpc(page, {
+      "/docs/one.md": "one",
+      "/docs/two.md": "two",
+    });
+    await seedPersistedSession(page, [
+      { id: "one", name: "one.md", draft: "one", baseline: "one", path: "/docs/one.md" },
+      { id: "two", name: "two.md", draft: "two", baseline: "two", path: "/docs/two.md" },
+    ], "one");
+    await page.goto("/");
+    await expect.poll(() => getEditorSource(page)).toBe("one");
+    await setEditorText(page, "one save snapshot");
+    await page.evaluate(() => {
+      (window as unknown as { __tauriDelayReads: boolean }).__tauriDelayReads = true;
+    });
+
+    await page.getByRole("button", { name: "Save file" }).click();
+    await expect.poll(() => page.evaluate(() =>
+      (window as unknown as { __tauriPendingReads: number }).__tauriPendingReads,
+    )).toBe(1);
+    await page.getByRole("button", { name: "Select two.md" }).click();
+    await setEditorText(page, "two must stay isolated");
+    await page.evaluate(() =>
+      (window as unknown as { __resolveTauriReads: () => void }).__resolveTauriReads(),
+    );
+
+    await expect.poll(() => page.evaluate(() =>
+      (window as unknown as { __tauriWrites: Array<{ path: string; contents: string }> }).__tauriWrites,
+    )).toContainEqual({ path: "/docs/one.md", contents: "one save snapshot" });
+    await expect.poll(() => getEditorSource(page)).toBe("two must stay isolated");
+    await expect(page.getByRole("button", { name: "Select two.md, unsaved changes" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
   });
 
   test("Save As after switching renames and saves only the active session", async ({ page }, testInfo) => {
@@ -510,6 +670,9 @@ test.describe("file sidebar integration", () => {
 });
 
 async function setEditorText(page: Page, text: string) {
+  await expect.poll(() => page.evaluate(() => Boolean(
+    (window as unknown as { __markdownEditorView?: unknown }).__markdownEditorView,
+  ))).toBe(true);
   await page.evaluate((nextText) => {
     const view = (
       window as unknown as {
@@ -534,7 +697,7 @@ async function getEditorSource(page: Page) {
       }
     ).__markdownEditorView;
     if (!view) {
-      throw new Error("CodeMirror editor view is not available");
+      return null;
     }
     return view.state.doc.toString();
   });
