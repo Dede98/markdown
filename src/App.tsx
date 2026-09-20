@@ -358,6 +358,10 @@ export function App() {
   const hydratedRef = useRef(startup.fresh);
   const queuedOpenPathsRef = useRef<string[]>([]);
   const selectionVersionRef = useRef(0);
+  const saveOperationSequenceRef = useRef(0);
+  const latestCompletedSaveAsRef = useRef(new Map<string, number>());
+  const saveTailsRef = useRef(new Map<string, Promise<void>>());
+  const savedBaselineRef = useRef(new Map<string, { handle: FileHandle; contents: string }>());
   const sessionPersistenceRef = useRef(
     createLocalSessionPersistence(createLocalStorageSessionStorage()),
   );
@@ -959,6 +963,7 @@ export function App() {
 
     const contents = markdownRef.current;
     const entryId = entry.id;
+    const operation = ++saveOperationSequenceRef.current;
     const isActive = () => localFilesRef.current.activeId === entryId;
 
     try {
@@ -969,17 +974,35 @@ export function App() {
         }
         return;
       }
+      // A cancelled picker does not supersede a prior successful destination.
+      // Once bytes were actually written, however, this operation owns the
+      // destination unless a later Save As also writes successfully.
+      const newerCompletedSaveAs = latestCompletedSaveAsRef.current.get(entryId) ?? 0;
+      if (newerCompletedSaveAs > operation) return;
+      latestCompletedSaveAsRef.current.set(entryId, operation);
       let reopen;
       try {
         reopen = await getSessionFileAdapter().createReference(result.handle, false);
       } catch (error) {
         console.error("Could not retain saved file reference", error);
+        if (latestCompletedSaveAsRef.current.get(entryId) !== operation) return;
+        const fallback = { kind: "browser-upload-only", status: "upload-only" } as const;
+        savedBaselineRef.current.set(entryId, { handle: result.handle, contents });
+        setLocalFiles((current) =>
+          updateLocalFileReference(
+            applyLocalFileSave(current, entryId, result, contents),
+            entryId,
+            fallback,
+          ),
+        );
         if (isActive()) {
           setSaveStatus("error");
           setSaveError("The file was saved, but its reconnect permission could not be retained.");
         }
         return;
       }
+      if (latestCompletedSaveAsRef.current.get(entryId) !== operation) return;
+      savedBaselineRef.current.set(entryId, { handle: result.handle, contents });
       setLocalFiles((current) =>
         updateLocalFileReference(
           applyLocalFileSave(current, entryId, result, contents),
@@ -1058,44 +1081,62 @@ export function App() {
     const contents = markdownRef.current;
     const entryId = entry.id;
     const handle = entry.handle;
-    const savedContents = entry.savedContents;
 
-    if (!(await allowOverwriteCurrentSource(entry, intent))) {
-      return;
-    }
+    const run = async () => {
+      // Re-read state after earlier saves for this file settle. The handle
+      // identity still guards close/Save As destination changes, while the
+      // baseline may legitimately have advanced because of the prior save.
+      const currentEntry = localFilesRef.current.entries.find(
+        (candidate) => candidate.id === entryId,
+      );
+      if (!currentEntry || currentEntry.handle !== handle) return;
+      const immediateBaseline = savedBaselineRef.current.get(entryId);
+      const entryForCheck = immediateBaseline?.handle === handle
+        ? { ...currentEntry, savedContents: immediateBaseline.contents }
+        : currentEntry;
 
-    // A close or Save As may have replaced this entry while reconnecting.
-    // Do not let the delayed request write through a stale destination.
-    const currentEntry = localFilesRef.current.entries.find(
-      (candidate) => candidate.id === entryId,
-    );
-    if (
-      !currentEntry ||
-      currentEntry.handle !== handle ||
-      currentEntry.savedContents !== savedContents
-    ) {
-      return;
-    }
+      if (!(await allowOverwriteCurrentSource(entryForCheck, intent))) return;
 
-    setSaveStatus(intent === "autosave" ? "autosaving" : "saving");
-    setSaveError(null);
+      const checkedEntry = localFilesRef.current.entries.find(
+        (candidate) => candidate.id === entryId,
+      );
+      if (!checkedEntry || checkedEntry.handle !== handle) return;
 
-    const isActive = () => localFilesRef.current.activeId === entryId;
+      setSaveStatus(intent === "autosave" ? "autosaving" : "saving");
+      setSaveError(null);
+      const isActive = () => localFilesRef.current.activeId === entryId;
 
-    try {
-      const result = await adapter.saveFile(handle, contents, entry.name);
-      setLocalFiles((current) => applyLocalFileSave(current, entryId, result, contents));
-      if (isActive()) {
-        setSaveStatus("idle");
+      try {
+        const result = await adapter.saveFile(handle, contents, entry.name);
+        const destinationStillCurrent = localFilesRef.current.entries.some(
+          (candidate) => candidate.id === entryId && candidate.handle === handle,
+        );
+        if (!destinationStillCurrent) return;
+        savedBaselineRef.current.set(entryId, { handle, contents });
+        setLocalFiles((current) => {
+          const target = current.entries.find((candidate) => candidate.id === entryId);
+          return !target || target.handle !== handle
+            ? current
+            : applyLocalFileSave(current, entryId, result, contents);
+        });
+        if (isActive()) setSaveStatus("idle");
+      } catch (error) {
+        if (!isActive()) {
+          console.error("Save failed for inactive file", error);
+          return;
+        }
+        console.error("Save failed", error);
+        setSaveStatus("error");
+        setSaveError(error instanceof Error ? error.message : "Save failed");
       }
-    } catch (error) {
-      if (!isActive()) {
-        console.error("Save failed for inactive file", error);
-        return;
-      }
-      console.error("Save failed", error);
-      setSaveStatus("error");
-      setSaveError(error instanceof Error ? error.message : "Save failed");
+    };
+
+    const previous = saveTailsRef.current.get(entryId) ?? Promise.resolve();
+    const queued = previous.then(run, run);
+    saveTailsRef.current.set(entryId, queued);
+    await queued;
+    if (saveTailsRef.current.get(entryId) === queued) {
+      saveTailsRef.current.delete(entryId);
     }
   }, [allowOverwriteCurrentSource, handleSaveAs]);
 

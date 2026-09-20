@@ -63,6 +63,8 @@ export type SessionStringStorage = {
   readBackup(): Promise<string | null>;
   writeBackup(value: string): Promise<void>;
   writeCurrent(value: string): Promise<void>;
+  /** Serialize a complete read/compare/backup/publish transaction. */
+  runExclusive?<T>(operation: () => Promise<T>): Promise<T>;
 };
 
 export type ReconnectResult =
@@ -180,6 +182,29 @@ function parseStored(value: string | null): Parsed {
   }
 }
 
+const storageWriteTails = new WeakMap<SessionStringStorage, Promise<void>>();
+
+async function runStorageTransaction<T>(
+  storage: SessionStringStorage,
+  operation: () => Promise<T>,
+): Promise<T> {
+  if (storage.runExclusive) return storage.runExclusive(operation);
+
+  // Non-browser adapters commonly share one storage object in a process. Keep
+  // those instances atomic too; browser localStorage additionally supplies an
+  // origin-wide Web Lock below for separate windows/workers.
+  const previous = storageWriteTails.get(storage) ?? Promise.resolve();
+  let release!: () => void;
+  const turn = new Promise<void>((resolve) => { release = resolve; });
+  storageWriteTails.set(storage, previous.then(() => turn));
+  await previous;
+  try {
+    return await operation();
+  } finally {
+    release();
+  }
+}
+
 export function createLocalSessionPersistence(storage: SessionStringStorage) {
   const writerId =
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
@@ -244,7 +269,7 @@ export function createLocalSessionPersistence(storage: SessionStringStorage) {
       return Promise.resolve({ status: "failed", error });
     }
 
-    const run = async (): Promise<SessionWriteResult> => {
+    const commit = async (): Promise<SessionWriteResult> => {
       let oldRaw: string | null;
       try {
         oldRaw = await storage.readCurrent();
@@ -277,6 +302,15 @@ export function createLocalSessionPersistence(storage: SessionStringStorage) {
         return { status: "failed", error };
       }
     };
+    const run = async (): Promise<SessionWriteResult> => {
+      try {
+        return await runStorageTransaction(storage, commit);
+      } catch (error) {
+        // Publishing without the adapter's required cross-context lock would
+        // risk losing a draft, so lock unavailability is a safe hard failure.
+        return { status: "unavailable", error };
+      }
+    };
     const queued = writeTail.then(run, run);
     writeTail = queued;
     return queued;
@@ -302,6 +336,12 @@ export function createLocalStorageSessionStorage(
     return localStorage;
   };
   return {
+    async runExclusive<T>(operation: () => Promise<T>): Promise<T> {
+      if (typeof navigator === "undefined" || !navigator.locks?.request) {
+        throw new Error("Origin-wide recovery locking is unavailable");
+      }
+      return navigator.locks.request(`markdown-local-session:${currentKey}`, { mode: "exclusive" }, operation);
+    },
     async readCurrent() { return getStorage().getItem(currentKey); },
     async readBackup() { return getStorage().getItem(backupKey); },
     async writeBackup(value) { getStorage().setItem(backupKey, value); },
