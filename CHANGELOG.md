@@ -6,6 +6,26 @@ the versioning is [Semantic](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.0.27] - 2026-09-20
+
+### Added
+
+- Persistent file references and recoverable drafts in the sidebar, with
+  session restoration when the app opens again.
+- Virtual folders for organizing Markdown files from different locations
+  without moving or renaming the source files.
+- Folder creation, renaming, collapse/expand, file grouping, and reopening
+  remembered files while preserving their editing buffers.
+
+### Changed
+
+- Refined the sidebar's file actions, selection styling, and narrow layouts.
+
+### Fixed
+
+- Preserve the correct file and draft through asynchronous saves, file
+  switching, and recovery conflicts.
+
 ## [0.0.25] - 2026-08-01
 
 ### Added
